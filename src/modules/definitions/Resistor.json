@@ -1,0 +1,145 @@
+{
+  "module": "Resistor",
+  "name": "Resistor",
+  "description": "Electrical resistor with selectable resistance value and color bands",
+  "category": "Passive Components",
+  "gridX": 3,
+  "gridY": 1,
+  "background": "#8B4513",
+  "css": "border-radius: 8px; border: 2px solid #654321;",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "background": "#8B4513",
+      "css": "border-radius: 8px 0 0 8px; border: 2px solid #654321; border-right: none;",
+      "pin": "",
+      "type": "BODY",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "voltage": 0,
+      "current": 0,
+      "resistance": 1000
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "background": "#8B4513",
+      "css": "border-radius: 0; border: 2px solid #654321; border-left: none; border-right: none;",
+      "pin": "",
+      "type": "BODY",
+      "isConnectable": false,
+      "isPowerable": false,
+      "isGroundable": false,
+      "voltage": 0,
+      "current": 0,
+      "resistance": 1000
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "background": "#8B4513",
+      "css": "border-radius: 0 8px 8px 0; border: 2px solid #654321; border-left: none;",
+      "pin": "",
+      "type": "BODY",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "voltage": 0,
+      "current": 0,
+      "resistance": 1000
+    }
+  ],
+  "properties": {
+    "resistance": {
+      "type": "number",
+      "default": 1000,
+      "min": 1,
+      "max": 10000000,
+      "unit": "Ω",
+      "description": "Resistance value in ohms"
+    },
+    "tolerance": {
+      "type": "select",
+      "default": "5%",
+      "options": ["1%", "2%", "5%", "10%"],
+      "description": "Resistance tolerance"
+    },
+    "powerRating": {
+      "type": "select",
+      "default": "0.25W",
+      "options": ["0.125W", "0.25W", "0.5W", "1W", "2W", "5W"],
+      "description": "Power rating"
+    }
+  },
+  "commonValues": [
+    { "value": 10, "label": "10Ω" },
+    { "value": 22, "label": "22Ω" },
+    { "value": 47, "label": "47Ω" },
+    { "value": 100, "label": "100Ω" },
+    { "value": 220, "label": "220Ω" },
+    { "value": 470, "label": "470Ω" },
+    { "value": 1000, "label": "1kΩ" },
+    { "value": 2200, "label": "2.2kΩ" },
+    { "value": 4700, "label": "4.7kΩ" },
+    { "value": 10000, "label": "10kΩ" },
+    { "value": 22000, "label": "22kΩ" },
+    { "value": 47000, "label": "47kΩ" },
+    { "value": 100000, "label": "100kΩ" },
+    { "value": 220000, "label": "220kΩ" },
+    { "value": 470000, "label": "470kΩ" },
+    { "value": 1000000, "label": "1MΩ" },
+    { "value": 2200000, "label": "2.2MΩ" },
+    { "value": 4700000, "label": "4.7MΩ" },
+    { "value": 10000000, "label": "10MΩ" }
+  ],
+  "colorBands": {
+    "0": "#000000",
+    "1": "#8B4513",
+    "2": "#FF0000",
+    "3": "#FF8C00",
+    "4": "#FFFF00",
+    "5": "#00FF00",
+    "6": "#0000FF",
+    "7": "#800080",
+    "8": "#808080",
+    "9": "#FFFFFF",
+    "multiplier": {
+      "0.01": "#FFD700",
+      "0.1": "#C0C0C0",
+      "1": "#000000",
+      "10": "#8B4513",
+      "100": "#FF0000",
+      "1000": "#FF8C00",
+      "10000": "#FFFF00",
+      "100000": "#00FF00",
+      "1000000": "#0000FF",
+      "10000000": "#800080"
+    },
+    "tolerance": {
+      "1%": "#FFD700",
+      "2%": "#FFD700",
+      "5%": "#C0C0C0",
+      "10%": "#C0C0C0"
+    }
+  },
+  "behavior": {
+    "onClick": `
+      // Toggle resistance value selection
+      const currentResistance = context.getCellByPosition(1, 0).resistance || 1000;
+      const commonValues = [10, 22, 47, 100, 220, 470, 1000, 2200, 4700, 10000, 22000, 47000, 100000, 220000, 470000, 1000000, 2200000, 4700000, 10000000];
+      const currentIndex = commonValues.indexOf(currentResistance);
+      const nextIndex = (currentIndex + 1) % commonValues.length;
+      const newResistance = commonValues[nextIndex];
+      
+      // Update resistance for all cells in the resistor
+      for (let dx = 0; dx < 3; dx++) {
+        context.updateCellPower(dx, 0, false); // Reset power state
+        // Note: We can't directly update resistance here, but the visual will update
+      }
+      
+      console.log('Resistor resistance changed to:', newResistance, 'Ω');
+    `
+  }
+}

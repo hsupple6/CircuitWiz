@@ -8,6 +8,7 @@ import LED from './definitions/LED.json'
 import TemperatureSensor from './definitions/TemperatureSensor.json'
 import Switch from './definitions/Switch.json'
 import PowerSupply from './definitions/PowerSupply.json'
+import Resistor from './definitions/Resistor.json'
 
 // Module registry - automatically loads all JSON definitions
 export const moduleRegistry: Record<string, ModuleDefinition> = {
@@ -17,7 +18,8 @@ export const moduleRegistry: Record<string, ModuleDefinition> = {
   'LED': LED as ModuleDefinition,
   'Temperature Sensor': TemperatureSensor as ModuleDefinition,
   'Switch': Switch as ModuleDefinition,
-  'PowerSupply': PowerSupply as ModuleDefinition
+  'PowerSupply': PowerSupply as ModuleDefinition,
+  'Resistor': Resistor as ModuleDefinition
 }
 
 // Helper function to get module by name

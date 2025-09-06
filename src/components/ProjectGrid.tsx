@@ -1358,6 +1358,63 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
     return cell.pin || ''
   }
 
+  // Calculate resistor color bands based on resistance value
+  const getResistorColorBands = (resistance: number) => {
+    if (!resistance || resistance <= 0) return []
+    
+    // Convert resistance to string to extract digits
+    const resistanceStr = resistance.toString()
+    const digits = resistanceStr.split('').map(Number)
+    
+    // Color code mapping
+    const colorMap: Record<number, string> = {
+      0: '#000000', // Black
+      1: '#8B4513', // Brown
+      2: '#FF0000', // Red
+      3: '#FF8C00', // Orange
+      4: '#FFFF00', // Yellow
+      5: '#00FF00', // Green
+      6: '#0000FF', // Blue
+      7: '#800080', // Violet
+      8: '#808080', // Gray
+      9: '#FFFFFF'  // White
+    }
+    
+    // For resistances like 1000, 2200, etc., we need to handle them differently
+    if (resistance >= 1000) {
+      const value = resistance / 1000
+      const valueStr = value.toString()
+      const valueDigits = valueStr.split('').map(Number)
+      
+      // First two significant digits
+      const band1 = valueDigits[0] || 0
+      const band2 = valueDigits[1] || 0
+      
+      // Multiplier (how many zeros)
+      const multiplier = Math.log10(resistance / (band1 * 10 + band2))
+      const multiplierBand = Math.round(multiplier)
+      
+      return [
+        colorMap[band1],
+        colorMap[band2],
+        colorMap[multiplierBand],
+        '#C0C0C0' // Silver tolerance (5%)
+      ]
+    } else {
+      // For values under 1000
+      const band1 = digits[0] || 0
+      const band2 = digits[1] || 0
+      const multiplier = digits.length - 2
+      
+      return [
+        colorMap[band1],
+        colorMap[band2],
+        colorMap[multiplier],
+        '#C0C0C0' // Silver tolerance (5%)
+      ]
+    }
+  }
+
   // Parse inline CSS (same as in DynamicModule)
   const parseInlineCSS = (cssString: string): React.CSSProperties => {
     const styles: React.CSSProperties = {}
@@ -1443,6 +1500,7 @@ const GridCell = React.memo(({
   getCellBackground,
   getCellCSS,
   getCellPin,
+  getResistorColorBands,
   zoom
 }: {
   x: number
@@ -1457,6 +1515,7 @@ const GridCell = React.memo(({
   getCellBackground: (definition: any, x: number, y: number, totalCells: number) => string
   getCellCSS: (definition: any, x: number, y: number, totalCells: number) => React.CSSProperties
   getCellPin: (definition: any, x: number, y: number, totalCells: number) => string
+  getResistorColorBands: (resistance: number) => string[]
   zoom: number
 }) => {
   const occupied = isCellOccupied(x, y)
@@ -1530,6 +1589,40 @@ const GridCell = React.memo(({
                 </span>
               </div>
             )}
+            
+            {/* Show resistor color bands for resistor components */}
+            {cell.moduleDefinition.module === 'Resistor' && relativeX === 1 && relativeY === 0 && (() => {
+              const resistance = cell.moduleDefinition.properties?.resistance?.default || 1000
+              const colorBands = getResistorColorBands(resistance)
+              
+              return (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="flex gap-0.5">
+                    {colorBands.map((color, index) => (
+                      <div
+                        key={index}
+                        className="w-1 h-3 rounded-sm"
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
+            
+            {/* Show resistance value for resistor components */}
+            {cell.moduleDefinition.module === 'Resistor' && relativeX === 1 && relativeY === 0 && (() => {
+              const resistance = cell.moduleDefinition.properties?.resistance?.default || 1000
+              const displayValue = resistance >= 1000 ? `${resistance / 1000}kΩ` : `${resistance}Ω`
+              
+              return (
+                <div className="absolute bottom-0 left-0 right-0 flex justify-center">
+                  <span className="text-white text-xs font-bold bg-black bg-opacity-50 px-1 rounded">
+                    {displayValue}
+                  </span>
+                </div>
+              )
+            })()}
           </div>
         )
       })()}
@@ -1681,6 +1774,7 @@ const GridCell = React.memo(({
                     getCellBackground={getCellBackground}
                     getCellCSS={getCellCSS}
                     getCellPin={getCellPin}
+                    getResistorColorBands={getResistorColorBands}
                     zoom={zoom}
                   />
                 )
