@@ -522,13 +522,25 @@ export function calculateElectricalFlow(
 
 
 export function processBranch(
-    branch: CircuitPathway[],
-    sourceVoltage: number,
-    maxCurrent: number
-  ): Map<string, ComponentState> {
-    const states = new Map<string, ComponentState>()
-    if (branch.length === 0) return states
-  
+  branch: CircuitPathway[],
+  sourceVoltage: number,
+  maxCurrent: number
+): Map<string, ComponentState> {
+  const states = new Map<string, ComponentState>()
+  if (branch.length === 0) return states
+
+  // Check if the branch connects to ground
+  const hasGroundConnection = branch.some(comp => {
+    const moduleCell = comp.properties
+    return moduleCell?.type === 'GND' || moduleCell?.isGroundable === true
+  })
+
+  // If no ground connection, no current flows
+  if (!hasGroundConnection) {
+    console.log(`⚡ Circuit: No ground connection - no current flow`)
+    return states
+  }
+
   // Compute branch voltage drop & total resistance
   const { totalResistance, totalVoltageDrop, ledCurrentRequirement, motorCurrentRequirement } = calculateCircuitParameters(branch)
   const effectiveVoltage = Math.max(0, sourceVoltage - totalVoltageDrop)
@@ -552,11 +564,11 @@ export function processBranch(
         componentType: comp.type,
         position: comp.position
       })
-      
+
       currentVoltage = result.outputVoltage
       currentCurrent = result.outputCurrent
     }
   })
-    return states
-  }
+  return states
+}
   
