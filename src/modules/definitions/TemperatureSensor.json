@@ -1,0 +1,65 @@
+{
+  "module": "Temperature Sensor",
+  "gridX": 2,
+  "gridY": 2,
+  "background": "#8B5CF6",
+  "css": "border-radius: 6px; box-shadow: 0 3px 6px rgba(0,0,0,0.15);",
+  "category": "sensors",
+  "description": "DS18B20 Digital Temperature Sensor",
+  "manufacturer": "Maxim Integrated",
+  "datasheet": "https://datasheets.maximintegrated.com/en/ds/DS18B20.pdf",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "css": "border-top-left-radius: 6px; background: linear-gradient(135deg, #DC2626 0%, #EF4444 100%); color: white; font-weight: bold;",
+      "background": "#DC2626",
+      "isConnectable": true,
+      "type": "VCC",
+      "pin": "VCC",
+      "properties": {
+        "voltage": "3.3V",
+        "current": "1.5mA"
+      }
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "css": "border-top-right-radius: 6px; background: linear-gradient(135deg, #7C3AED 0%, #8B5CF6 100%); color: white; font-weight: bold;",
+      "background": "#7C3AED",
+      "isConnectable": true,
+      "type": "GND",
+      "pin": "GND",
+      "properties": {
+        "voltage": "0V"
+      }
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "css": "border-bottom-left-radius: 6px; background: linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%); color: white; font-weight: bold;",
+      "background": "#8B5CF6",
+      "isConnectable": true,
+      "type": "SIGNAL",
+      "pin": "DATA",
+      "properties": {
+        "voltage": "3.3V",
+        "protocol": "1-Wire",
+        "resolution": "0.0625°C"
+      }
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "css": "border-bottom-right-radius: 6px; background: linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%); color: white; font-weight: bold;",
+      "background": "#8B5CF6",
+      "isConnectable": false,
+      "type": "BODY",
+      "pin": "SENSOR",
+      "properties": {
+        "range": "-55°C to +125°C",
+        "accuracy": "±0.5°C"
+      }
+    }
+  ]
+}

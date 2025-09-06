@@ -1,0 +1,39 @@
+{
+  "module": "PowerSupply",
+  "gridX": 2,
+  "gridY": 1,
+  "background": "#2E8B57",
+  "css": "border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);",
+  "category": "power",
+  "description": "5V Power supply with positive and ground terminals",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "background": "#FF0000",
+      "isConnectable": true,
+      "type": "VCC",
+      "pin": "5V",
+      "isPowered": true,
+      "isClickable": false,
+      "isPowerable": true,
+      "isGroundable": false,
+      "voltage": 5,
+      "current": 1
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "background": "#000000",
+      "isConnectable": true,
+      "type": "GND",
+      "pin": "GND",
+      "isPowered": false,
+      "isClickable": false,
+      "isPowerable": false,
+      "isGroundable": true,
+      "voltage": 0,
+      "current": 0
+    }
+  ]
+}

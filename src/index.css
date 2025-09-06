@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-gray-200 dark:border-dark-border;
+  }
+  body {
+    @apply bg-gray-50 text-gray-900 dark:bg-dark-bg dark:text-dark-text-primary;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  
+  .btn-primary {
+    @apply bg-primary-600 text-white hover:bg-primary-700 dark:bg-primary-600 dark:hover:bg-primary-500;
+  }
+  
+  .btn-secondary {
+    @apply bg-gray-100 text-gray-900 hover:bg-gray-200 dark:bg-dark-surface dark:text-dark-text-primary dark:hover:bg-dark-card;
+  }
+  
+  .card {
+    @apply rounded-lg border bg-white shadow-sm dark:bg-dark-card dark:border-dark-border;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+  }
+  
+  .nav-item {
+    @apply text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-dark-text-secondary dark:hover:bg-dark-surface dark:hover:text-dark-text-primary;
+  }
+  
+  .nav-item-active {
+    @apply bg-primary-100 text-primary-900 dark:bg-dark-surface dark:text-primary-400;
+  }
+  
+  .input-field {
+    @apply bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-primary-500 focus:ring-primary-500 dark:bg-dark-surface dark:border-dark-border dark:text-dark-text-primary dark:placeholder-dark-text-muted dark:focus:border-primary-400 dark:focus:ring-primary-400;
+  }
+  
+  .drag-handle {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+  }
+  
+  .drag-handle * {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "module": "LED",
+  "gridX": 1,
+  "gridY": 1,
+  "background": "#EF4444",
+  "css": "border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2);",
+  "category": "output",
+  "description": "Light Emitting Diode",
+  "manufacturer": "Generic",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "css": "border-radius: 50%; background: radial-gradient(circle, #FEF3C7 0%, #EF4444 50%, #DC2626 100%); color: white; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center;",
+      "background": "#EF4444",
+      "isConnectable": true,
+      "type": "LED",
+      "pin": "LED",
+      "properties": {
+        "voltage": "2.0V",
+        "current": "20mA",
+        "color": "Red",
+        "brightness": "High",
+        "forward_voltage": "1.8-2.2V"
+      }
+    }
+  ]
+}

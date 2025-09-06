@@ -1,0 +1,56 @@
+{
+  "module": "Switch",
+  "gridX": 3,
+  "gridY": 1,
+  "background": "#8B4513",
+  "css": "border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);",
+  "category": "switches",
+  "description": "Interactive toggle switch with input, output terminals, and clickable switch body",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "background": "#4A90E2",
+      "isConnectable": true,
+      "type": "INPUT",
+      "pin": "IN",
+      "isPowered": false,
+      "isClickable": false,
+      "isPowerable": true,
+      "isGroundable": false,
+      "voltage": 0,
+      "current": 0
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "background": "#8B4513",
+      "isConnectable": false,
+      "type": "SWITCH_BODY",
+      "pin": "",
+      "isPowered": false,
+      "isClickable": true,
+      "isPowerable": false,
+      "isGroundable": false,
+      "voltage": 0,
+      "current": 0
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "background": "#E24A4A",
+      "isConnectable": true,
+      "type": "OUTPUT",
+      "pin": "OUT",
+      "isPowered": false,
+      "isClickable": false,
+      "isPowerable": true,
+      "isGroundable": false,
+      "voltage": 0,
+      "current": 0
+    }
+  ],
+  "behavior": {
+    "onClick": "// Simple switch behavior: if input is powered, toggle output\nconst inputCell = getCellByPosition(0, 0);\nconst outputCell = getCellByPosition(2, 0);\nif (inputCell && outputCell && inputCell.isPowered) {\n  updateCellPower(2, 0, !outputCell.isPowered);\n  console.log('Switch toggled! Output is now:', !outputCell.isPowered);\n}"
+  }
+}

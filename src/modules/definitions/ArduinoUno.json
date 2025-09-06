@@ -1,0 +1,133 @@
+{
+  "module": "Arduino Uno",
+  "gridX": 4,
+  "gridY": 2,
+  "background": "#059669",
+  "css": "border-radius: 6px; box-shadow: 0 3px 6px rgba(0,0,0,0.15);",
+  "category": "microcontrollers",
+  "description": "Arduino Uno R3 Microcontroller Board",
+  "manufacturer": "Arduino",
+  "datasheet": "https://store.arduino.cc/products/arduino-uno-rev3",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "css": "border-top-left-radius: 6px; background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
+      "background": "#059669",
+      "isConnectable": true,
+      "type": "DIGITAL",
+      "pin": "D13",
+      "properties": {
+        "function": "output",
+        "voltage": "5V",
+        "current": "40mA"
+      }
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "css": "background: linear-gradient(135deg, #DC2626 0%, #EF4444 100%); color: white; font-weight: bold;",
+      "background": "#DC2626",
+      "isConnectable": true,
+      "type": "VCC",
+      "pin": "3.3V",
+      "isPowerable": true,
+      "isGroundable": false,
+      "voltage": 3.3,
+      "current": 50,
+      "properties": {
+        "voltage": "3.3V",
+        "current": "50mA"
+      }
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "css": "background: linear-gradient(135deg, #DC2626 0%, #EF4444 100%); color: white; font-weight: bold;",
+      "background": "#DC2626",
+      "isConnectable": true,
+      "type": "VCC",
+      "pin": "5V",
+      "isPowerable": true,
+      "isGroundable": false,
+      "voltage": 5,
+      "current": 500,
+      "properties": {
+        "voltage": "5V",
+        "current": "500mA"
+      }
+    },
+    {
+      "x": 3,
+      "y": 0,
+      "css": "border-top-right-radius: 6px; background: linear-gradient(135deg, #7C3AED 0%, #8B5CF6 100%); color: white; font-weight: bold;",
+      "background": "#7C3AED",
+      "isConnectable": true,
+      "type": "GND",
+      "pin": "GND",
+      "isPowerable": false,
+      "isGroundable": true,
+      "voltage": 0,
+      "current": 0,
+      "properties": {
+        "voltage": "0V"
+      }
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "css": "border-bottom-left-radius: 6px; background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
+      "background": "#059669",
+      "isConnectable": true,
+      "type": "DIGITAL",
+      "pin": "D12",
+      "properties": {
+        "function": "input",
+        "voltage": "5V",
+        "current": "40mA"
+      }
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "css": "background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
+      "background": "#059669",
+      "isConnectable": true,
+      "type": "ANALOG",
+      "pin": "A0",
+      "properties": {
+        "function": "input",
+        "voltage": "5V",
+        "resolution": "10-bit"
+      }
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "css": "background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
+      "background": "#059669",
+      "isConnectable": true,
+      "type": "ANALOG",
+      "pin": "A1",
+      "properties": {
+        "function": "input",
+        "voltage": "5V",
+        "resolution": "10-bit"
+      }
+    },
+    {
+      "x": 3,
+      "y": 1,
+      "css": "border-bottom-right-radius: 6px; background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
+      "background": "#059669",
+      "isConnectable": true,
+      "type": "ANALOG",
+      "pin": "A2",
+      "properties": {
+        "function": "input",
+        "voltage": "5V",
+        "resolution": "10-bit"
+      }
+    }
+  ]
+}
