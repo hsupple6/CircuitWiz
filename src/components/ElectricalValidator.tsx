@@ -119,7 +119,18 @@ export function ElectricalValidator({ gridData, wires, onValidationUpdate }: Ele
     const resistance = getComponentResistance(component)
     const voltage = getComponentVoltage(component)
     const current = getComponentCurrent(component)
+    
+    // Check for valid values before calculating power
+    if (resistance <= 0 || !isFinite(resistance) || !isFinite(voltage) || !isFinite(current)) {
+      return // Skip validation if we have invalid values
+    }
+    
     const power = voltage * current
+    
+    // Check for valid power value
+    if (!isFinite(power) || power < 0) {
+      return // Skip validation if power is invalid
+    }
     
     if (power > 0.25) { // 0.25W typical resistor rating
       validations.push({
@@ -223,6 +234,12 @@ export function ElectricalValidator({ gridData, wires, onValidationUpdate }: Ele
 
   const getComponentResistance = (component: any): number => {
     if (component.type === 'Resistor') {
+      // Get resistance from the actual cell data
+      const resistorCell = component.cells.find((cell: any) => cell.type === 'BODY')
+      if (resistorCell?.resistance && resistorCell.resistance > 0) {
+        return resistorCell.resistance
+      }
+      // Fallback to definition default
       return component.definition?.properties?.resistance?.default || 1000
     }
     return 0

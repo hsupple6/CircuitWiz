@@ -15,8 +15,12 @@
       "css": "border-top-left-radius: 6px; background: linear-gradient(135deg, #DC2626 0%, #EF4444 100%); color: white; font-weight: bold;",
       "background": "#DC2626",
       "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
       "type": "VCC",
       "pin": "VCC",
+      "voltage": 3.3,
+      "current": 0.0015,
       "properties": {
         "voltage": "3.3V",
         "current": "1.5mA"
@@ -28,8 +32,12 @@
       "css": "border-top-right-radius: 6px; background: linear-gradient(135deg, #7C3AED 0%, #8B5CF6 100%); color: white; font-weight: bold;",
       "background": "#7C3AED",
       "isConnectable": true,
+      "isPowerable": false,
+      "isGroundable": true,
       "type": "GND",
       "pin": "GND",
+      "voltage": 0,
+      "current": 0,
       "properties": {
         "voltage": "0V"
       }
@@ -40,8 +48,12 @@
       "css": "border-bottom-left-radius: 6px; background: linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%); color: white; font-weight: bold;",
       "background": "#8B5CF6",
       "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
       "type": "SIGNAL",
       "pin": "DATA",
+      "voltage": 3.3,
+      "current": 0.0015,
       "properties": {
         "voltage": "3.3V",
         "protocol": "1-Wire",

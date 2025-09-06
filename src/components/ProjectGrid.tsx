@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { ModuleDefinition, WireConnection, WireSegment, WiringState } from '../modules/types'
 import { useTheme } from '../contexts/ThemeContext'
+import { calculateElectricalFlow, ComponentState } from '../systems/ElectricalSystem'
 import { ElectricalValidator } from './ElectricalValidator'
 import { ElectricalNotifications } from './ElectricalNotifications'
 import { CircuitTutorial } from './CircuitTutorial'
@@ -29,6 +30,10 @@ interface GridCell {
   isPowered?: boolean // Power state for this cell
   cellIndex?: number // Index within the module (for power tracking)
   isClickable?: boolean // Whether this cell can be clicked for interaction
+  voltage?: number // Voltage level for this cell
+  current?: number // Current level for this cell
+  resistance?: number // Resistance value for resistors
+  isOn?: boolean // Switch state
 }
 
 
@@ -81,6 +86,8 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
   const [snapToGrid, setSnapToGrid] = useState(true)
   const [electricalValidations, setElectricalValidations] = useState<any[]>([])
   const [showTutorial, setShowTutorial] = useState(false)
+  const [componentStates, setComponentStates] = useState<Map<string, ComponentState>>(new Map())
+  const [isCalculating, setIsCalculating] = useState(false)
   
   // Wire gauge specifications (AWG - American Wire Gauge)
   const wireGauges = [
@@ -101,8 +108,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
     { gauge: 24, maxCurrent: 2, maxPower: 240, thickness: 3, description: "24 AWG - Micro" }
   ]
   
-  // Calculate cell size in pixels
-  const cellSizePx = (window.innerWidth * 2.5 * zoom) / 100
+  // Calculate cell size in pixels - moved to visibleBounds calculation
   
   // Virtualization: Calculate visible grid bounds
   const visibleBounds = useMemo(() => {
@@ -298,28 +304,28 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
     return () => document.removeEventListener('dragstart', handleDragStart)
   }, [])
 
-  // Handle wheel zoom
-  const handleWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault()
-    
-    // Check if mouse is over the grid
-    if (gridRef.current && gridRef.current.contains(e.target as Node)) {
-      const delta = e.deltaY
-      const zoomStep = 0.1
-      
-      if (delta < 0) {
-        // Zoom in
-        const newZoom = Math.min(zoom + zoomStep, 3)
-        setZoom(newZoom)
-        expandGrid(newZoom)
-      } else {
-        // Zoom out
-        const newZoom = Math.max(zoom - zoomStep, 0.25)
-        setZoom(newZoom)
-        expandGrid(newZoom)
-      }
-    }
-  }, [zoom, expandGrid])
+  // Handle wheel zoom - DISABLED (too buggy)
+  // const handleWheel = useCallback((e: WheelEvent) => {
+  //   e.preventDefault()
+  //   
+  //   // Check if mouse is over the grid
+  //   if (gridRef.current && gridRef.current.contains(e.target as Node)) {
+  //     const delta = e.deltaY
+  //     const zoomStep = 0.1
+  //     
+  //     if (delta < 0) {
+  //       // Zoom in
+  //       const newZoom = Math.min(zoom + zoomStep, 3)
+  //       setZoom(newZoom)
+  //       expandGrid(newZoom)
+  //     } else {
+  //       // Zoom out
+  //       const newZoom = Math.max(zoom - zoomStep, 0.25)
+  //       setZoom(newZoom)
+  //       expandGrid(newZoom)
+  //     }
+  //   }
+  // }, [zoom, expandGrid])
 
   // Handle touch/pinch zoom
   const handleTouchStart = useCallback((e: TouchEvent) => {
@@ -373,17 +379,17 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
   useEffect(() => {
     const gridElement = gridRef.current
     if (gridElement) {
-      gridElement.addEventListener('wheel', handleWheel, { passive: false })
+      // gridElement.addEventListener('wheel', handleWheel, { passive: false }) // DISABLED - too buggy
       gridElement.addEventListener('touchstart', handleTouchStart, { passive: true })
       gridElement.addEventListener('touchmove', handleTouchMove, { passive: false })
       
       return () => {
-        gridElement.removeEventListener('wheel', handleWheel)
+        // gridElement.removeEventListener('wheel', handleWheel) // DISABLED - too buggy
         gridElement.removeEventListener('touchstart', handleTouchStart)
         gridElement.removeEventListener('touchmove', handleTouchMove)
       }
     }
-  }, [handleWheel, handleTouchStart, handleTouchMove])
+  }, [handleTouchStart, handleTouchMove]) // Removed handleWheel from dependencies
 
   // Handle mouse pan
   const handleMouseDown = useCallback((e: MouseEvent) => {
@@ -484,7 +490,6 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
     
     // Handle module placement preview
     if (selectedModule && !wiringState.isWiring) {
-      console.log('Hover move with selected module:', selectedModule.module)
       // Place the module with its top-left corner at the target cell
       const centeredX = x
       const centeredY = y
@@ -510,11 +515,21 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
     if (!targetCell || !targetCell.moduleDefinition) return
     
     const module = targetCell.moduleDefinition
+    
+    // Special handling for resistor - no longer needed (handled in App component)
+    // if (module.module === 'Resistor' && targetCell.isClickable) {
+    //   // Resistance selection is now handled when resistor is selected from palette
+    //   return
+    // }
+    
+    // Execute other component behaviors
     if (module.behavior?.onClick) {
       console.log('Executing component behavior for:', module.module)
       executeComponentBehavior(module.behavior.onClick, componentId, cellIndex)
     }
   }, [gridData])
+
+  // Handle clicking on connectable cells for wiring - removed (handled by grid click handler)
 
   // Execute JavaScript behavior for components
   const executeComponentBehavior = useCallback((jsCode: string, componentId: string, cellIndex: number) => {
@@ -566,6 +581,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
     }
   }, [gridData, setGridData])
 
+
   // Check if a cell is a connection point
   const isConnectionPoint = useCallback((x: number, y: number) => {
     const cell = gridData[y]?.[x]
@@ -574,6 +590,47 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
     const moduleCell = cell.moduleDefinition.grid[cell.cellIndex || 0]
     return moduleCell?.isConnectable || false
   }, [gridData])
+
+  // Calculate electrical flow using the new system
+  const performElectricalCalculation = useCallback(() => {
+    // Prevent multiple simultaneous calculations
+    if (isCalculating) {
+      console.log('Electrical calculation already in progress, skipping')
+      return
+    }
+
+    setIsCalculating(true)
+
+    try {
+      // Use the new electrical system
+      const result = calculateElectricalFlow(gridData, wires)
+      
+      // Update states with results
+      setComponentStates(result.componentStates)
+      setWires(result.updatedWires as any)
+      setGridData(result.updatedGridData as any)
+      
+    } catch (error) {
+      console.error('Error in electrical calculation:', error)
+    } finally {
+      setIsCalculating(false)
+    }
+  }, [gridData, wires, isCalculating])
+
+  // Calculate electrical flow whenever grid or wires change (with debouncing)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      // Only calculate if we have components and wires
+      const hasComponents = gridData.some(row => row.some(cell => cell.occupied))
+      const hasWires = wires.length > 0
+      
+      if (hasComponents || hasWires) {
+        performElectricalCalculation()
+      }
+    }, 100) // 100ms debounce to prevent excessive calculations
+
+    return () => clearTimeout(timeoutId)
+  }, [gridData, wires, performElectricalCalculation])
 
   // Wire system functions
   const startWiring = useCallback((x: number, y: number) => {
@@ -733,7 +790,8 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
       isGroundable: moduleCell?.isGroundable || false,
       voltage: moduleCell?.voltage || 0,
       current: moduleCell?.current || 0,
-      isPowered: moduleCell?.isPowered || false
+      isPowered: moduleCell?.isPowered || false,
+      componentType: cell.componentType
     }
     
     console.log('Component properties:', props)
@@ -768,13 +826,17 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
       console.log('End isPowerable:', endProps.isPowerable, 'isGroundable:', endProps.isGroundable)
       
       // Check if trying to connect powerable to groundable
-      if (startProps.isPowerable && endProps.isGroundable) {
+      // Exception: Resistors can connect to both powerable and groundable components
+      const startIsResistor = startProps.componentType === 'Resistor'
+      const endIsResistor = endProps.componentType === 'Resistor'
+      
+      if (startProps.isPowerable && endProps.isGroundable && !startIsResistor && !endIsResistor) {
         console.log('❌ BLOCKED: Cannot connect powerable to groundable!')
         alert('❌ Cannot connect powerable terminal to groundable terminal!')
         cancelWiring()
         return
       }
-      if (startProps.isGroundable && endProps.isPowerable) {
+      if (startProps.isGroundable && endProps.isPowerable && !startIsResistor && !endIsResistor) {
         console.log('❌ BLOCKED: Cannot connect groundable to powerable!')
         alert('❌ Cannot connect groundable terminal to powerable terminal!')
         cancelWiring()
@@ -807,13 +869,17 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
       } else if (startProps) {
         // Component to wire connection - check for conflicts
         console.log('Component-to-wire connection detected')
-        if (startProps.isPowerable && endWire.isGroundable) {
+        
+        // Exception: Resistors can connect to both powerable and groundable wires
+        const startIsResistor = startProps.componentType === 'Resistor'
+        
+        if (startProps.isPowerable && endWire.isGroundable && !startIsResistor) {
           console.log('❌ BLOCKED: Cannot connect powerable component to groundable wire!')
           alert('❌ Cannot connect powerable component to groundable wire!')
           cancelWiring()
           return
         }
-        if (startProps.isGroundable && endWire.isPowerable) {
+        if (startProps.isGroundable && endWire.isPowerable && !startIsResistor) {
           console.log('❌ BLOCKED: Cannot connect groundable component to powerable wire!')
           alert('❌ Cannot connect groundable component to powerable wire!')
           cancelWiring()
@@ -826,13 +892,17 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
     if (startWire && endProps) {
       console.log('🔍 WIRE-TO-COMPONENT VALIDATION - startWire:', startWire, 'endProps:', endProps)
       console.log('Wire-to-component connection detected')
-      if (startWire.isPowerable && endProps.isGroundable) {
+      
+      // Exception: Resistors can connect to both powerable and groundable wires
+      const endIsResistor = endProps.componentType === 'Resistor'
+      
+      if (startWire.isPowerable && endProps.isGroundable && !endIsResistor) {
         console.log('❌ BLOCKED: Cannot connect powerable wire to groundable component!')
         alert('❌ Cannot connect powerable wire to groundable component!')
         cancelWiring()
         return
       }
-      if (startWire.isGroundable && endProps.isPowerable) {
+      if (startWire.isGroundable && endProps.isPowerable && !endIsResistor) {
         console.log('❌ BLOCKED: Cannot connect groundable wire to powerable component!')
         alert('❌ Cannot connect groundable wire to powerable component!')
         cancelWiring()
@@ -852,12 +922,41 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
       startWire?.voltage || 0,
       endWire?.voltage || 0
     )
-    const wireCurrent = Math.max(
-      startProps?.current || 0, 
-      endProps?.current || 0,
-      startWire?.current || 0,
-      endWire?.current || 0
+    // Use the circuit current from the electrical flow calculation
+    let wireCurrent = 0
+    
+    // Find the power source that's providing voltage to this wire
+    const maxVoltage = Math.max(
+      startProps?.voltage || 0, 
+      endProps?.voltage || 0,
+      startWire?.voltage || 0,
+      endWire?.voltage || 0
     )
+    
+    if (maxVoltage > 0) {
+      // Find the power source component that matches this voltage
+      const powerSourceId = (startProps as any)?.componentId || (endProps as any)?.componentId
+      if (powerSourceId && componentStates.has(powerSourceId)) {
+        const state = componentStates.get(powerSourceId)
+        wireCurrent = state?.outputCurrent || 0
+      } else {
+        // Fallback: look for any component with similar voltage
+        for (const [, state] of componentStates) {
+          if (state.outputVoltage > 0) {
+            wireCurrent = state.outputCurrent
+            break // Use the first component current found
+          }
+        }
+      }
+    } else {
+      // Fallback to component current if no voltage
+      wireCurrent = Math.max(
+        startProps?.current || 0, 
+        endProps?.current || 0,
+        startWire?.current || 0,
+        endWire?.current || 0
+      )
+    }
     const wireIsPowered = (startProps?.isPowered || false) || (endProps?.isPowered || false) ||
                          (startWire?.isPowered || false) || (endWire?.isPowered || false)
     const wireIsGrounded = !wireIsPowered && wireIsGroundable
@@ -867,6 +966,12 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
       isGroundable: wireIsGroundable,
       voltage: wireVoltage,
       current: wireCurrent,
+      maxVoltage,
+      powerSourceId: (startProps as any)?.componentId || (endProps as any)?.componentId,
+      componentStates: Array.from(componentStates.entries()),
+      hasResistor: startProps?.componentType === 'Resistor' || endProps?.componentType === 'Resistor',
+      totalResistance: startProps?.componentType === 'Resistor' ? (startProps as any).resistance : 
+                      endProps?.componentType === 'Resistor' ? (endProps as any).resistance : 0,
       isPowered: wireIsPowered,
       isGrounded: wireIsGrounded
     })
@@ -975,6 +1080,11 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
     const isConnection = isConnectionPoint(x, y)
     const wireAtPosition = getWirePassingThrough(x, y)
     
+    // Only log when clicking on occupied cells or when wiring
+    if (isConnection || wireAtPosition || wiringState.isWiring) {
+      console.log('🔍 GRID CLICK:', { x, y, isConnection, wireAtPosition, wiringState: wiringState.isWiring })
+    }
+    
     // Handle wiring mode
     if (wiringState.isWiring) {
       if (wiringState.currentConnection) {
@@ -1056,7 +1166,11 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
                     moduleDefinition: selectedModule,
                     isPowered: moduleCell?.isPowered || false,
                     cellIndex: cellIndex,
-                    isClickable: moduleCell?.isClickable || false
+                    isClickable: moduleCell?.isClickable || false,
+                    // Add resistance for resistors to all cells
+                    ...(selectedModule.module === 'Resistor' && (selectedModule as any).properties?.resistance ? {
+                      resistance: (selectedModule as any).properties.resistance
+                    } : {})
                   }
                 }
               }
@@ -1197,7 +1311,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
     
     const isSelected = selectedWire === wireId
     
-    console.log('Rendering line from', startX, startY, 'to', endX, endY, 'selected:', isSelected)
+    // Rendering wire segment
     
     return (
       <g key={segment.id}>
@@ -1225,7 +1339,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
           strokeLinecap="round"
           className="cursor-pointer"
           style={{
-            filter: segment.isPowered ? 'drop-shadow(0 0 4px #00ff00)' : 'none',
+            filter: segment.isPowered ? 'drop-shadow(0 0 6px #00ff00)' : 'none',
             pointerEvents: 'stroke'
           }}
           onClick={(e) => {
@@ -1235,6 +1349,37 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
             startWiring(segment.to.x, segment.to.y)
           }}
         />
+        
+        {/* Electrical flow animation for powered wires */}
+        {segment.isPowered && (
+          <defs>
+            <linearGradient id={`flow-${segment.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#00ff00" stopOpacity="0">
+                <animate attributeName="stop-opacity" values="0;1;0" dur="1s" repeatCount="indefinite" />
+              </stop>
+              <stop offset="50%" stopColor="#00ff00" stopOpacity="1">
+                <animate attributeName="stop-opacity" values="1;0.5;1" dur="1s" repeatCount="indefinite" />
+              </stop>
+              <stop offset="100%" stopColor="#00ff00" stopOpacity="0">
+                <animate attributeName="stop-opacity" values="0;1;0" dur="1s" repeatCount="indefinite" />
+              </stop>
+            </linearGradient>
+          </defs>
+        )}
+        
+        {/* Flow indicator line */}
+        {segment.isPowered && (
+          <line
+            x1={startX}
+            y1={startY}
+            x2={endX}
+            y2={endY}
+            stroke={`url(#flow-${segment.id})`}
+            strokeWidth={Math.max(1, (segment.thickness || 3) - 1)}
+            strokeLinecap="round"
+            className="pointer-events-none"
+          />
+        )}
       </g>
     )
   }
@@ -1283,18 +1428,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
 
 
 
-  // Get the module definition at a specific position
-  const getModuleAtPosition = (x: number, y: number) => {
-    const cell = gridData[y]?.[x]
-    if (cell?.occupied && cell.moduleDefinition) {
-      return {
-        definition: cell.moduleDefinition,
-        id: cell.componentId,
-        type: cell.componentType
-      }
-    }
-    return null
-  }
+  // Get the module definition at a specific position - removed (unused)
 
   // Find the origin position of a module by its ID
   const findModuleOrigin = (x: number, y: number, moduleId: string) => {
@@ -1315,14 +1449,12 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
             const isTopEdge = !topCell?.occupied || topCell.componentId !== moduleId
             
             if (isLeftEdge && isTopEdge) {
-              console.log(`Found module origin for ${moduleId} at (${checkX}, ${checkY})`)
               return { x: checkX, y: checkY }
             }
           }
         }
       }
     }
-    console.log(`No module origin found for ${moduleId} at (${x}, ${y})`)
     return null
   }
 
@@ -1500,12 +1632,12 @@ const GridCell = React.memo(({
   hasCollision, 
   isCellOccupied, 
   onComponentClick,
-  getModuleAtPosition,
   findModuleOrigin,
   getCellBackground,
   getCellCSS,
   getCellPin,
   getResistorColorBands,
+  componentStates,
   zoom
 }: {
   x: number
@@ -1515,12 +1647,12 @@ const GridCell = React.memo(({
   hasCollision: boolean
   isCellOccupied: (x: number, y: number) => boolean
   onComponentClick: (e: React.MouseEvent, componentId: string, cellIndex: number) => void
-  getModuleAtPosition: (x: number, y: number) => any
   findModuleOrigin: (x: number, y: number, moduleId: string) => any
   getCellBackground: (definition: any, x: number, y: number, totalCells: number) => string
   getCellCSS: (definition: any, x: number, y: number, totalCells: number) => React.CSSProperties
   getCellPin: (definition: any, x: number, y: number, totalCells: number) => string
   getResistorColorBands: (resistance: number) => string[]
+  componentStates: Map<string, ComponentState>
   zoom: number
 }) => {
   const occupied = isCellOccupied(x, y)
@@ -1545,12 +1677,22 @@ const GridCell = React.memo(({
         height: `${2.5 * zoom}vw`,
         minWidth: '10px',
         minHeight: '10px',
-        cursor: occupied && cell.isClickable ? 'pointer' : 'default'
+        cursor: occupied && (cell.isClickable || (cell.moduleDefinition?.grid[cell.cellIndex || 0]?.isConnectable)) ? 'pointer' : 'default'
       }}
       onClick={(e) => {
         if (occupied) {
+          // Check if this is a connectable cell (for wiring)
+          const moduleCell = cell.moduleDefinition?.grid[cell.cellIndex || 0]
+          const isConnectable = moduleCell?.isConnectable || false
+          
           if (cell.componentId && cell.cellIndex !== null && cell.cellIndex !== undefined && cell.isClickable) {
+            // Handle component-specific click behavior
+            console.log('🔍 Component click:', cell.componentType, cell.cellIndex)
             onComponentClick(e, cell.componentId, cell.cellIndex)
+          } else if (isConnectable) {
+            // Handle connectable cell click for wiring (don't stop propagation)
+            console.log('🔍 Connectable cell clicked:', cell.componentType, cell.cellIndex, 'allowing event to bubble')
+            // Don't prevent default or stop propagation - let it bubble to grid click handler
           }
         }
       }}
@@ -1617,14 +1759,127 @@ const GridCell = React.memo(({
             
             {/* Show resistance value for resistor components */}
             {cell.moduleDefinition.module === 'Resistor' && relativeX === 1 && relativeY === 0 && (() => {
-              const resistance = cell.moduleDefinition.properties?.resistance?.default || 1000
+              const resistance = cell?.resistance || cell.moduleDefinition.properties?.resistance?.default || 1000
               const displayValue = resistance >= 1000 ? `${resistance / 1000}kΩ` : `${resistance}Ω`
               
               return (
-                <div className="absolute bottom-0 left-0 right-0 flex justify-center">
-                  <span className="text-white text-xs font-bold bg-black bg-opacity-50 px-1 rounded">
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  {/* Color bands */}
+                  <div className="flex space-x-0.5 mb-1">
+                    {getResistorColorBands(resistance).map((color, index) => (
+                      <div
+                        key={index}
+                        className="w-1 h-3 border border-gray-600"
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                  {/* Resistance value */}
+                  <span className="text-white text-xs font-bold bg-black bg-opacity-70 px-1 rounded">
                     {displayValue}
                   </span>
+                </div>
+              )
+            })()}
+            
+            {/* Show LED state indicator */}
+            {cell.moduleDefinition.module === 'LED' && relativeX === 1 && relativeY === 0 && (() => {
+              // Get LED state from component states instead of cell voltage
+              const ledState = componentStates.get(cell.componentId || '')
+              const isOn = ledState?.isOn || false
+              const forwardVoltage = ledState?.forwardVoltage || cell.moduleDefinition.properties?.forwardVoltage?.default || 2.0
+              const ledColor = cell.moduleDefinition.properties?.color?.default || 'Red'
+              
+              // Debug log for LED state (only when LED is on)
+              if (cell.componentId && isOn) {
+                console.log(`💡 LED ${cell.componentId} is ON: ${forwardVoltage.toFixed(1)}V, ${(ledState?.outputCurrent || 0 * 1000).toFixed(0)}mA`)
+              }
+              
+              // Calculate LED brightness based on LED state
+              const getLEDColor = (color: string, isOn: boolean) => {
+                if (!isOn) return 'bg-gray-600 border-gray-400'
+                
+                const colorMap: {[key: string]: string} = {
+                  'Red': 'bg-red-400 border-red-500',
+                  'Green': 'bg-green-400 border-green-500', 
+                  'Blue': 'bg-blue-400 border-blue-500',
+                  'Yellow': 'bg-yellow-300 border-yellow-400',
+                  'White': 'bg-white border-gray-200',
+                  'Orange': 'bg-orange-400 border-orange-500'
+                }
+                
+                return colorMap[color] || 'bg-yellow-300 border-yellow-400'
+              }
+              
+              const getLEDBrightness = (isOn: boolean) => {
+                if (!isOn) return 'opacity-30'
+                return 'opacity-100'
+              }
+              
+              const ledClass = getLEDColor(ledColor, isOn)
+              const brightnessClass = getLEDBrightness(isOn)
+              const shouldGlow = isOn
+              
+              return (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  
+                  {/* Main LED */}
+                  <div className={`w-6 h-6 rounded-full border-3 ${ledClass} ${brightnessClass} ${
+                    shouldGlow ? 'animate-pulse shadow-lg' : ''
+                  }`} 
+                    style={{
+                      boxShadow: shouldGlow ? `0 0 15px ${ledColor.toLowerCase()}, 0 0 30px ${ledColor.toLowerCase()}, 0 0 45px ${ledColor.toLowerCase()}` : 'none',
+                      borderWidth: '3px'
+                    }}
+                  />
+                  
+                  {/* Voltage and Current indicators */}
+                  {isOn && (
+                    <>
+                      <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs text-green-600 font-mono bg-green-100 dark:bg-green-900 px-1 rounded">
+                        {forwardVoltage.toFixed(1)}V
+                      </div>
+                      <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 text-xs text-blue-600 font-mono bg-blue-100 dark:bg-blue-900 px-1 rounded">
+                        {ledState?.outputCurrent ? `${(ledState.outputCurrent * 1000).toFixed(0)}mA` : '0mA'}
+                      </div>
+                    </>
+                  )}
+                  
+                  {/* Brightness indicator rings */}
+                  {isOn && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className={`w-8 h-8 rounded-full border-2 ${ledClass} opacity-30 animate-ping`} />
+                      <div className={`w-10 h-10 rounded-full border ${ledClass} opacity-20 animate-ping`} style={{ animationDelay: '0.5s' }} />
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+            
+            {/* Show switch state indicator */}
+            {cell.moduleDefinition.module === 'Switch' && relativeX === 1 && relativeY === 0 && (() => {
+              const isOn = cell?.isOn || false
+              const isPowered = cell?.isPowered || false
+              
+              return (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className={`w-4 h-2 rounded-full border-2 transition-colors ${
+                    isOn 
+                      ? 'bg-green-500 border-green-600' 
+                      : 'bg-gray-500 border-gray-600'
+                  } ${isPowered && isOn ? 'shadow-lg shadow-green-500/50' : ''}`}>
+                    <div className={`w-1.5 h-1.5 rounded-full border transition-transform ${
+                      isOn 
+                        ? 'bg-white border-gray-300 translate-x-1' 
+                        : 'bg-gray-300 border-gray-400 translate-x-0'
+                    }`} />
+                  </div>
+                  {/* Power indicator */}
+                  {isPowered && (
+                    <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 text-xs text-green-600">
+                      ⚡
+                    </div>
+                  )}
                 </div>
               )
             })()}
@@ -1664,6 +1919,7 @@ const GridCell = React.memo(({
       {showTutorial && (
         <CircuitTutorial onClose={() => setShowTutorial(false)} />
       )}
+      
       {/* Wire Layer */}
       <svg 
         className="absolute inset-0 z-10"
@@ -1791,12 +2047,12 @@ const GridCell = React.memo(({
                     hasCollision={hasCollision}
                     isCellOccupied={isCellOccupied}
                     onComponentClick={handleComponentClick}
-                    getModuleAtPosition={getModuleAtPosition}
                     findModuleOrigin={findModuleOrigin}
                     getCellBackground={getCellBackground}
                     getCellCSS={getCellCSS}
                     getCellPin={getCellPin}
                     getResistorColorBands={getResistorColorBands}
+                    componentStates={componentStates}
                     zoom={zoom}
                   />
                 )
@@ -1857,9 +2113,9 @@ const GridCell = React.memo(({
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className={isOverCurrent ? 'text-red-600 font-bold' : ''}>{wire.current}A / {wire.maxCurrent}A</div>
-                      <div className={isOverPower ? 'text-red-600 font-bold' : ''}>{wire.power}W / {wire.maxPower}W</div>
-                      <div>{wire.voltage}V</div>
+                      <div className={isOverCurrent ? 'text-red-600 font-bold' : ''}>{wire.current.toFixed(3)}A / {wire.maxCurrent}A</div>
+                      <div className={isOverPower ? 'text-red-600 font-bold' : ''}>{wire.power.toFixed(3)}W / {wire.maxPower}W</div>
+                      <div>{wire.voltage.toFixed(3)}V</div>
                     </div>
                   </div>
                   

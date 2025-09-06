@@ -15,8 +15,12 @@
       "css": "border-top-left-radius: 6px; background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
       "background": "#059669",
       "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
       "type": "DIGITAL",
       "pin": "D13",
+      "voltage": 5,
+      "current": 0.04,
       "properties": {
         "function": "output",
         "voltage": "5V",
@@ -34,7 +38,7 @@
       "isPowerable": true,
       "isGroundable": false,
       "voltage": 3.3,
-      "current": 50,
+      "current": 0.05,
       "properties": {
         "voltage": "3.3V",
         "current": "50mA"
@@ -51,7 +55,7 @@
       "isPowerable": true,
       "isGroundable": false,
       "voltage": 5,
-      "current": 500,
+      "current": 0.5,
       "properties": {
         "voltage": "5V",
         "current": "500mA"
@@ -79,8 +83,12 @@
       "css": "border-bottom-left-radius: 6px; background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
       "background": "#059669",
       "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
       "type": "DIGITAL",
       "pin": "D12",
+      "voltage": 5,
+      "current": 0.04,
       "properties": {
         "function": "input",
         "voltage": "5V",
@@ -93,8 +101,12 @@
       "css": "background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
       "background": "#059669",
       "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
       "type": "ANALOG",
       "pin": "A0",
+      "voltage": 5,
+      "current": 0.04,
       "properties": {
         "function": "input",
         "voltage": "5V",
@@ -107,8 +119,12 @@
       "css": "background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
       "background": "#059669",
       "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
       "type": "ANALOG",
       "pin": "A1",
+      "voltage": 5,
+      "current": 0.04,
       "properties": {
         "function": "input",
         "voltage": "5V",
@@ -121,8 +137,12 @@
       "css": "border-bottom-right-radius: 6px; background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
       "background": "#059669",
       "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
       "type": "ANALOG",
       "pin": "A2",
+      "voltage": 5,
+      "current": 0.04,
       "properties": {
         "function": "input",
         "voltage": "5V",

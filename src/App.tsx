@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { 
   Zap, 
   Plus,
@@ -12,6 +12,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { ThemeToggle } from './components/ThemeToggle'
 import { ProjectGrid } from './components/ProjectGrid'
 import { ComponentPalette } from './components/ComponentPalette'
+import { ResistanceSelector } from './components/ResistanceSelector'
 import { ModuleDefinition } from './modules/types'
 
 function App() {
@@ -26,10 +27,35 @@ function AppContent() {
   const [currentView, setCurrentView] = useState<'projects' | 'project'>('projects')
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [selectedModule, setSelectedModule] = useState<ModuleDefinition | null>(null)
+  const [showResistanceSelector, setShowResistanceSelector] = useState(false)
+  const [selectedResistance, setSelectedResistance] = useState(1000)
   
   const handleModuleSelect = (module: ModuleDefinition | null) => {
     console.log('App: Module selected:', module)
     setSelectedModule(module)
+    
+    // Show resistance selector if resistor is selected
+    if (module?.module === 'Resistor') {
+      setShowResistanceSelector(true)
+    } else {
+      setShowResistanceSelector(false)
+    }
+  }
+  
+  const handleResistanceSelect = (resistance: number) => {
+    setSelectedResistance(resistance)
+    setShowResistanceSelector(false)
+    // Update the selected module with the chosen resistance
+    if (selectedModule?.module === 'Resistor') {
+      const updatedModule = {
+        ...selectedModule,
+        properties: {
+          ...(selectedModule as any).properties,
+          resistance: resistance
+        }
+      }
+      setSelectedModule(updatedModule)
+    }
   }
 
   // Sample projects data
@@ -121,6 +147,22 @@ function AppContent() {
             />
           </div>
         </div>
+        
+        {/* Resistance Selector Modal */}
+        {showResistanceSelector && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-dark-surface rounded-lg p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4">
+                Select Resistor Value
+              </h3>
+              <ResistanceSelector
+                currentResistance={selectedResistance}
+                onResistanceChange={handleResistanceSelect}
+                onClose={() => setShowResistanceSelector(false)}
+              />
+            </div>
+          </div>
+        )}
       </div>
     )
   }

@@ -1,18 +1,18 @@
 {
   "module": "LED",
-  "gridX": 2,
+  "gridX": 3,
   "gridY": 1,
   "background": "#EF4444",
   "css": "border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);",
   "category": "output",
-  "description": "Light Emitting Diode with positive and negative terminals",
+  "description": "Light Emitting Diode with positive terminal, LED body, and negative terminal",
   "manufacturer": "Generic",
   "grid": [
     {
       "x": 0,
       "y": 0,
-      "css": "border-radius: 8px 0 0 8px; background: radial-gradient(circle, #FEF3C7 0%, #EF4444 50%, #DC2626 100%); color: white; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; border: 2px solid #DC2626; border-right: none;",
-      "background": "#EF4444",
+      "css": "border-radius: 8px 0 0 8px; background: #6B7280; color: white; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; border: 2px solid #4B5563; border-right: none;",
+      "background": "#6B7280",
       "isConnectable": true,
       "isPowerable": true,
       "isGroundable": false,
@@ -32,8 +32,31 @@
     {
       "x": 1,
       "y": 0,
-      "css": "border-radius: 0 8px 8px 0; background: radial-gradient(circle, #FEF3C7 0%, #EF4444 50%, #DC2626 100%); color: white; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; border: 2px solid #DC2626; border-left: none;",
+      "css": "border-radius: 0; background: radial-gradient(circle, #FEF3C7 0%, #EF4444 50%, #DC2626 100%); color: white; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; border: 2px solid #DC2626; border-left: none; border-right: none;",
       "background": "#EF4444",
+      "isConnectable": false,
+      "isPowerable": false,
+      "isGroundable": false,
+      "type": "LED_BODY",
+      "pin": "LED",
+      "voltage": 2.0,
+      "current": 0.02,
+      "isPowered": false,
+      "properties": {
+        "voltage": "2.0V",
+        "current": "20mA",
+        "color": "Red",
+        "brightness": "High",
+        "forward_voltage": "1.8-2.2V",
+        "terminal": "body",
+        "state": "off"
+      }
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "css": "border-radius: 0 8px 8px 0; background: #6B7280; color: white; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; border: 2px solid #4B5563; border-left: none;",
+      "background": "#6B7280",
       "isConnectable": true,
       "isPowerable": false,
       "isGroundable": true,
@@ -76,25 +99,6 @@
     }
   },
   "behavior": {
-    "onClick": `
-      // Toggle LED color
-      const colors = ['Red', 'Green', 'Blue', 'Yellow', 'White'];
-      const currentColor = context.getCellByPosition(0, 0).properties?.color || 'Red';
-      const currentIndex = colors.indexOf(currentColor);
-      const nextIndex = (currentIndex + 1) % colors.length;
-      const newColor = colors[nextIndex];
-      
-      // Update LED color properties
-      const colorMap = {
-        'Red': { voltage: 2.0, background: '#EF4444', border: '#DC2626' },
-        'Green': { voltage: 2.2, background: '#10B981', border: '#059669' },
-        'Blue': { voltage: 3.3, background: '#3B82F6', border: '#2563EB' },
-        'Yellow': { voltage: 2.1, background: '#F59E0B', border: '#D97706' },
-        'White': { voltage: 3.3, background: '#F3F4F6', border: '#9CA3AF' }
-      };
-      
-      const colorProps = colorMap[newColor];
-      console.log('LED color changed to:', newColor, 'Voltage:', colorProps.voltage + 'V');
-    `
+    "onClick": "// Toggle LED color and state\nconst colors = ['Red', 'Green', 'Blue', 'Yellow', 'White'];\nconst currentColor = context.getCellByPosition(1, 0).properties?.color || 'Red';\nconst currentIndex = colors.indexOf(currentColor);\nconst nextIndex = (currentIndex + 1) % colors.length;\nconst newColor = colors[nextIndex];\n\n// Update LED color properties\nconst colorMap = {\n  'Red': { voltage: 2.0, background: '#EF4444', border: '#DC2626', offBackground: '#7F1D1D' },\n  'Green': { voltage: 2.2, background: '#10B981', border: '#059669', offBackground: '#064E3B' },\n  'Blue': { voltage: 3.3, background: '#3B82F6', border: '#2563EB', offBackground: '#1E3A8A' },\n  'Yellow': { voltage: 2.1, background: '#F59E0B', border: '#D97706', offBackground: '#92400E' },\n  'White': { voltage: 3.3, background: '#F3F4F6', border: '#9CA3AF', offBackground: '#6B7280' }\n};\n\nconst colorProps = colorMap[newColor];\n\n// Update the LED body cell (middle cell)\nconst ledBody = context.getCellByPosition(1, 0);\nif (ledBody) {\n  // Toggle between on and off states\n  const isCurrentlyOn = ledBody.isPowered || false;\n  const newState = !isCurrentlyOn;\n  \n  // Update power state\n  context.updateCellPower(1, 0, newState);\n  \n  console.log('LED color changed to:', newColor, 'Voltage:', colorProps.voltage + 'V', 'State:', newState ? 'ON' : 'OFF');\n}"
   }
 }
