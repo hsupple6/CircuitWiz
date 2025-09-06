@@ -1,6 +1,9 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { ModuleDefinition, WireConnection, WireSegment, WiringState } from '../modules/types'
 import { useTheme } from '../contexts/ThemeContext'
+import { ElectricalValidator } from './ElectricalValidator'
+import { ElectricalNotifications } from './ElectricalNotifications'
+import { CircuitTutorial } from './CircuitTutorial'
 
 interface Project {
   id: number
@@ -76,6 +79,8 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
   const [editingWireGauge, setEditingWireGauge] = useState<string | null>(null)
   const [selectedWire, setSelectedWire] = useState<string | null>(null)
   const [snapToGrid, setSnapToGrid] = useState(true)
+  const [electricalValidations, setElectricalValidations] = useState<any[]>([])
+  const [showTutorial, setShowTutorial] = useState(false)
   
   // Wire gauge specifications (AWG - American Wire Gauge)
   const wireGauges = [
@@ -1642,6 +1647,23 @@ const GridCell = React.memo(({
       onClick={handleGridClick}
       onMouseLeave={handleMouseLeave}
     >
+      {/* Electrical Validator */}
+      <ElectricalValidator
+        gridData={gridData}
+        wires={wires}
+        onValidationUpdate={setElectricalValidations}
+      />
+      
+      {/* Electrical Notifications */}
+      <ElectricalNotifications
+        validations={electricalValidations}
+        onDismiss={(id) => setElectricalValidations(prev => prev.filter(v => v.id !== id))}
+      />
+      
+      {/* Tutorial Modal */}
+      {showTutorial && (
+        <CircuitTutorial onClose={() => setShowTutorial(false)} />
+      )}
       {/* Wire Layer */}
       <svg 
         className="absolute inset-0 z-10"
@@ -1991,6 +2013,12 @@ const GridCell = React.memo(({
                 }`}
               >
                 Snap: {snapToGrid ? 'ON' : 'OFF'}
+              </button>
+              <button
+                onClick={() => setShowTutorial(true)}
+                className="text-xs px-2 py-1 rounded bg-green-500 text-white hover:bg-green-600"
+              >
+                📚 Tutorial
               </button>
             </div>
             {selectedModule && (

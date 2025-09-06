@@ -125,21 +125,6 @@
     }
   },
   "behavior": {
-    "onClick": `
-      // Toggle resistance value selection
-      const currentResistance = context.getCellByPosition(1, 0).resistance || 1000;
-      const commonValues = [10, 22, 47, 100, 220, 470, 1000, 2200, 4700, 10000, 22000, 47000, 100000, 220000, 470000, 1000000, 2200000, 4700000, 10000000];
-      const currentIndex = commonValues.indexOf(currentResistance);
-      const nextIndex = (currentIndex + 1) % commonValues.length;
-      const newResistance = commonValues[nextIndex];
-      
-      // Update resistance for all cells in the resistor
-      for (let dx = 0; dx < 3; dx++) {
-        context.updateCellPower(dx, 0, false); // Reset power state
-        // Note: We can't directly update resistance here, but the visual will update
-      }
-      
-      console.log('Resistor resistance changed to:', newResistance, 'Ω');
-    `
+    "onClick": "// Toggle resistance value selection\nconst currentResistance = context.getCellByPosition(1, 0).resistance || 1000;\nconst commonValues = [10, 22, 47, 100, 220, 470, 1000, 2200, 4700, 10000, 22000, 47000, 100000, 220000, 470000, 1000000, 2200000, 4700000, 10000000];\nconst currentIndex = commonValues.indexOf(currentResistance);\nconst nextIndex = (currentIndex + 1) % commonValues.length;\nconst newResistance = commonValues[nextIndex];\n\n// Update resistance for all cells in the resistor\nfor (let dx = 0; dx < 3; dx++) {\n  context.updateCellPower(dx, 0, false); // Reset power state\n  // Note: We can't directly update resistance here, but the visual will update\n}\n\nconsole.log('Resistor resistance changed to:', newResistance, 'Ω');"
   }
 }

@@ -1,28 +1,100 @@
 {
   "module": "LED",
-  "gridX": 1,
+  "gridX": 2,
   "gridY": 1,
   "background": "#EF4444",
-  "css": "border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2);",
+  "css": "border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);",
   "category": "output",
-  "description": "Light Emitting Diode",
+  "description": "Light Emitting Diode with positive and negative terminals",
   "manufacturer": "Generic",
   "grid": [
     {
       "x": 0,
       "y": 0,
-      "css": "border-radius: 50%; background: radial-gradient(circle, #FEF3C7 0%, #EF4444 50%, #DC2626 100%); color: white; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center;",
+      "css": "border-radius: 8px 0 0 8px; background: radial-gradient(circle, #FEF3C7 0%, #EF4444 50%, #DC2626 100%); color: white; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; border: 2px solid #DC2626; border-right: none;",
       "background": "#EF4444",
       "isConnectable": true,
-      "type": "LED",
-      "pin": "LED",
+      "isPowerable": true,
+      "isGroundable": false,
+      "type": "LED_POSITIVE",
+      "pin": "+",
+      "voltage": 2.0,
+      "current": 0.02,
       "properties": {
         "voltage": "2.0V",
         "current": "20mA",
         "color": "Red",
         "brightness": "High",
-        "forward_voltage": "1.8-2.2V"
+        "forward_voltage": "1.8-2.2V",
+        "terminal": "positive"
+      }
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "css": "border-radius: 0 8px 8px 0; background: radial-gradient(circle, #FEF3C7 0%, #EF4444 50%, #DC2626 100%); color: white; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; border: 2px solid #DC2626; border-left: none;",
+      "background": "#EF4444",
+      "isConnectable": true,
+      "isPowerable": false,
+      "isGroundable": true,
+      "type": "LED_NEGATIVE",
+      "pin": "-",
+      "voltage": 0,
+      "current": 0.02,
+      "properties": {
+        "voltage": "0V",
+        "current": "20mA",
+        "color": "Red",
+        "brightness": "High",
+        "forward_voltage": "1.8-2.2V",
+        "terminal": "negative"
       }
     }
-  ]
+  ],
+  "properties": {
+    "color": {
+      "type": "select",
+      "default": "Red",
+      "options": ["Red", "Green", "Blue", "Yellow", "White"],
+      "description": "LED color"
+    },
+    "forwardVoltage": {
+      "type": "number",
+      "default": 2.0,
+      "min": 1.5,
+      "max": 4.0,
+      "unit": "V",
+      "description": "Forward voltage drop"
+    },
+    "maxCurrent": {
+      "type": "number",
+      "default": 0.02,
+      "min": 0.005,
+      "max": 0.1,
+      "unit": "A",
+      "description": "Maximum forward current"
+    }
+  },
+  "behavior": {
+    "onClick": `
+      // Toggle LED color
+      const colors = ['Red', 'Green', 'Blue', 'Yellow', 'White'];
+      const currentColor = context.getCellByPosition(0, 0).properties?.color || 'Red';
+      const currentIndex = colors.indexOf(currentColor);
+      const nextIndex = (currentIndex + 1) % colors.length;
+      const newColor = colors[nextIndex];
+      
+      // Update LED color properties
+      const colorMap = {
+        'Red': { voltage: 2.0, background: '#EF4444', border: '#DC2626' },
+        'Green': { voltage: 2.2, background: '#10B981', border: '#059669' },
+        'Blue': { voltage: 3.3, background: '#3B82F6', border: '#2563EB' },
+        'Yellow': { voltage: 2.1, background: '#F59E0B', border: '#D97706' },
+        'White': { voltage: 3.3, background: '#F3F4F6', border: '#9CA3AF' }
+      };
+      
+      const colorProps = colorMap[newColor];
+      console.log('LED color changed to:', newColor, 'Voltage:', colorProps.voltage + 'V');
+    `
+  }
 }

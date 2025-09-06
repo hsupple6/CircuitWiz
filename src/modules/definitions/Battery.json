@@ -14,13 +14,18 @@
       "css": "border-top-left-radius: 4px; background: linear-gradient(135deg, #DC2626 0%, #EF4444 100%); color: white; font-weight: bold; text-align: center;",
       "background": "#DC2626",
       "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
       "type": "POSITIVE",
       "pin": "+",
+      "voltage": 9.0,
+      "current": 0,
       "properties": {
-        "voltage": "3.7V",
-        "current": "2000",
+        "voltage": "9.0V",
+        "current": "0A",
         "capacity": "2000mAh",
-        "chemistry": "Li-ion"
+        "chemistry": "Li-ion",
+        "terminal": "positive"
       }
     },
     {
@@ -49,11 +54,17 @@
       "css": "border-bottom-right-radius: 4px; background: linear-gradient(135deg, #7C3AED 0%, #8B5CF6 100%); color: white; font-weight: bold; text-align: center;",
       "background": "#7C3AED",
       "isConnectable": true,
+      "isPowerable": false,
+      "isGroundable": true,
       "type": "NEGATIVE",
       "pin": "-",
+      "voltage": 0,
+      "current": 0,
       "properties": {
         "voltage": "0V",
-        "ground": true
+        "current": "0A",
+        "ground": true,
+        "terminal": "negative"
       }
     }
   ]
