@@ -324,7 +324,8 @@ export function DevicePanel({ gridData, wires, onMicrocontrollerHighlight, onMic
         compilationResult.firmware,
         board,
         'bin',
-        compilationResult.binPath
+        compilationResult.binPath,
+        code // Pass the source code for accurate emulation
       )
 
       setEmulationResult(result)

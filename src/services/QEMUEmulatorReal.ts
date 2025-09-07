@@ -39,7 +39,8 @@ export class QEMUEmulatorReal {
     firmware: string,
     board: string = 'esp32:esp32:esp32',
     firmwareType: 'bin' | 'elf' = 'bin',
-    binPath?: string
+    binPath?: string,
+    sourceCode?: string
   ): Promise<EmulationResult> {
     try {
       const response = await fetch(`${this.baseUrl}/api/emulate`, {
@@ -51,7 +52,8 @@ export class QEMUEmulatorReal {
           firmware,
           board,
           firmwareType,
-          binPath
+          binPath,
+          sourceCode
         })
       })
 
