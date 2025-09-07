@@ -11,6 +11,7 @@
 
 // Import existing types from the modules
 import { WireConnection } from '../modules/types'
+import { logger } from '../services/Logger'
 
 export interface ComponentState {
   componentId: string
@@ -28,6 +29,21 @@ export interface CircuitPathway {
   type: string
   position: { x: number; y: number }
   properties: any
+}
+
+export interface ParallelBranch {
+  id: string
+  components: CircuitPathway[]
+  totalResistance: number
+  current: number
+  voltage: number
+}
+
+export interface CircuitNode {
+  id: string
+  position: { x: number; y: number }
+  connections: string[]
+  isJunction: boolean
 }
 
 export interface PowerSource {
@@ -57,7 +73,7 @@ export interface GridCell {
  * and returns output voltage/current with additional properties
  */
 export const componentCalculators = {
-  battery: (component: any, inputVoltage: number, inputCurrent: number) => {
+  battery: (component: any, _inputVoltage: number, inputCurrent: number) => {
     return {
       outputVoltage: component.voltage,
       outputCurrent: inputCurrent,
@@ -86,9 +102,9 @@ export const componentCalculators = {
     // LED power is forward voltage × current (this is the power the LED consumes)
     const ledPower = forwardVoltage * inputCurrent
     
-    // Debug logging for LED calculations (only when LED state changes)
+    // Log LED state changes
     if (isOn) {
-      console.log(`💡 LED ON: ${inputVoltage.toFixed(1)}V → ${outputVoltage.toFixed(1)}V, ${(inputCurrent * 1000).toFixed(0)}mA`)
+      logger.componentState('LED', component.id || 'unknown', inputVoltage, inputCurrent, 'on')
     }
     
     return {
@@ -101,7 +117,7 @@ export const componentCalculators = {
     }
   },
 
-  powersupply: (component: any, inputVoltage: number, inputCurrent: number) => {
+  powersupply: (component: any, _inputVoltage: number, inputCurrent: number) => {
     return {
       outputVoltage: component.voltage,
       outputCurrent: inputCurrent,
@@ -158,6 +174,123 @@ export function buildConnectionMap(wires: WireConnection[]): Map<string, Set<str
   })
   
   return connections
+}
+
+/**
+ * Find circuit nodes (junctions where multiple wires connect)
+ */
+export function findCircuitNodes(
+  gridData: GridCell[][],
+  connections: Map<string, Set<string>>
+): Map<string, CircuitNode> {
+  const nodes = new Map<string, CircuitNode>()
+  
+  connections.forEach((connectedPositions, positionKey) => {
+    const [x, y] = positionKey.split(',').map(Number)
+    const cell = gridData[y]?.[x]
+    
+    // A node is a junction if it has more than 2 connections
+    const isJunction = connectedPositions.size > 2
+    
+    // Or if it's a component with multiple connection points
+    const isComponentJunction = cell?.occupied && cell.componentId && connectedPositions.size >= 2
+    
+    if (isJunction || isComponentJunction) {
+      nodes.set(positionKey, {
+        id: positionKey,
+        position: { x, y },
+        connections: Array.from(connectedPositions),
+        isJunction: true
+      })
+    }
+  })
+  
+  return nodes
+}
+
+/**
+ * Simple parallel resistor detection - find resistors connected to the same junction points
+ */
+export function findParallelResistors(
+  gridData: GridCell[][],
+  connections: Map<string, Set<string>>
+): ParallelBranch[] {
+  const parallelBranches: ParallelBranch[] = []
+  const processedResistors = new Set<string>()
+  
+  // Find all resistors in the grid
+  const resistors: Array<{id: string, position: {x: number, y: number}, resistance: number}> = []
+  
+  gridData.forEach((row, y) => {
+    if (!row) return
+    row.forEach((cell, x) => {
+      if (cell?.occupied && cell.componentId && cell.componentType === 'Resistor') {
+        resistors.push({
+          id: cell.componentId,
+          position: { x, y },
+          resistance: cell.resistance || 1000
+        })
+      }
+    })
+  })
+  
+  logger.debug(`Found ${resistors.length} resistors in grid`)
+  
+  // Group resistors that share connection points (indicating parallel connection)
+  for (let i = 0; i < resistors.length; i++) {
+    if (processedResistors.has(resistors[i].id)) continue
+    
+    const resistor1 = resistors[i]
+    const resistor1Pos = `${resistor1.position.x},${resistor1.position.y}`
+    const resistor1Connections = connections.get(resistor1Pos) || new Set()
+    
+    // Find other resistors that share connection points with this one
+    const parallelGroup = [resistor1]
+    processedResistors.add(resistor1.id)
+    
+    for (let j = i + 1; j < resistors.length; j++) {
+      if (processedResistors.has(resistors[j].id)) continue
+      
+      const resistor2 = resistors[j]
+      const resistor2Pos = `${resistor2.position.x},${resistor2.position.y}`
+      const resistor2Connections = connections.get(resistor2Pos) || new Set()
+      
+      // Check if these resistors share any connection points
+      const sharedConnections = new Set([...resistor1Connections].filter(pos => resistor2Connections.has(pos)))
+      
+      if (sharedConnections.size >= 2) {
+        // These resistors are connected in parallel
+        parallelGroup.push(resistor2)
+        processedResistors.add(resistor2.id)
+        logger.debug(`Found parallel resistors: ${resistor1.id} and ${resistor2.id} share ${sharedConnections.size} connection points`)
+      }
+    }
+    
+    // If we found multiple resistors in parallel, create a parallel branch
+    if (parallelGroup.length > 1) {
+      const branch: ParallelBranch = {
+        id: `parallel-${parallelGroup.map(r => r.id).join('-')}`,
+        components: parallelGroup.map(resistor => ({
+          id: resistor.id,
+          type: 'Resistor',
+          position: resistor.position,
+          properties: {
+            resistance: resistor.resistance,
+            voltage: 0,
+            current: 0
+          }
+        })),
+        totalResistance: 0,
+        current: 0,
+        voltage: 0
+      }
+      
+      parallelBranches.push(branch)
+      logger.parallelBranch(parallelGroup.length, calculateParallelResistance(parallelGroup.map(r => r.resistance)))
+    }
+  }
+  
+  return parallelBranches
 }
 
 /**
@@ -265,24 +398,38 @@ export function findCircuitBranches(
   }
   
 /**
- * Calculate circuit parameters for mixed load systems
+ * Calculate parallel resistance using the formula: 1/R_total = 1/R1 + 1/R2 + ... + 1/Rn
  */
-export function calculateCircuitParameters(pathway: CircuitPathway[]): {
+export function calculateParallelResistance(resistances: number[]): number {
+  if (resistances.length === 0) return 0
+  if (resistances.length === 1) return resistances[0]
+  
+  const reciprocalSum = resistances.reduce((sum, r) => sum + (1 / r), 0)
+  return reciprocalSum > 0 ? 1 / reciprocalSum : 0
+}
+
+/**
+ * Calculate circuit parameters for mixed load systems (including parallel circuits)
+ */
+export function calculateCircuitParameters(pathway: CircuitPathway[], parallelBranches: ParallelBranch[] = []): {
   totalResistance: number
   totalVoltageDrop: number
   ledCurrentRequirement: number
   motorCurrentRequirement: number
   totalLoadCurrent: number
+  parallelResistance: number
 } {
-  let totalResistance = 0
+  let seriesResistance = 0
   let totalVoltageDrop = 0
   let ledCurrentRequirement = 0.02 // Default 20mA
   let motorCurrentRequirement = 0 // Default 0A
   let totalLoadCurrent = 0
+  let parallelResistance = 0
   
+  // Calculate series components
   pathway.forEach(comp => {
     if (comp.type === 'Resistor') {
-      totalResistance += comp.properties.resistance || 1000
+      seriesResistance += comp.properties.resistance || 1000
     } else if (comp.type === 'LED') {
       // LED doesn't add significant resistance, just voltage drop
       totalVoltageDrop += comp.properties.forwardVoltage || comp.properties.voltage || 2.0
@@ -297,13 +444,66 @@ export function calculateCircuitParameters(pathway: CircuitPathway[]): {
     }
   })
   
+  // Calculate parallel branches
+  if (parallelBranches.length > 0) {
+    const parallelResistances: number[] = []
+    
+    parallelBranches.forEach(branch => {
+      let branchResistance = 0
+      branch.components.forEach(comp => {
+        if (comp.type === 'Resistor') {
+          branchResistance += comp.properties.resistance || 1000
+        }
+      })
+      
+      if (branchResistance > 0) {
+        parallelResistances.push(branchResistance)
+      }
+    })
+    
+    parallelResistance = calculateParallelResistance(parallelResistances)
+  }
+  
+  // Total resistance = series resistance + parallel resistance
+  const totalResistance = seriesResistance + parallelResistance
+  
   return { 
     totalResistance, 
     totalVoltageDrop, 
     ledCurrentRequirement,
     motorCurrentRequirement,
-    totalLoadCurrent 
+    totalLoadCurrent,
+    parallelResistance
   }
+}
+
+/**
+ * Calculate current distribution in parallel branches
+ */
+export function calculateParallelBranchCurrents(
+  parallelBranches: ParallelBranch[],
+  totalVoltage: number
+): ParallelBranch[] {
+  return parallelBranches.map(branch => {
+    let branchResistance = 0
+    
+    // Calculate total resistance for this branch
+    branch.components.forEach(comp => {
+      if (comp.type === 'Resistor') {
+        branchResistance += comp.properties.resistance || 1000
+      }
+    })
+    
+    // Calculate current through this branch using Ohm's Law: I = V / R
+    const branchCurrent = branchResistance > 0 ? totalVoltage / branchResistance : 0
+    
+    return {
+      ...branch,
+      totalResistance: branchResistance,
+      current: branchCurrent,
+      voltage: totalVoltage
+    }
+  })
 }
 
 /**
@@ -312,14 +512,15 @@ export function calculateCircuitParameters(pathway: CircuitPathway[]): {
 export function processCircuitPathway(
   pathway: CircuitPathway[],
   sourceVoltage: number,
-  maxCurrent: number
+  maxCurrent: number,
+  parallelBranches: ParallelBranch[] = []
 ): Map<string, ComponentState> {
   const componentStates = new Map<string, ComponentState>()
   
   if (pathway.length === 0) return componentStates
   
-  // Calculate circuit current based on LED requirements
-  const { totalResistance, totalVoltageDrop, ledCurrentRequirement } = calculateCircuitParameters(pathway)
+  // Calculate circuit current including parallel branches
+  const { totalResistance, totalVoltageDrop, ledCurrentRequirement } = calculateCircuitParameters(pathway, parallelBranches)
   const effectiveVoltage = sourceVoltage - totalVoltageDrop
   
   // Calculate what current the resistor would allow
@@ -329,12 +530,15 @@ export function processCircuitPathway(
   // Use the smaller of: LED requirement, resistor limit, or power source limit
   const circuitCurrent = Math.min(ledCurrentRequirement, resistorCurrent, maxCurrent)
   
-  console.log(`⚡ Circuit analysis:`)
-  console.log(`   LED wants: ${(ledCurrentRequirement * 1000).toFixed(1)}mA`)
-  console.log(`   Resistor allows: ${(resistorCurrent * 1000).toFixed(1)}mA`)
-  console.log(`   Power source limit: ${(maxCurrent * 1000).toFixed(1)}mA`)
-  console.log(`   Final current: ${(circuitCurrent * 1000).toFixed(1)}mA`)
-  console.log(`   Total R: ${totalResistance}Ω, V_drop: ${totalVoltageDrop}V`)
+  logger.circuitAnalysis(effectiveVoltage, circuitCurrent, totalResistance)
+  
+  // Calculate parallel branch currents
+  const updatedParallelBranches = calculateParallelBranchCurrents(parallelBranches, effectiveVoltage)
+  
+  // Log parallel branch information
+  if (updatedParallelBranches.length > 0) {
+    logger.info(`Parallel branches detected: ${updatedParallelBranches.length} branches`)
+  }
   
   // Process each component in the pathway
   let currentVoltage = sourceVoltage
@@ -353,12 +557,33 @@ export function processCircuitPathway(
         position: comp.position
       })
       
-      console.log(`  ${comp.type} (${comp.id}): ${currentVoltage.toFixed(2)}V -> ${result.outputVoltage.toFixed(2)}V, ${(currentCurrent * 1000).toFixed(1)}mA`)
+      logger.componentState(comp.type, comp.id, currentVoltage, currentCurrent, result.status)
       
       // Update for next component
       currentVoltage = result.outputVoltage
       currentCurrent = result.outputCurrent
     }
+  })
+  
+  // Process parallel branch components
+  updatedParallelBranches.forEach((branch) => {
+    branch.components.forEach((comp) => {
+      const calculator = componentCalculators[comp.type.toLowerCase() as keyof typeof componentCalculators]
+      if (calculator) {
+        // Use the branch voltage and current for parallel components
+        const result = calculator(comp.properties, branch.voltage, branch.current)
+        
+        // Store component state
+        componentStates.set(comp.id, {
+          ...result,
+          componentId: comp.id,
+          componentType: comp.type,
+          position: comp.position
+        })
+        
+        logger.componentState(comp.type, comp.id, branch.voltage, branch.current, result.status)
+      }
+    })
   })
   
   return componentStates
@@ -421,8 +646,7 @@ export function updateWireStates(
       wirePower = wireVoltage * wireCurrent
       isPowered = wireVoltage > 0
       
-      console.log(`🔌 Wire ${wire.id}: Connected to ${connectedStates.length} components`)
-      console.log(`   Voltage: ${wireVoltage.toFixed(2)}V, Current: ${(wireCurrent * 1000).toFixed(1)}mA (SERIES)`)
+      logger.debug(`Wire ${wire.id}: Connected to ${connectedStates.length} components, ${wireVoltage.toFixed(2)}V, ${(wireCurrent * 1000).toFixed(1)}mA`)
     }
     
     return {
@@ -487,20 +711,25 @@ export function calculateElectricalFlow(
 } {
   const powerSources = findPowerSources(gridData)
   const connections = buildConnectionMap(wires)
+  const nodes = findCircuitNodes(gridData, connections)
   
-  // Debug: Show connection count only
-  console.log(`🔗 Found ${connections.size} wire connection points`)
+  // Log connection information
+  logger.debug(`Found ${connections.size} wire connection points and ${nodes.size} circuit nodes`)
   
   const allComponentStates = new Map<string, ComponentState>()
   let globalCircuitCurrent = 0
 
-  powerSources.forEach((source, sourceIndex) => {
+  // Find parallel resistors first
+  const parallelBranches = findParallelResistors(gridData, connections)
+  
+  powerSources.forEach((source, _sourceIndex) => {
     const branches = findCircuitBranches(source.position, gridData, connections)
-    console.log(`🔌 Power source ${source.id}: Found ${branches.length} branches`)
+    logger.info(`Power source ${source.id}: Found ${branches.length} branches`)
 
-    branches.forEach((branch, branchIndex) => {
-      console.log(`📡 Branch ${branchIndex + 1}: ${branch.length} components - ${branch.map(c => c.type).join(' → ')}`)
-      const branchStates = processBranch(branch, source.voltage, source.maxCurrent)
+    branches.forEach((branch) => {
+      logger.pathwayDetected(branch.map(c => c.id), source.voltage, 0) // Current will be calculated later
+      
+      const branchStates = processBranch(branch, source.voltage, source.maxCurrent, parallelBranches)
       branchStates.forEach((state, id) => allComponentStates.set(id, state))
       if (branchStates.size > 0 && globalCircuitCurrent === 0) {
         globalCircuitCurrent = Array.from(branchStates.values())[0].outputCurrent
@@ -508,7 +737,7 @@ export function calculateElectricalFlow(
     })
   })
 
-  console.log(`📊 Total component states: ${allComponentStates.size}`)
+  logger.info(`Total component states: ${allComponentStates.size}`)
 
   const updatedWires = updateWireStates(wires, allComponentStates, globalCircuitCurrent)
   const updatedGridData = updateGridData(gridData, allComponentStates)
@@ -524,7 +753,8 @@ export function calculateElectricalFlow(
 export function processBranch(
   branch: CircuitPathway[],
   sourceVoltage: number,
-  maxCurrent: number
+  maxCurrent: number,
+  parallelBranches: ParallelBranch[] = []
 ): Map<string, ComponentState> {
   const states = new Map<string, ComponentState>()
   if (branch.length === 0) return states
@@ -537,24 +767,32 @@ export function processBranch(
 
   // If no ground connection, no current flows
   if (!hasGroundConnection) {
-    console.log(`⚡ Circuit: No ground connection - no current flow`)
+    logger.warn(`Circuit: No ground connection - no current flow`)
     return states
   }
 
-  // Compute branch voltage drop & total resistance
-  const { totalResistance, totalVoltageDrop, ledCurrentRequirement, motorCurrentRequirement } = calculateCircuitParameters(branch)
+  // Compute branch voltage drop & total resistance (including parallel)
+  const { totalResistance, totalVoltageDrop, ledCurrentRequirement, motorCurrentRequirement } = calculateCircuitParameters(branch, parallelBranches)
   const effectiveVoltage = Math.max(0, sourceVoltage - totalVoltageDrop)
   const resistorCurrent = totalResistance > 0 ? effectiveVoltage / totalResistance : maxCurrent
 
   // Current through branch = min(limit by resistor, LED/motor requirement, source)
   const branchCurrent = Math.min(ledCurrentRequirement + motorCurrentRequirement, resistorCurrent, maxCurrent)
 
-  console.log(`⚡ Circuit: ${sourceVoltage}V → ${(branchCurrent * 1000).toFixed(0)}mA, R=${totalResistance}Ω`)
+  logger.circuitAnalysis(effectiveVoltage, branchCurrent, totalResistance)
+  
+  // Calculate parallel branch currents
+  const updatedParallelBranches = calculateParallelBranchCurrents(parallelBranches, effectiveVoltage)
+  
+  // Log parallel branch information
+  if (updatedParallelBranches.length > 0) {
+    logger.info(`Parallel branches in this circuit: ${updatedParallelBranches.length} branches`)
+  }
 
   let currentVoltage = sourceVoltage
   let currentCurrent = branchCurrent
 
-  branch.forEach((comp, index) => {
+  branch.forEach((comp, _index) => {
     const calculator = componentCalculators[comp.type.toLowerCase() as keyof typeof componentCalculators]
     if (calculator) {
       const result = calculator(comp.properties, currentVoltage, currentCurrent)
@@ -569,6 +807,28 @@ export function processBranch(
       currentCurrent = result.outputCurrent
     }
   })
+  
+  // Process parallel branch components
+  updatedParallelBranches.forEach((branch) => {
+    branch.components.forEach((comp) => {
+      const calculator = componentCalculators[comp.type.toLowerCase() as keyof typeof componentCalculators]
+      if (calculator) {
+        // Use the branch voltage and current for parallel components
+        const result = calculator(comp.properties, branch.voltage, branch.current)
+        
+        // Store component state
+        states.set(comp.id, {
+          ...result,
+          componentId: comp.id,
+          componentType: comp.type,
+          position: comp.position
+        })
+        
+        logger.componentState(comp.type, comp.id, branch.voltage, branch.current, result.status)
+      }
+    })
+  })
+  
   return states
 }
   

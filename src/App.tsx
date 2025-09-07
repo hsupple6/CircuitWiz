@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { 
   Zap, 
   Plus,
@@ -13,7 +13,9 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { ProjectGrid } from './components/ProjectGrid'
 import { ComponentPalette } from './components/ComponentPalette'
 import { ResistanceSelector } from './components/ResistanceSelector'
+import { DevMenu } from './components/DevMenu'
 import { ModuleDefinition } from './modules/types'
+import { logger } from './services/Logger'
 
 function App() {
   return (
@@ -29,6 +31,30 @@ function AppContent() {
   const [selectedModule, setSelectedModule] = useState<ModuleDefinition | null>(null)
   const [showResistanceSelector, setShowResistanceSelector] = useState(false)
   const [selectedResistance, setSelectedResistance] = useState(1000)
+  const [showDevMenu, setShowDevMenu] = useState(false)
+  const [logs, setLogs] = useState<any[]>([])
+  const [componentStates, setComponentStates] = useState<Map<string, any>>(new Map())
+  
+  // Subscribe to logger updates
+  useEffect(() => {
+    const unsubscribe = logger.subscribe((newLogs) => {
+      setLogs(newLogs)
+    })
+    return unsubscribe
+  }, [])
+
+  // Handle dev menu toggle with keyboard shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+        e.preventDefault()
+        setShowDevMenu(!showDevMenu)
+      }
+    }
+    
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [showDevMenu])
   
   const handleModuleSelect = (module: ModuleDefinition | null) => {
     console.log('App: Module selected:', module)
@@ -126,6 +152,13 @@ function AppContent() {
                 <Maximize2 className="h-5 w-5" />
               </button>
             </div>
+            <button
+              onClick={() => setShowDevMenu(true)}
+              className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+              title="Developer Menu (Ctrl+Shift+D)"
+            >
+              Dev
+            </button>
             <ThemeToggle />
           </div>
         </div>
@@ -144,6 +177,7 @@ function AppContent() {
               project={selectedProject}
               selectedModule={selectedModule}
               onModuleSelect={handleModuleSelect}
+              onComponentStatesChange={setComponentStates}
             />
           </div>
         </div>
@@ -163,6 +197,14 @@ function AppContent() {
             </div>
           </div>
         )}
+
+        {/* Dev Menu */}
+        <DevMenu
+          isOpen={showDevMenu}
+          onClose={() => setShowDevMenu(false)}
+          componentStates={componentStates}
+          logs={logs}
+        />
       </div>
     )
   }

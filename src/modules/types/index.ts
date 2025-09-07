@@ -149,6 +149,8 @@ export interface WireConnection {
   gauge: number
   maxCurrent: number
   maxPower: number
+  parentId?: string // ID of the parent wire if this is a child wire
+  childIds?: string[] // Array of child wire IDs
 }
 
 export interface WiringState {

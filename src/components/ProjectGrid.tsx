@@ -3,8 +3,10 @@ import { ModuleDefinition, WireConnection, WireSegment, WiringState } from '../m
 import { useTheme } from '../contexts/ThemeContext'
 import { calculateElectricalFlow, ComponentState } from '../systems/ElectricalSystem'
 import { ElectricalValidator } from './ElectricalValidator'
+import { DevicePanel } from './DevicePanel'
 import { ElectricalNotifications } from './ElectricalNotifications'
 import { CircuitTutorial } from './CircuitTutorial'
+import { logger } from '../services/Logger'
 
 interface Project {
   id: number
@@ -18,6 +20,7 @@ interface ProjectGridProps {
   project: Project
   selectedModule: ModuleDefinition | null
   onModuleSelect: (module: ModuleDefinition | null) => void
+  onComponentStatesChange?: (states: Map<string, ComponentState>) => void
 }
 
 interface GridCell {
@@ -37,7 +40,7 @@ interface GridCell {
 }
 
 
-export function ProjectGrid({ project: _project, selectedModule, onModuleSelect }: ProjectGridProps) {
+export function ProjectGrid({ project: _project, selectedModule, onModuleSelect, onComponentStatesChange }: ProjectGridProps) {
   const { isDark } = useTheme()
   const gridRef = useRef<HTMLDivElement>(null)
   const dragComponentRef = useRef<any>(null)
@@ -83,11 +86,13 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
   const [editingWireColor, setEditingWireColor] = useState<string | null>(null)
   const [editingWireGauge, setEditingWireGauge] = useState<string | null>(null)
   const [selectedWire, setSelectedWire] = useState<string | null>(null)
-  const [snapToGrid, setSnapToGrid] = useState(true)
+  const [snapToGrid] = useState(true) // Keep for internal logic but don't expose UI
   const [electricalValidations, setElectricalValidations] = useState<any[]>([])
   const [showTutorial, setShowTutorial] = useState(false)
   const [componentStates, setComponentStates] = useState<Map<string, ComponentState>>(new Map())
+  const [highlightedMicrocontroller, setHighlightedMicrocontroller] = useState<string | null>(null)
   const [isCalculating, setIsCalculating] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
   
   // Wire gauge specifications (AWG - American Wire Gauge)
   const wireGauges = [
@@ -393,16 +398,16 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
 
   // Handle mouse pan
   const handleMouseDown = useCallback((e: MouseEvent) => {
-    // Pan with left mouse button when no module is selected and not wiring
-    if (e.button === 0 && !selectedModule && !wiringState.isWiring) {
+    // Pan with left mouse button when no module is selected, not wiring, and modal is not open
+    if (e.button === 0 && !selectedModule && !wiringState.isWiring && !isModalOpen) {
       e.preventDefault()
       setIsPanning(true)
       setPanStart({ x: e.clientX, y: e.clientY })
     }
-  }, [selectedModule, wiringState.isWiring])
+  }, [selectedModule, wiringState.isWiring, isModalOpen])
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (isPanning) {
+    if (isPanning && !isModalOpen) {
       e.preventDefault()
       const deltaX = e.clientX - panStart.x
       const deltaY = e.clientY - panStart.y
@@ -414,15 +419,22 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
       
       setPanStart({ x: e.clientX, y: e.clientY })
     }
-  }, [isPanning, panStart])
+  }, [isPanning, panStart, isModalOpen])
 
   const handleMouseUp = useCallback(() => {
     setIsPanning(false)
   }, [])
 
+  // Stop panning when modal opens
+  React.useEffect(() => {
+    if (isModalOpen && isPanning) {
+      setIsPanning(false)
+    }
+  }, [isModalOpen, isPanning])
+
   // Handle touch pan
   const handleTouchMovePan = useCallback((e: TouchEvent) => {
-    if (e.touches.length === 1 && !isPanning) {
+    if (e.touches.length === 1 && !isPanning && !isModalOpen) {
       // Single finger drag for panning
       e.preventDefault()
       const touch = e.touches[0]
@@ -442,7 +454,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
         setPanStart({ x: touch.clientX, y: touch.clientY })
       }
     }
-  }, [isPanning, panStart])
+  }, [isPanning, panStart, isModalOpen])
 
   const handleTouchEnd = useCallback(() => {
     setIsPanning(false)
@@ -524,7 +536,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
     
     // Execute other component behaviors
     if (module.behavior?.onClick) {
-      console.log('Executing component behavior for:', module.module)
+      logger.debug(`Executing component behavior for: ${module.module}`)
       executeComponentBehavior(module.behavior.onClick, componentId, cellIndex)
     }
   }, [gridData])
@@ -568,7 +580,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
           })
         },
         propagatePower: (fromX: number, fromY: number, isPowered: boolean) => {
-          console.log('Propagating power from', fromX, fromY, 'to', isPowered)
+          logger.debug(`Propagating power from (${fromX}, ${fromY}) to ${isPowered}`)
           // TODO: Implement power propagation through connections
         }
       }
@@ -595,7 +607,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
   const performElectricalCalculation = useCallback(() => {
     // Prevent multiple simultaneous calculations
     if (isCalculating) {
-      console.log('Electrical calculation already in progress, skipping')
+      logger.debug('Electrical calculation already in progress, skipping')
       return
     }
 
@@ -609,6 +621,11 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
       setComponentStates(result.componentStates)
       setWires(result.updatedWires as any)
       setGridData(result.updatedGridData as any)
+      
+      // Notify parent of component state changes
+      if (onComponentStatesChange) {
+        onComponentStatesChange(result.componentStates)
+      }
       
     } catch (error) {
       console.error('Error in electrical calculation:', error)
@@ -634,7 +651,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
 
   // Wire system functions
   const startWiring = useCallback((x: number, y: number) => {
-    console.log('Starting wiring at:', x, y)
+    logger.debug(`Starting wiring at: (${x}, ${y})`)
     setWiringState({
       isWiring: true,
       currentConnection: {
@@ -666,11 +683,17 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
 
   // Update wire color
   const updateWireColor = useCallback((wireId: string, newColor: string) => {
-    setWires(prev => prev.map(wire => 
-      wire.id === wireId 
-        ? { ...wire, color: newColor, segments: wire.segments.map(segment => ({ ...segment, color: newColor })) }
-        : wire
-    ))
+    setWires(prev => prev.map(wire => {
+      // Update the wire and all its children
+      if (wire.id === wireId || wire.parentId === wireId || (wire.childIds && wire.childIds.includes(wireId))) {
+        return { 
+          ...wire, 
+          color: newColor, 
+          segments: wire.segments.map(segment => ({ ...segment, color: newColor })) 
+        }
+      }
+      return wire
+    }))
     setEditingWireColor(null)
   }, [])
 
@@ -678,29 +701,31 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
   const updateWireGauge = useCallback((wireId: string, newGauge: number) => {
     const gaugeSpec = wireGauges.find(g => g.gauge === newGauge)
     if (!gaugeSpec) return
-    
-    setWires(prev => prev.map(wire => 
-      wire.id === wireId 
-        ? { 
-            ...wire, 
+
+    setWires(prev => prev.map(wire => {
+      // Update the wire and all its children
+      if (wire.id === wireId || wire.parentId === wireId || (wire.childIds && wire.childIds.includes(wireId))) {
+        return { 
+          ...wire, 
+          gauge: gaugeSpec.gauge,
+          thickness: gaugeSpec.thickness,
+          maxCurrent: gaugeSpec.maxCurrent,
+          maxPower: gaugeSpec.maxPower,
+          segments: wire.segments.map(segment => ({ 
+            ...segment, 
             gauge: gaugeSpec.gauge,
             thickness: gaugeSpec.thickness,
             maxCurrent: gaugeSpec.maxCurrent,
-            maxPower: gaugeSpec.maxPower,
-            segments: wire.segments.map(segment => ({ 
-              ...segment, 
-              gauge: gaugeSpec.gauge,
-              thickness: gaugeSpec.thickness,
-              maxCurrent: gaugeSpec.maxCurrent,
-              maxPower: gaugeSpec.maxPower
-            }))
-          }
-        : wire
-    ))
+            maxPower: gaugeSpec.maxPower
+          }))
+        }
+      }
+      return wire
+    }))
     setEditingWireGauge(null)
   }, [wireGauges])
 
-  // Merge connected wires into networks
+  // Merge connected wires into networks while preserving parent-child relationships
   const mergeConnectedWires = useCallback(() => {
     setWires(prev => {
       const networks: WireConnection[][] = []
@@ -743,16 +768,24 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
         networks.push(network)
       })
       
-      // Create merged networks
-      return networks.map((network, index) => {
+      // Create merged networks while preserving parent-child relationships
+      return networks.map((network) => {
         if (network.length === 1) return network[0]
+        
+        // Find the parent wire (the one with the earliest timestamp or no parentId)
+        const parentWire = network.reduce((parent, wire) => {
+          if (!parent) return wire
+          if (!wire.parentId && parent.parentId) return wire
+          if (wire.parentId === wire.id && parent.parentId !== parent.id) return wire
+          return parent
+        })
         
         // Merge all segments from the network
         const allSegments = network.flatMap(wire => wire.segments)
-        const networkId = `network-${index}`
+        const childIds = network.filter(wire => wire.id !== parentWire.id).map(wire => wire.id)
         
         return {
-          id: networkId,
+          id: parentWire.id, // Preserve the parent wire's ID
           segments: allSegments,
           isPowered: network.some(wire => wire.isPowered),
           isGrounded: network.some(wire => wire.isGrounded),
@@ -761,11 +794,13 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
           voltage: Math.max(...network.map(wire => wire.voltage)),
           current: Math.max(...network.map(wire => wire.current)),
           power: network.reduce((sum, wire) => sum + wire.power, 0),
-          color: network[0].color, // Use first wire's color
-          thickness: network[0].thickness,
-          gauge: network[0].gauge,
-          maxCurrent: network[0].maxCurrent,
-          maxPower: network[0].maxPower
+          color: parentWire.color, // Use parent wire's color
+          thickness: parentWire.thickness,
+          gauge: parentWire.gauge,
+          maxCurrent: parentWire.maxCurrent,
+          maxPower: parentWire.maxPower,
+          parentId: parentWire.parentId || parentWire.id, // Preserve parent hierarchy
+          childIds: childIds
         }
       })
     })
@@ -773,17 +808,13 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
 
   // Get component properties at a position
   const getComponentProperties = useCallback((x: number, y: number) => {
-    console.log('Getting component properties at:', x, y)
     const cell = gridData[y]?.[x]
-    console.log('Cell found:', cell)
     
     if (!cell?.moduleDefinition) {
-      console.log('No module definition found')
       return null
     }
     
     const moduleCell = cell.moduleDefinition.grid[cell.cellIndex || 0]
-    console.log('Module cell:', moduleCell)
     
     const props = {
       isPowerable: moduleCell?.isPowerable || false,
@@ -794,7 +825,6 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
       componentType: cell.componentType
     }
     
-    console.log('Component properties:', props)
     return props
   }, [gridData])
 
@@ -903,10 +933,8 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
         return
       }
       if (startWire.isGroundable && endProps.isPowerable && !endIsResistor) {
-        console.log('❌ BLOCKED: Cannot connect groundable wire to powerable component!')
-        alert('❌ Cannot connect groundable wire to powerable component!')
-        cancelWiring()
-        return
+        // Allow parallel circuit connections - this is needed for parallel resistor setups
+        console.log('✅ ALLOWED: Parallel circuit connection (groundable wire to powerable component)')
       }
     }
     
@@ -1025,9 +1053,31 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
       console.log('Created segment:', segment)
     }
     
+    // Check if we're extending an existing wire
+    const existingWire = startWire || endWire
+    let wireId: string
+    let parentId: string | undefined
+    let childIds: string[] = []
+    
+    if (existingWire) {
+      // If we're extending an existing wire, use its ID and preserve parent-child relationships
+      wireId = existingWire.id
+      parentId = existingWire.parentId || existingWire.id
+      childIds = existingWire.childIds || []
+      
+      console.log('Extending existing wire:', wireId, 'with parent:', parentId)
+    } else {
+      // Create a new wire with a new ID
+      wireId = `wire-${Date.now()}`
+      parentId = undefined
+      childIds = []
+      
+      console.log('Creating new wire:', wireId)
+    }
+    
     // Create wire connection
     const wireConnection: WireConnection = {
-      id: `wire-${Date.now()}`,
+      id: wireId,
       segments: wireSegments,
       isPowered: wireIsPowered,
       isGrounded: wireIsGrounded,
@@ -1040,20 +1090,31 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect 
       thickness: wireThickness,
       gauge: wireGauge,
       maxCurrent: wireGauges.find(g => g.gauge === wireGauge)?.maxCurrent || 15,
-      maxPower: wireGauges.find(g => g.gauge === wireGauge)?.maxPower || 1800
+      maxPower: wireGauges.find(g => g.gauge === wireGauge)?.maxPower || 1800,
+      parentId: parentId,
+      childIds: childIds
     }
     
     console.log('Created wire connection:', wireConnection)
     setWires(prev => {
-      const newWires = [...prev, wireConnection]
-      console.log('Updated wires array:', newWires)
-      return newWires
+      if (existingWire) {
+        // Update existing wire instead of adding a new one
+        const updatedWires = prev.map(wire => 
+          wire.id === existingWire.id 
+            ? { ...wireConnection, segments: [...existingWire.segments, ...wireSegments] }
+            : wire
+        )
+        console.log('Updated existing wire:', updatedWires)
+        return updatedWires
+      } else {
+        // Add new wire
+        const newWires = [...prev, wireConnection]
+        console.log('Added new wire:', newWires)
+        return newWires
+      }
     })
     
-    // Merge connected wires after a short delay to allow state update
-    setTimeout(() => {
-      mergeConnectedWires()
-    }, 100)
+    // No need to merge connected wires since we're preserving the same wire ID
     
     setWiringState({ isWiring: false, currentConnection: null })
     setWirePreview(null)
@@ -1638,7 +1699,8 @@ const GridCell = React.memo(({
   getCellPin,
   getResistorColorBands,
   componentStates,
-  zoom
+  zoom,
+  highlightedMicrocontroller
 }: {
   x: number
   y: number
@@ -1654,6 +1716,7 @@ const GridCell = React.memo(({
   getResistorColorBands: (resistance: number) => string[]
   componentStates: Map<string, ComponentState>
   zoom: number
+  highlightedMicrocontroller: string | null
 }) => {
   const occupied = isCellOccupied(x, y)
   
@@ -1713,6 +1776,9 @@ const GridCell = React.memo(({
         const totalCells = cell.moduleDefinition.gridX * cell.moduleDefinition.gridY
         const isPowered = cell?.isPowered || false
         
+        // Check if this cell is part of a highlighted microcontroller
+        const isMicrocontrollerHighlighted = cell.componentId === highlightedMicrocontroller
+        
         return (
           <div
             className="absolute inset-0"
@@ -1720,7 +1786,12 @@ const GridCell = React.memo(({
               background: getCellBackground(cell.moduleDefinition, relativeX, relativeY, totalCells),
               ...getCellCSS(cell.moduleDefinition, relativeX, relativeY, totalCells),
               // Add power state visualization
-              boxShadow: isPowered ? '0 0 8px #00ff00' : 'none'
+              boxShadow: isPowered ? '0 0 8px #00ff00' : 'none',
+              // Add microcontroller highlighting
+              ...(isMicrocontrollerHighlighted && {
+                boxShadow: '0 0 12px #3b82f6',
+                border: '2px solid #3b82f6'
+              })
             }}
           >
             {/* Power indicator */}
@@ -2054,6 +2125,7 @@ const GridCell = React.memo(({
                     getResistorColorBands={getResistorColorBands}
                     componentStates={componentStates}
                     zoom={zoom}
+                    highlightedMicrocontroller={highlightedMicrocontroller}
                   />
                 )
               })}
@@ -2062,11 +2134,22 @@ const GridCell = React.memo(({
         })}
       </div>
 
-      {/* Wire Dashboard */}
+      {/* Device Panel */}
+      <DevicePanel
+        gridData={gridData}
+        wires={wires}
+        onMicrocontrollerHighlight={setHighlightedMicrocontroller}
+        onMicrocontrollerClick={(microcontroller) => {
+          console.log('Microcontroller clicked:', microcontroller)
+        }}
+        onModalStateChange={setIsModalOpen}
+      />
+
+      {/* Legacy Wire Dashboard - Hidden */}
       <div 
         className={`absolute top-4 left-4 bg-white dark:bg-dark-surface rounded-lg shadow-lg p-3 border border-gray-200 dark:border-dark-border z-50 max-h-96 overflow-y-auto transition-all duration-200 ${
           editingWireColor ? 'max-w-md' : 'max-w-xs'
-        }`}
+        } hidden`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="text-sm font-medium text-gray-900 dark:text-dark-text-primary mb-2">
@@ -2237,98 +2320,16 @@ const GridCell = React.memo(({
         </div>
       </div>
 
-      {/* Grid Info Overlay */}
-      <div 
-        className="absolute top-4 right-4 bg-white dark:bg-dark-surface rounded-lg shadow-lg p-3 border border-gray-200 dark:border-dark-border z-50"
-        onClick={(e) => e.stopPropagation()}
-      >
-          <div className="text-sm text-gray-600 dark:text-dark-text-secondary space-y-1">
-            <div>Grid: {gridSize.width} × {gridSize.height}</div>
-            <div>Zoom: {Math.round(zoom * 100)}%</div>
-            <div className="text-xs opacity-75">Scroll to zoom • Drag to pan</div>
-            <div className="text-xs text-green-600 dark:text-green-400">
-              Memory: {Math.round((gridSize.width * gridSize.height) / 1000)}K cells
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <button
-                onClick={() => {
-                  setZoom(1)
-                  setGridOffset({ x: -200, y: -200 })
-                  expandGrid(1)
-                }}
-                className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
-              >
-                Reset view
-              </button>
-              <button
-                onClick={() => setSnapToGrid(!snapToGrid)}
-                className={`text-xs px-2 py-1 rounded ${
-                  snapToGrid 
-                    ? 'bg-blue-500 text-white' 
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                }`}
-              >
-                Snap: {snapToGrid ? 'ON' : 'OFF'}
-              </button>
-              <button
-                onClick={() => setShowTutorial(true)}
-                className="text-xs px-2 py-1 rounded bg-green-500 text-white hover:bg-green-600"
-              >
-                📚 Tutorial
-              </button>
-            </div>
-            {selectedModule && (
-              <div className="text-primary-600 dark:text-primary-400">
-                Selected: {selectedModule.module} ({selectedModule.gridX}×{selectedModule.gridY})
-              </div>
-            )}
-            {hoverState && selectedModule && (
-              <div className={isCollisionPreview ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}>
-                {isCollisionPreview ? "❌ Collision - Cannot place (module or wire)" : "✅ Valid placement"} at ({hoverState.x}, {hoverState.y})
-              </div>
-            )}
-            {wiringState.isWiring && (
-              <div className="text-blue-600 dark:text-blue-400">
-                🔌 Wiring Mode - {wiringState.currentConnection ? 
-                  `Click to finish wire (from ${wiringState.currentConnection.startX},${wiringState.currentConnection.startY})` : 
-                  'Click connection points to start wire'}
-              </div>
-            )}
-            {wires.length > 0 && (
-              <div className="text-green-600 dark:text-green-400">
-                ✅ {wires.length} wire(s) placed
-              </div>
-            )}
-          </div>
+      {/* Tutorial Button */}
+      <div className="absolute top-4 right-4">
+        <button
+          onClick={() => setShowTutorial(true)}
+          className="px-3 py-2 bg-green-500 text-white rounded-lg shadow-lg hover:bg-green-600 transition-colors text-sm"
+        >
+          📚 Tutorial
+        </button>
       </div>
 
-      {/* Zoom Controls */}
-      <div className="absolute bottom-4 right-4 flex flex-col gap-2">
-        <button
-          onClick={() => {
-            const newZoom = Math.min(zoom + 0.25, 3)
-            setZoom(newZoom)
-            expandGrid(newZoom)
-          }}
-          className="p-2 bg-white dark:bg-dark-surface rounded-lg shadow-lg border border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-card transition-colors"
-        >
-          <svg className="w-5 h-5 text-gray-600 dark:text-dark-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-        </button>
-        <button
-          onClick={() => {
-            const newZoom = Math.max(zoom - 0.25, 0.25)
-            setZoom(newZoom)
-            expandGrid(newZoom)
-          }}
-          className="p-2 bg-white dark:bg-dark-surface rounded-lg shadow-lg border border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-card transition-colors"
-        >
-          <svg className="w-5 h-5 text-gray-600 dark:text-dark-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-          </svg>
-        </button>
-      </div>
     </div>
   )
 }
