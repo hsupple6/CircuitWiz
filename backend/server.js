@@ -1,3 +1,6 @@
+// Load environment variables first
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -7,13 +10,228 @@ const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const { exec, spawn } = require('child_process');
 const crypto = require('crypto');
+const { authenticateToken, optionalAuth } = require('./middleware/auth');
+const SQLiteDatabase = require('./services/SQLiteDatabase');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Initialize SQLite database
+let userDatabase;
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    version: '1.0.0'
+  });
+});
+
+// User management endpoints
+app.post('/api/users/sync', authenticateToken, async (req, res) => {
+  try {
+    const user = await userDatabase.createOrUpdateUser(req.user);
+    res.json({ user });
+  } catch (error) {
+    console.error('User sync error:', error);
+    res.status(500).json({ error: 'Failed to sync user' });
+  }
+});
+
+app.get('/api/user/data', authenticateToken, async (req, res) => {
+  try {
+    const user = await userDatabase.getUser(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json({ user });
+  } catch (error) {
+    console.error('Get user data error:', error);
+    res.status(500).json({ error: 'Failed to get user data' });
+  }
+});
+
+app.put('/api/user/settings', authenticateToken, async (req, res) => {
+  try {
+    const settings = await userDatabase.updateUserSettings(req.user.id, req.body);
+    res.json({ settings });
+  } catch (error) {
+    console.error('Update user settings error:', error);
+    res.status(500).json({ error: 'Failed to update user settings' });
+  }
+});
+
+// Project management endpoints
+app.get('/api/user/projects', authenticateToken, async (req, res) => {
+  try {
+    const projects = await userDatabase.getUserProjects(req.user.id);
+    res.json({ projects });
+  } catch (error) {
+    console.error('Get projects error:', error);
+    res.status(500).json({ error: 'Failed to get projects' });
+  }
+});
+
+app.get('/api/user/projects/:projectId', authenticateToken, async (req, res) => {
+  try {
+    const project = await userDatabase.getProject(req.params.projectId, req.user.id);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    res.json({ project });
+  } catch (error) {
+    console.error('Get project error:', error);
+    res.status(500).json({ error: 'Failed to get project' });
+  }
+});
+
+app.post('/api/user/projects', authenticateToken, async (req, res) => {
+  try {
+    const project = await userDatabase.createProject(req.user.id, req.body);
+    res.json({ project });
+  } catch (error) {
+    console.error('Create project error:', error);
+    res.status(500).json({ error: 'Failed to create project' });
+  }
+});
+
+app.put('/api/user/projects/:projectId', authenticateToken, async (req, res) => {
+  try {
+    const project = await userDatabase.updateProject(req.params.projectId, req.user.id, req.body);
+    res.json({ project });
+  } catch (error) {
+    console.error('Update project error:', error);
+    res.status(500).json({ error: 'Failed to update project' });
+  }
+});
+
+app.delete('/api/user/projects/:projectId', authenticateToken, async (req, res) => {
+  try {
+    await userDatabase.deleteProject(req.params.projectId, req.user.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete project error:', error);
+    res.status(500).json({ error: 'Failed to delete project' });
+  }
+});
+
+app.post('/api/user/projects/:projectId/duplicate', authenticateToken, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Project name is required' });
+    }
+    const project = await userDatabase.duplicateProject(req.params.projectId, req.user.id, name);
+    res.json({ project });
+  } catch (error) {
+    console.error('Duplicate project error:', error);
+    res.status(500).json({ error: 'Failed to duplicate project' });
+  }
+});
+
+app.patch('/api/user/projects/:projectId/autosave', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔧 Backend: Auto-saving project:', req.params.projectId, {
+      hasGridData: !!req.body.gridData,
+      hasWires: !!req.body.wires,
+      hasComponentStates: !!req.body.componentStates,
+      gridDataRows: req.body.gridData?.length || 0,
+      wiresCount: req.body.wires?.length || 0,
+      componentStatesCount: Object.keys(req.body.componentStates || {}).length
+    });
+    
+    const success = await userDatabase.autoSaveProject(req.params.projectId, req.user.id, req.body);
+    
+    console.log('✅ Backend: Auto-save result:', success);
+    res.json({ success });
+  } catch (error) {
+    console.error('❌ Backend: Auto-save project error:', error);
+    res.status(500).json({ error: 'Failed to auto-save project' });
+  }
+});
+
+// CRDT Save endpoint for robust concurrent editing
+app.post('/api/user/projects/:projectId/crdt-save', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔧 Backend: CRDT saving project:', req.params.projectId, {
+      operationsCount: req.body.operations?.length || 0,
+      hasCrdtState: !!req.body.crdtState,
+      timestamp: req.body.timestamp
+    });
+    
+    const { operations, crdtState, timestamp } = req.body;
+    
+    // Save CRDT operations to database
+    const success = await userDatabase.saveCRDTOperations(req.params.projectId, req.user.id, {
+      operations,
+      crdtState,
+      timestamp
+    });
+    
+    console.log('✅ Backend: CRDT save result:', success);
+    res.json({ 
+      success, 
+      timestamp: Date.now(),
+      operationsCount: operations?.length || 0
+    });
+  } catch (error) {
+    console.error('❌ Backend: CRDT save project error:', error);
+    res.status(500).json({ error: 'Failed to CRDT save project' });
+  }
+});
+
+app.get('/api/user/projects/search', authenticateToken, async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q) {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+    const projects = await userDatabase.searchProjects(req.user.id, q);
+    res.json({ projects });
+  } catch (error) {
+    console.error('Search projects error:', error);
+    res.status(500).json({ error: 'Failed to search projects' });
+  }
+});
+
+app.get('/api/user/projects/recent', authenticateToken, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const projects = await userDatabase.getRecentProjects(req.user.id, limit);
+    res.json({ projects });
+  } catch (error) {
+    console.error('Get recent projects error:', error);
+    res.status(500).json({ error: 'Failed to get recent projects' });
+  }
+});
+
+// Export/Import endpoints
+app.get('/api/user/projects/:projectId/export', authenticateToken, async (req, res) => {
+  try {
+    const exportData = await userDatabase.exportProject(req.params.projectId, req.user.id);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="project-${req.params.projectId}.json"`);
+    res.json(exportData);
+  } catch (error) {
+    console.error('Export project error:', error);
+    res.status(500).json({ error: 'Failed to export project' });
+  }
+});
+
+app.post('/api/user/projects/import', authenticateToken, async (req, res) => {
+  try {
+    const project = await userDatabase.importProject(req.user.id, req.body);
+    res.json({ project });
+  } catch (error) {
+    console.error('Import project error:', error);
+    res.status(500).json({ error: 'Failed to import project' });
+  }
+});
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Create temp directories for compilation
@@ -941,16 +1159,32 @@ app.listen(PORT, async () => {
   console.log(`CircuitWiz Backend running on port ${PORT}`);
   console.log(`Temp directory: ${TEMP_DIR}`);
   
+  // Initialize database
+  try {
+    userDatabase = new SQLiteDatabase();
+    await userDatabase.initialize();
+    console.log('Database initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize database:', error);
+    process.exit(1);
+  }
+  
   await ensureArduinoCLI();
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('Shutting down server...');
+  if (userDatabase) {
+    userDatabase.close();
+  }
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   console.log('Shutting down server...');
+  if (userDatabase) {
+    userDatabase.close();
+  }
   process.exit(0);
 });

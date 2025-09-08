@@ -1,153 +1,66 @@
 {
-  "module": "Arduino Uno",
-  "gridX": 4,
-  "gridY": 2,
-  "background": "#059669",
-  "css": "border-radius: 6px; box-shadow: 0 3px 6px rgba(0,0,0,0.15);",
+  "module": "Arduino Uno R3",
+  "gridX": 3,
+  "gridY": 14,
+  "background": "#14532D",
+  "css": "border-radius: 10px; box-shadow: 0 6px 12px rgba(0,0,0,0.25); border: 2px solid #052e16;",
   "category": "microcontrollers",
-  "description": "Arduino Uno R3 Microcontroller Board",
+  "description": "Arduino Uno R3 — based on ATmega328P, standard 14 digital I/O (D0–D13), 6 analog inputs (A0–A5), power pins.",
   "manufacturer": "Arduino",
-  "datasheet": "https://store.arduino.cc/products/arduino-uno-rev3",
+  "datasheet": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
   "grid": [
-    {
-      "x": 0,
-      "y": 0,
-      "css": "border-top-left-radius: 6px; background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
-      "background": "#059669",
-      "isConnectable": true,
-      "isPowerable": true,
-      "isGroundable": false,
-      "type": "DIGITAL",
-      "pin": "D13",
-      "voltage": 5,
-      "current": 0.04,
-      "properties": {
-        "function": "output",
-        "voltage": "5V",
-        "current": "40mA"
-      }
-    },
-    {
-      "x": 1,
-      "y": 0,
-      "css": "background: linear-gradient(135deg, #DC2626 0%, #EF4444 100%); color: white; font-weight: bold;",
-      "background": "#DC2626",
-      "isConnectable": true,
-      "type": "VCC",
-      "pin": "3.3V",
-      "isPowerable": true,
-      "isGroundable": false,
-      "voltage": 3.3,
-      "current": 0.05,
-      "properties": {
-        "voltage": "3.3V",
-        "current": "50mA"
-      }
-    },
-    {
-      "x": 2,
-      "y": 0,
-      "css": "background: linear-gradient(135deg, #DC2626 0%, #EF4444 100%); color: white; font-weight: bold;",
-      "background": "#DC2626",
-      "isConnectable": true,
-      "type": "VCC",
-      "pin": "5V",
-      "isPowerable": true,
-      "isGroundable": false,
-      "voltage": 5,
-      "current": 0.5,
-      "properties": {
-        "voltage": "5V",
-        "current": "500mA"
-      }
-    },
-    {
-      "x": 3,
-      "y": 0,
-      "css": "border-top-right-radius: 6px; background: linear-gradient(135deg, #7C3AED 0%, #8B5CF6 100%); color: white; font-weight: bold;",
-      "background": "#7C3AED",
-      "isConnectable": true,
-      "type": "GND",
-      "pin": "GND",
-      "isPowerable": false,
-      "isGroundable": true,
-      "voltage": 0,
-      "current": 0,
-      "properties": {
-        "voltage": "0V"
-      }
-    },
-    {
-      "x": 0,
-      "y": 1,
-      "css": "border-bottom-left-radius: 6px; background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
-      "background": "#059669",
-      "isConnectable": true,
-      "isPowerable": true,
-      "isGroundable": false,
-      "type": "DIGITAL",
-      "pin": "D12",
-      "voltage": 5,
-      "current": 0.04,
-      "properties": {
-        "function": "input",
-        "voltage": "5V",
-        "current": "40mA"
-      }
-    },
-    {
-      "x": 1,
-      "y": 1,
-      "css": "background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
-      "background": "#059669",
-      "isConnectable": true,
-      "isPowerable": true,
-      "isGroundable": false,
-      "type": "ANALOG",
-      "pin": "A0",
-      "voltage": 5,
-      "current": 0.04,
-      "properties": {
-        "function": "input",
-        "voltage": "5V",
-        "resolution": "10-bit"
-      }
-    },
-    {
-      "x": 2,
-      "y": 1,
-      "css": "background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
-      "background": "#059669",
-      "isConnectable": true,
-      "isPowerable": true,
-      "isGroundable": false,
-      "type": "ANALOG",
-      "pin": "A1",
-      "voltage": 5,
-      "current": 0.04,
-      "properties": {
-        "function": "input",
-        "voltage": "5V",
-        "resolution": "10-bit"
-      }
-    },
-    {
-      "x": 3,
-      "y": 1,
-      "css": "border-bottom-right-radius: 6px; background: linear-gradient(135deg, #059669 0%, #10B981 100%); color: white; font-weight: bold;",
-      "background": "#059669",
-      "isConnectable": true,
-      "isPowerable": true,
-      "isGroundable": false,
-      "type": "ANALOG",
-      "pin": "A2",
-      "voltage": 5,
-      "current": 0.04,
-      "properties": {
-        "function": "input",
-        "voltage": "5V",
-        "resolution": "10-bit"
-      }
-    }
+    { "x": 0, "y": 0, "pin": "RESET", "type": "RESET", "css": "background:#facc15; color:#111; border:1px solid #0F172A;" },
+    { "x": 1, "y": 0, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 0, "pin": "IOREF", "type": "VCC", "properties": {"voltage":"5V"}, "css": "background:#ef4444; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 1, "pin": "3V3", "type": "VCC", "properties": {"voltage":"3.3V"}, "css": "background:#ef4444; color:white; border:1px solid #0F172A;" },
+    { "x": 1, "y": 1, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 1, "pin": "5V", "type": "VCC", "properties": {"voltage":"5V"}, "css": "background:#ef4444; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 2, "pin": "GND", "type": "GND", "css": "background:#7c3aed; color:white; border:1px solid #0F172A;" },
+    { "x": 1, "y": 2, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 2, "pin": "GND", "type": "GND", "css": "background:#7c3aed; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 3, "pin": "VIN", "type": "VCC", "properties": {"voltage":"7–12V"}, "css": "background:#ef4444; color:white; border:1px solid #0F172A;" },
+    { "x": 1, "y": 3, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 3, "pin": "A0", "type": "ANALOG", "properties": {"gpio":"A0"}, "css": "background:#3b82f6; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 4, "pin": "A1", "type": "ANALOG", "properties": {"gpio":"A1"}, "css": "background:#3b82f6; color:white; border:1px solid #0F172A;" },
+    { "x": 1, "y": 4, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 4, "pin": "A2", "type": "ANALOG", "properties": {"gpio":"A2"}, "css": "background:#3b82f6; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 5, "pin": "A3", "type": "ANALOG", "properties": {"gpio":"A3"}, "css": "background:#3b82f6; color:white; border:1px solid #0F172A;" },
+    { "x": 1, "y": 5, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 5, "pin": "A4/SDA", "type": "ANALOG", "properties": {"gpio":"A4"}, "css": "background:#3b82f6; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 6, "pin": "A5/SCL", "type": "ANALOG", "properties": {"gpio":"A5"}, "css": "background:#3b82f6; color:white; border:1px solid #0F172A;" },
+    { "x": 1, "y": 6, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 6, "pin": "D0/RX", "type": "GPIO", "properties": {"gpio":"0"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 7, "pin": "D1/TX", "type": "GPIO", "properties": {"gpio":"1"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+    { "x": 1, "y": 7, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 7, "pin": "D2", "type": "GPIO", "properties": {"gpio":"2"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 8, "pin": "D3", "type": "GPIO", "properties": {"gpio":"3"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+    { "x": 1, "y": 8, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 8, "pin": "D4", "type": "GPIO", "properties": {"gpio":"4"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 9, "pin": "D5", "type": "GPIO", "properties": {"gpio":"5"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+    { "x": 1, "y": 9, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 9, "pin": "D6", "type": "GPIO", "properties": {"gpio":"6"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 10, "pin": "D7", "type": "GPIO", "properties": {"gpio":"7"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+    { "x": 1, "y": 10, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 10, "pin": "D8", "type": "GPIO", "properties": {"gpio":"8"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 11, "pin": "D9", "type": "GPIO", "properties": {"gpio":"9"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+    { "x": 1, "y": 11, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 11, "pin": "D10", "type": "GPIO", "properties": {"gpio":"10"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 12, "pin": "D11/MOSI", "type": "GPIO", "properties": {"gpio":"11"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+    { "x": 1, "y": 12, "type": "BODY", "css": "background:#052e16; border:1px solid #0b1220;" },
+    { "x": 2, "y": 12, "pin": "D12/MISO", "type": "GPIO", "properties": {"gpio":"12"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" },
+
+    { "x": 0, "y": 13, "pin": "D13/SCK", "type": "GPIO", "properties": {"gpio":"13"}, "css": "background:#22c55e; color:white; border:1px solid #0F172A;" }
   ]
 }

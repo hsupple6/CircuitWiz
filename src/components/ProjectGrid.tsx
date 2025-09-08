@@ -7,6 +7,8 @@ import { DevicePanel } from './DevicePanel'
 import { ElectricalNotifications } from './ElectricalNotifications'
 import { CircuitTutorial } from './CircuitTutorial'
 import { logger } from '../services/Logger'
+import { crdtService } from '../services/CRDTService'
+import { getCRDTSaveService } from '../services/CRDTSaveService'
 
 interface Project {
   id: number
@@ -21,6 +23,19 @@ interface ProjectGridProps {
   selectedModule: ModuleDefinition | null
   onModuleSelect: (module: ModuleDefinition | null) => void
   onComponentStatesChange?: (states: Map<string, ComponentState>) => void
+  // New props for project data integration
+  initialGridData?: any[][]
+  initialWires?: any[]
+  initialComponentStates?: Record<string, any>
+  projectId?: string
+  getAccessToken?: () => Promise<string>
+  onProjectDataChange?: (data: {
+    gridData?: any[][]
+    wires?: any[]
+    componentStates?: Record<string, any>
+    hasUnsavedChanges?: boolean
+    triggerUnsavedCheck?: boolean
+  }) => void
 }
 
 interface GridCell {
@@ -40,13 +55,31 @@ interface GridCell {
 }
 
 
-export function ProjectGrid({ project: _project, selectedModule, onModuleSelect, onComponentStatesChange }: ProjectGridProps) {
+export function ProjectGrid({ 
+  project: _project, 
+  selectedModule, 
+  onModuleSelect, 
+  onComponentStatesChange,
+  initialGridData,
+  initialWires,
+  initialComponentStates,
+  projectId,
+  getAccessToken,
+  onProjectDataChange
+}: ProjectGridProps) {
   const { isDark } = useTheme()
   const gridRef = useRef<HTMLDivElement>(null)
   const dragComponentRef = useRef<any>(null)
   const [gridSize, setGridSize] = useState({ width: 50, height: 50 }) // Much smaller initial grid
   const [zoom, setZoom] = useState(1)
   const [gridData, setGridData] = useState<GridCell[][]>(() => {
+    // Use initial data if provided, otherwise create empty grid
+    if (initialGridData && initialGridData.length > 0) {
+      console.log('🔧 ProjectGrid: Initializing with saved grid data:', initialGridData.length, 'rows')
+      return initialGridData as GridCell[][]
+    }
+    
+    console.log('🔧 ProjectGrid: Initializing with empty grid')
     // Initialize with a much smaller grid for better memory usage
     const initialGrid: GridCell[][] = []
     for (let y = 0; y < 50; y++) {
@@ -77,7 +110,14 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect,
   const [panStart, setPanStart] = useState({ x: 0, y: 0 })
   
   // Wire system state
-  const [wires, setWires] = useState<WireConnection[]>([])
+  const [wires, setWires] = useState<WireConnection[]>(() => {
+    if (initialWires && initialWires.length > 0) {
+      console.log('🔧 ProjectGrid: Initializing with saved wires:', initialWires.length, 'wires')
+      return initialWires
+    }
+    console.log('🔧 ProjectGrid: Initializing with empty wires')
+    return []
+  })
   const [wiringState, setWiringState] = useState<WiringState>({
     isWiring: false,
     currentConnection: null
@@ -89,10 +129,53 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect,
   const [snapToGrid] = useState(true) // Keep for internal logic but don't expose UI
   const [electricalValidations, setElectricalValidations] = useState<any[]>([])
   const [showTutorial, setShowTutorial] = useState(false)
-  const [componentStates, setComponentStates] = useState<Map<string, ComponentState>>(new Map())
+  const [componentStates, setComponentStates] = useState<Map<string, ComponentState>>(() => {
+    if (initialComponentStates) {
+      return new Map(Object.entries(initialComponentStates))
+    }
+    return new Map()
+  })
   const [highlightedMicrocontroller, setHighlightedMicrocontroller] = useState<string | null>(null)
   const [isCalculating, setIsCalculating] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  
+  // Auto-save functionality - call onProjectDataChange when data changes (debounced)
+  useEffect(() => {
+    if (onProjectDataChange) {
+      console.log('🔧 ProjectGrid: Data changed, triggering unsaved check and debounced save', {
+        gridDataRows: gridData.length,
+        wiresCount: wires.length,
+        componentStatesCount: componentStates.size,
+        occupiedCells: gridData.flat().filter(cell => cell.occupied).length
+      })
+      
+      // First, notify that there are unsaved changes and trigger immediate check
+      onProjectDataChange({
+        gridData,
+        wires,
+        componentStates: Object.fromEntries(componentStates),
+        hasUnsavedChanges: true,
+        triggerUnsavedCheck: true
+      })
+
+      const timeoutId = setTimeout(() => {
+        console.log('🔧 ProjectGrid: Debounce timeout reached, triggering save', {
+          gridDataRows: gridData.length,
+          wiresCount: wires.length,
+          componentStatesCount: componentStates.size,
+          occupiedCells: gridData.flat().filter(cell => cell.occupied).length
+        })
+        // After debounce, trigger the actual save (without hasUnsavedChanges flag)
+        onProjectDataChange({
+          gridData,
+          wires,
+          componentStates: Object.fromEntries(componentStates)
+        })
+      }, 500) // 500ms debounce to prevent excessive saves
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [gridData, wires, componentStates])
   
   // Wire gauge specifications (AWG - American Wire Gauge)
   const wireGauges = [
@@ -277,7 +360,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect,
   
   // Expand grid when window resizes - with debouncing to prevent excessive calls
   useEffect(() => {
-    let resizeTimeout: number
+    let resizeTimeout: NodeJS.Timeout
     const handleResize = () => {
       clearTimeout(resizeTimeout)
       resizeTimeout = setTimeout(() => {
@@ -419,7 +502,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect,
       
       setPanStart({ x: e.clientX, y: e.clientY })
     }
-  }, [isPanning, panStart, isModalOpen])
+  }, [isPanning, isModalOpen])
 
   const handleMouseUp = useCallback(() => {
     setIsPanning(false)
@@ -1096,6 +1179,37 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect,
     }
     
     console.log('Created wire connection:', wireConnection)
+    
+    // Add CRDT operation for wire creation
+    if (projectId && getAccessToken) {
+      const wireData = {
+        id: wireId,
+        segments: wireSegments,
+        isPowered: wireIsPowered,
+        isGrounded: wireIsGrounded,
+        isPowerable: wireIsPowerable,
+        isGroundable: wireIsGroundable,
+        voltage: wireVoltage,
+        current: wireCurrent,
+        power: wireVoltage * wireCurrent,
+        color: wireColor,
+        thickness: wireThickness,
+        gauge: wireGauge,
+        maxCurrent: wireGauges.find(g => g.gauge === wireGauge)?.maxCurrent || 15,
+        maxPower: wireGauges.find(g => g.gauge === wireGauge)?.maxPower || 1800,
+        parentId: parentId,
+        childIds: childIds
+      }
+      
+      const operation = crdtService.addWire(wireData)
+      const saveService = getCRDTSaveService(getAccessToken)
+      saveService.queueOperation(operation, projectId).then(result => {
+        console.log('🔧 ProjectGrid: CRDT wire save result:', result)
+      }).catch(error => {
+        console.error('❌ ProjectGrid: CRDT wire save failed:', error)
+      })
+    }
+    
     setWires(prev => {
       if (existingWire) {
         // Update existing wire instead of adding a new one
@@ -1193,15 +1307,44 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect,
                      !wouldCollideWithWire(centeredX, centeredY, selectedModule.gridX, selectedModule.gridY)
       
       if (isValid) {
-        console.log('Placing module:', selectedModule.module, 'at', centeredX, centeredY)
+        console.log('🔧 Placing module:', selectedModule.module, 'at', centeredX, centeredY)
         
         // Check if we need to expand the grid for this placement
         checkAndExpandForPlacement(centeredX, centeredY, selectedModule.gridX, selectedModule.gridY)
         
         setGridData(prev => {
+          console.log('🔧 ProjectGrid: Placing component, updating gridData', {
+            componentType: selectedModule.module,
+            position: { x: centeredX, y: centeredY },
+            size: { width: selectedModule.gridX, height: selectedModule.gridY },
+            currentOccupiedCells: prev.flat().filter(cell => cell.occupied).length
+          })
+          
           // More memory-efficient update - only update cells that change
           const newGrid = [...prev] // Shallow copy of rows
           const componentId = `${selectedModule.module}-${Date.now()}`
+          
+          // Create CRDT operation for component placement
+          const componentData = {
+            id: componentId,
+            type: selectedModule.module,
+            position: { x: centeredX, y: centeredY },
+            size: { width: selectedModule.gridX, height: selectedModule.gridY },
+            moduleDefinition: selectedModule,
+            isPowered: false,
+            isClickable: false
+          }
+          
+          // Add to CRDT and save
+          if (projectId && getAccessToken) {
+            const operation = crdtService.addComponent(componentData, { x: centeredX, y: centeredY })
+            const saveService = getCRDTSaveService(getAccessToken)
+            saveService.queueOperation(operation, projectId).then(result => {
+              console.log('🔧 ProjectGrid: CRDT save result:', result)
+            }).catch(error => {
+              console.error('❌ ProjectGrid: CRDT save failed:', error)
+            })
+          }
           
           for (let dy = 0; dy < selectedModule.gridY; dy++) {
             for (let dx = 0; dx < selectedModule.gridX; dx++) {
@@ -1238,6 +1381,7 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect,
             }
           }
           
+          console.log('🔧 ProjectGrid: GridData updated, new occupied cells:', newGrid.flat().filter(cell => cell.occupied).length)
           return newGrid
         })
         
@@ -1343,21 +1487,19 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect,
            y >= hoverY && y < hoverY + selectedModule.gridY
   }, [hoverState, selectedModule])
 
-  // Memoized collision check
-  const isCollisionPreview = useMemo(() => {
-    if (!hoverState || !selectedModule) return false
-    return wouldCollide(hoverState.x, hoverState.y, selectedModule.gridX, selectedModule.gridY) ||
-           wouldCollideWithWire(hoverState.x, hoverState.y, selectedModule.gridX, selectedModule.gridY)
-  }, [hoverState, selectedModule, gridData, wires])
-
-
-
   // Check if a wire passes through a specific position
   const getWirePassingThrough = (x: number, y: number) => {
     return wires.find(wire => 
       wire.segments.some(segment => segmentPassesThroughCell(segment, x, y))
     )
   }
+
+  // Memoized collision check
+  const isCollisionPreview = useMemo(() => {
+    if (!hoverState || !selectedModule) return false
+    return wouldCollide(hoverState.x, hoverState.y, selectedModule.gridX, selectedModule.gridY) ||
+           wouldCollideWithWire(hoverState.x, hoverState.y, selectedModule.gridX, selectedModule.gridY)
+  }, [hoverState, selectedModule, gridData, wires])
 
   // Render wire segment
   const renderWireSegment = (segment: WireSegment, wireId: string) => {
@@ -1520,9 +1662,9 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect,
   }
 
   // Helper functions to get cell properties from module definition
-  const getCellFromDefinition = (definition: any, x: number, y: number, totalCells: number) => {
-    // If the grid array doesn't have enough cells, return empty cell
-    if (!definition.grid || definition.grid.length !== totalCells) {
+  const getCellFromDefinition = (definition: any, x: number, y: number) => {
+    // If no grid array, return empty cell with module background
+    if (!definition.grid || definition.grid.length === 0) {
       return {
         background: definition.background || '#6B7280',
         css: definition.css || '',
@@ -1533,7 +1675,15 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect,
     
     // Find the cell at this position
     const cell = definition.grid.find((c: any) => c.x === x && c.y === y)
-    return cell || {
+    
+    // If cell found, return it
+    if (cell) {
+      return cell
+    }
+    
+    // If no cell found, return empty cell with module background
+    // This handles cases where the grid array is incomplete
+    return {
       background: definition.background || '#6B7280',
       css: definition.css || '',
       pin: '',
@@ -1541,18 +1691,18 @@ export function ProjectGrid({ project: _project, selectedModule, onModuleSelect,
     }
   }
 
-  const getCellBackground = (definition: any, x: number, y: number, totalCells: number) => {
-    const cell = getCellFromDefinition(definition, x, y, totalCells)
+  const getCellBackground = (definition: any, x: number, y: number) => {
+    const cell = getCellFromDefinition(definition, x, y)
     return cell.background || definition.background || '#6B7280'
   }
 
-  const getCellCSS = (definition: any, x: number, y: number, totalCells: number) => {
-    const cell = getCellFromDefinition(definition, x, y, totalCells)
+  const getCellCSS = (definition: any, x: number, y: number) => {
+    const cell = getCellFromDefinition(definition, x, y)
     return parseInlineCSS(cell.css || '')
   }
 
-  const getCellPin = (definition: any, x: number, y: number, totalCells: number) => {
-    const cell = getCellFromDefinition(definition, x, y, totalCells)
+  const getCellPin = (definition: any, x: number, y: number) => {
+    const cell = getCellFromDefinition(definition, x, y)
     return cell.pin || ''
   }
 
@@ -1710,9 +1860,9 @@ const GridCell = React.memo(({
   isCellOccupied: (x: number, y: number) => boolean
   onComponentClick: (e: React.MouseEvent, componentId: string, cellIndex: number) => void
   findModuleOrigin: (x: number, y: number, moduleId: string) => any
-  getCellBackground: (definition: any, x: number, y: number, totalCells: number) => string
-  getCellCSS: (definition: any, x: number, y: number, totalCells: number) => React.CSSProperties
-  getCellPin: (definition: any, x: number, y: number, totalCells: number) => string
+  getCellBackground: (definition: any, x: number, y: number) => string
+  getCellCSS: (definition: any, x: number, y: number) => React.CSSProperties
+  getCellPin: (definition: any, x: number, y: number) => string
   getResistorColorBands: (resistance: number) => string[]
   componentStates: Map<string, ComponentState>
   zoom: number
@@ -1773,7 +1923,6 @@ const GridCell = React.memo(({
         
         const relativeX = x - moduleOrigin.x
         const relativeY = y - moduleOrigin.y
-        const totalCells = cell.moduleDefinition.gridX * cell.moduleDefinition.gridY
         const isPowered = cell?.isPowered || false
         
         // Check if this cell is part of a highlighted microcontroller
@@ -1783,8 +1932,8 @@ const GridCell = React.memo(({
           <div
             className="absolute inset-0"
             style={{
-              background: getCellBackground(cell.moduleDefinition, relativeX, relativeY, totalCells),
-              ...getCellCSS(cell.moduleDefinition, relativeX, relativeY, totalCells),
+              background: getCellBackground(cell.moduleDefinition, relativeX, relativeY),
+              ...getCellCSS(cell.moduleDefinition, relativeX, relativeY),
               // Add power state visualization
               boxShadow: isPowered ? '0 0 8px #00ff00' : 'none',
               // Add microcontroller highlighting
@@ -1800,10 +1949,10 @@ const GridCell = React.memo(({
             )}
             
             {/* Show pin label if this cell has one */}
-            {getCellPin(cell.moduleDefinition, relativeX, relativeY, totalCells) && (
+            {getCellPin(cell.moduleDefinition, relativeX, relativeY) && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-white font-bold text-xs leading-none">
-                  {getCellPin(cell.moduleDefinition, relativeX, relativeY, totalCells)}
+                  {getCellPin(cell.moduleDefinition, relativeX, relativeY)}
                 </span>
               </div>
             )}

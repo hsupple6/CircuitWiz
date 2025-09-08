@@ -357,6 +357,38 @@ export function DevicePanel({ gridData, wires, onMicrocontrollerHighlight, onMic
     }
   }
 
+  const getWokwiBoardConfig = (microcontrollerName: string) => {
+    switch (microcontrollerName.toLowerCase()) {
+      case 'arduino uno':
+        return {
+          type: 'wokwi-arduino-uno',
+          name: 'Arduino Uno',
+          pins: 14,
+          analogPins: 6,
+          pwmPins: [3, 5, 6, 9, 10, 11],
+          voltage: '5V'
+        }
+      case 'esp32':
+        return {
+          type: 'wokwi-esp32-devkit-v1',
+          name: 'ESP32 DevKit',
+          pins: 30,
+          analogPins: 18,
+          pwmPins: [2, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33],
+          voltage: '3.3V'
+        }
+      default:
+        return {
+          type: 'wokwi-esp32-devkit-v1',
+          name: 'ESP32 DevKit',
+          pins: 30,
+          analogPins: 18,
+          pwmPins: [2, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33],
+          voltage: '3.3V'
+        }
+    }
+  }
+
   const createNewProject = async (template?: ProjectTemplate) => {
     if (!selectedMicrocontroller) return
     
@@ -432,6 +464,48 @@ export function DevicePanel({ gridData, wires, onMicrocontrollerHighlight, onMic
 
         {isExpanded && (
           <div className="border-t border-gray-200 dark:border-dark-border">
+            {/* Global MCU Stats */}
+            {selectedMicrocontroller && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border-b border-gray-200 dark:border-dark-border">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span className="text-sm font-medium text-blue-900 dark:text-blue-100">Active MCU</span>
+                  </div>
+                  <button
+                    onClick={() => setSelectedMicrocontroller(null)}
+                    className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 transition-colors"
+                    title="Clear selection"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="text-sm text-blue-800 dark:text-blue-200">
+                  <div className="font-medium">{selectedMicrocontroller.name}</div>
+                  <div className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                    Board: {getBoardForMicrocontroller(selectedMicrocontroller.name)}
+                  </div>
+                  <div className="text-xs text-blue-600 dark:text-blue-300">
+                    Position: ({selectedMicrocontroller.position.x}, {selectedMicrocontroller.position.y})
+                  </div>
+                  {(() => {
+                    const wokwiConfig = getWokwiBoardConfig(selectedMicrocontroller.name)
+                    return (
+                      <div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-700">
+                        <div className="text-xs text-blue-600 dark:text-blue-300">
+                          <div>Wokwi Type: {wokwiConfig.type}</div>
+                          <div>Voltage: {wokwiConfig.voltage}</div>
+                          <div>Digital Pins: {wokwiConfig.pins}</div>
+                          <div>Analog Pins: {wokwiConfig.analogPins}</div>
+                          <div>PWM Pins: {wokwiConfig.pwmPins.slice(0, 5).join(', ')}{wokwiConfig.pwmPins.length > 5 ? '...' : ''}</div>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
+              </div>
+            )}
+            
             {/* Tab Navigation */}
             <div className="flex border-b border-gray-200 dark:border-dark-border">
               <button
