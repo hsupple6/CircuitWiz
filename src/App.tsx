@@ -12,7 +12,8 @@ import {
   Save,
   CheckCircle,
   AlertCircle,
-  Clock
+  Clock,
+  Trash2
 } from 'lucide-react'
 import { Auth0Provider } from '@auth0/auth0-react'
 import { ThemeProvider } from './contexts/ThemeContext'
@@ -20,6 +21,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ThemeToggle } from './components/ThemeToggle'
 import { ProjectGrid } from './components/ProjectGrid'
 import { ComponentPalette } from './components/ComponentPalette'
+import { ProjectPreview } from './components/ProjectPreview'
 import { ResistanceSelector } from './components/ResistanceSelector'
 import { DevMenu } from './components/DevMenu'
 import { ModuleDefinition } from './modules/types'
@@ -171,6 +173,13 @@ function AppContent() {
   const [componentStates, setComponentStates] = useState<Map<string, any>>(new Map())
   const [userProjects, setUserProjects] = useState<UserProject[]>([])
   const [projectsLoading, setProjectsLoading] = useState(false)
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean
+    project: UserProject | null
+  }>({
+    isOpen: false,
+    project: null
+  })
   const [saveStatus, setSaveStatus] = useState<{
     isSaving: boolean
     lastSaved: Date | null
@@ -340,6 +349,54 @@ function AppContent() {
     } finally {
       setProjectsLoading(false)
     }
+  }
+
+  const handleDeleteProject = async (project: UserProject) => {
+    if (!isAuthenticated || !user) {
+      alert('Please sign in to delete projects.')
+      return
+    }
+    
+    try {
+      const accessToken = await getAccessToken()
+      const response = await fetch(`/api/user/projects/${project.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        const errorMessage = errorData.error || `HTTP ${response.status}: ${response.statusText}`
+        throw new Error(`Failed to delete project: ${errorMessage}`)
+      }
+      
+      // Remove from local state
+      setUserProjects(prev => prev.filter(p => p.id !== project.id))
+      
+      // Close modal
+      setDeleteModal({ isOpen: false, project: null })
+      
+      // If the deleted project was currently selected, go back to projects view
+      if (selectedProject?.id === project.id) {
+        setSelectedProject(null)
+        setCurrentView('projects')
+      }
+    } catch (error) {
+      console.error('Failed to delete project:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      alert(`Failed to delete project: ${errorMessage}`)
+    }
+  }
+
+  const openDeleteModal = (project: UserProject) => {
+    setDeleteModal({ isOpen: true, project })
+  }
+
+  const closeDeleteModal = () => {
+    setDeleteModal({ isOpen: false, project: null })
   }
 
   const createSampleProject = async (type: 'led-blink' | 'temperature-sensor') => {
@@ -982,6 +1039,7 @@ void loop() {
                 key={project.id}
                 project={project}
                 onClick={() => handleProjectSelect(project)}
+                onDelete={() => openDeleteModal(project)}
               />
             ))}
 
@@ -1048,6 +1106,51 @@ void loop() {
           </div>
         </div>
       </main>
+
+      {/* Delete Confirmation Modal */}
+      {deleteModal.isOpen && deleteModal.project && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-dark-card rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex-shrink-0 w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                  <Trash2 className="h-5 w-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">
+                    Delete Project
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-dark-text-muted">
+                    This action cannot be undone
+                  </p>
+                </div>
+              </div>
+              
+              <div className="mb-6">
+                <p className="text-gray-700 dark:text-dark-text-secondary">
+                  Are you sure you want to delete <strong>"{deleteModal.project.name}"</strong>? 
+                  This will permanently remove the project and all its data.
+                </p>
+              </div>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={closeDeleteModal}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-secondary bg-gray-100 dark:bg-dark-border hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDeleteProject(deleteModal.project!)}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+                >
+                  Delete Project
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1055,9 +1158,10 @@ void loop() {
 interface UserProjectCardProps {
   project: UserProject
   onClick: () => void
+  onDelete: () => void
 }
 
-function UserProjectCard({ project, onClick }: UserProjectCardProps) {
+function UserProjectCard({ project, onClick, onDelete }: UserProjectCardProps) {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     const now = new Date()
@@ -1082,14 +1186,25 @@ function UserProjectCard({ project, onClick }: UserProjectCardProps) {
       {/* Preview Area */}
       <div className="relative h-48 bg-gradient-to-br from-primary-100 to-primary-200 dark:from-primary-900/30 dark:to-primary-800/30 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary-400/20 to-primary-600/20 dark:from-primary-300/20 dark:to-primary-500/20" />
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="grid grid-cols-4 gap-2 opacity-30">
-            {Array.from({ length: 16 }).map((_, i) => (
-              <div key={i} className="w-3 h-3 bg-white dark:bg-dark-text-primary rounded-sm" />
-            ))}
-          </div>
+        
+        {/* Project Preview */}
+        <div className="absolute inset-0 opacity-25">
+          <ProjectPreview project={project} className="w-full h-full" />
         </div>
+        
         <div className="absolute inset-0 bg-black/10 dark:bg-white/10" />
+        
+        {/* Delete Button */}
+        <button
+          className="absolute top-2 left-2 bg-red-500/90 hover:bg-red-600 text-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-all duration-200 hover:scale-110"
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete()
+          }}
+          title="Delete project"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
         
         {/* Project Stats */}
         <div className="absolute top-2 right-2 bg-white/90 dark:bg-dark-surface/90 rounded px-2 py-1 text-xs text-gray-600 dark:text-dark-text-secondary">

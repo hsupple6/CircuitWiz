@@ -9,6 +9,7 @@ import { CircuitTutorial } from './CircuitTutorial'
 import { logger } from '../services/Logger'
 import { crdtService } from '../services/CRDTService'
 import { getCRDTSaveService } from '../services/CRDTSaveService'
+import { Eraser } from 'lucide-react'
 
 interface Project {
   id: number
@@ -138,6 +139,8 @@ export function ProjectGrid({
   const [highlightedMicrocontroller, setHighlightedMicrocontroller] = useState<string | null>(null)
   const [isCalculating, setIsCalculating] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [deleteMode, setDeleteMode] = useState(false)
+  const [hoveredForDeletion, setHoveredForDeletion] = useState<{ type: 'component' | 'wire', id: string } | null>(null)
   
   // Auto-save functionality - call onProjectDataChange when data changes (debounced)
   useEffect(() => {
@@ -203,15 +206,26 @@ export function ProjectGrid({
     if (!gridRef.current) return { startX: 0, endX: 50, startY: 0, endY: 50 }
     
     const rect = gridRef.current.getBoundingClientRect()
-    const cellSizeVw = 2.5 * zoom
-    const cellSizePx = (window.innerWidth * cellSizeVw) / 100
+    // Use actual cell size with zoom since grid cells are sized with 2.5 * zoom vw
+    // Grid cells are sized with 2.5vw, so we need to convert this to pixels
+    const baseCellSize = (window.innerWidth * 2.5) / 100
     
-    // Calculate visible area with buffer
+    // Calculate visible area with buffer, accounting for the transform
     const buffer = 5 // Extra cells to render for smooth scrolling
-    const startX = Math.max(0, Math.floor(-gridOffset.x / cellSizePx) - buffer)
-    const endX = Math.min(gridSize.width, Math.ceil((rect.width - gridOffset.x) / cellSizePx) + buffer)
-    const startY = Math.max(0, Math.floor(-gridOffset.y / cellSizePx) - buffer)
-    const endY = Math.min(gridSize.height, Math.ceil((rect.height - gridOffset.y) / cellSizePx) + buffer)
+    const translateX = gridOffset.x + 4 / zoom
+    const translateY = gridOffset.y + 4 / zoom
+    
+    // Calculate the visible area in transformed coordinates
+    const visibleLeft = -translateX / zoom
+    const visibleTop = -translateY / zoom
+    const visibleRight = (rect.width - translateX) / zoom
+    const visibleBottom = (rect.height - translateY) / zoom
+    
+    // Convert to grid coordinates
+    const startX = Math.max(0, Math.floor(visibleLeft / baseCellSize) - buffer)
+    const endX = Math.min(gridSize.width, Math.ceil(visibleRight / baseCellSize) + buffer)
+    const startY = Math.max(0, Math.floor(visibleTop / baseCellSize) - buffer)
+    const endY = Math.min(gridSize.height, Math.ceil(visibleBottom / baseCellSize) + buffer)
     
     return { startX, endX, startY, endY }
   }, [gridOffset, zoom, gridSize.width, gridSize.height])
@@ -220,10 +234,10 @@ export function ProjectGrid({
   const snapToGridCoords = useCallback((x: number, y: number) => {
     if (!snapToGrid) return { x, y }
     return {
-      x: Math.round(x),
-      y: Math.round(y)
+      x: Math.max(0, Math.min(gridSize.width - 1, Math.round(x))),
+      y: Math.max(0, Math.min(gridSize.height - 1, Math.round(y)))
     }
-  }, [snapToGrid])
+  }, [snapToGrid, gridSize.width, gridSize.height])
 
   // Expand grid dynamically based on content and viewport - MEMORY OPTIMIZED
   const expandGrid = useCallback((newZoom: number) => {
@@ -502,7 +516,7 @@ export function ProjectGrid({
       
       setPanStart({ x: e.clientX, y: e.clientY })
     }
-  }, [isPanning, isModalOpen])
+  }, [isPanning, isModalOpen, panStart])
 
   const handleMouseUp = useCallback(() => {
     setIsPanning(false)
@@ -517,7 +531,7 @@ export function ProjectGrid({
 
   // Handle touch pan
   const handleTouchMovePan = useCallback((e: TouchEvent) => {
-    if (e.touches.length === 1 && !isPanning && !isModalOpen) {
+    if (e.touches.length === 1 && !isModalOpen) {
       // Single finger drag for panning
       e.preventDefault()
       const touch = e.touches[0]
@@ -571,17 +585,42 @@ export function ProjectGrid({
     if (!gridRef.current) return
     
     const rect = gridRef.current.getBoundingClientRect()
-    const cellSizeVw = 2.5 * zoom
-    const cellSizePx = (window.innerWidth * cellSizeVw) / 100
+    // Use actual cell size with zoom since grid cells are sized with 2.5 * zoom vw
+    // Grid cells are sized with 2.5vw, so we need to convert this to pixels
+    const baseCellSize = (window.innerWidth * 2.5) / 100
     
-    // Fine-tuned offset for precise alignment
-    const offsetX = -cellSizePx / 2 // Center the cursor in the cell
-    const offsetY = -cellSizePx / 2
-    const rawX = (e.clientX - rect.left - gridOffset.x + offsetX) / cellSizePx
-    const rawY = (e.clientY - rect.top - gridOffset.y + offsetY) / cellSizePx
+    // Calculate coordinates relative to the grid container
+    // The grid is transformed with: scale(${zoom}) translate(${gridOffset.x + 4 / zoom}px, ${gridOffset.y + 4 / zoom}px)
+    // We need to account for the transform by using the inverse calculation
+    const translateX = gridOffset.x + 4 / zoom
+    const translateY = gridOffset.y + 4 / zoom
+    
+    // Calculate the mouse position relative to the transformed grid
+    const mouseX = e.clientX - rect.left
+    const mouseY = e.clientY - rect.top
+    
+    // Apply inverse transform: first subtract translation, then divide by scale
+    const transformedX = (mouseX - translateX) / zoom
+    const transformedY = (mouseY - translateY) / zoom
+    
+    // Convert to grid coordinates
+    // Add half cell size offset to match component placement
+    const rawX = (transformedX - baseCellSize / 2) / baseCellSize
+    const rawY = (transformedY - baseCellSize / 2) / baseCellSize
     
     // Snap to grid if enabled
     const { x, y } = snapToGridCoords(rawX, rawY)
+    
+    // Handle delete mode hover
+    if (deleteMode) {
+      const cell = gridData[y]?.[x]
+      if (cell?.occupied && cell.componentId) {
+        setHoveredForDeletion({ type: 'component', id: cell.componentId })
+      } else {
+        setHoveredForDeletion(null)
+      }
+      return
+    }
     
     // Handle module placement preview
     if (selectedModule && !wiringState.isWiring) {
@@ -594,10 +633,15 @@ export function ProjectGrid({
     
     // Handle wire preview
     if (wiringState.isWiring && wiringState.currentConnection) {
-      const currentSegments = [...wiringState.currentConnection.segments, { x, y }]
+      // For wire preview, use offset coordinates to match wire placement
+      const wireX = (transformedX - baseCellSize / 2) / baseCellSize
+      const wireY = (transformedY - baseCellSize / 2) / baseCellSize
+      const { x: wireGridX, y: wireGridY } = snapToGridCoords(wireX, wireY)
+      
+      const currentSegments = [...wiringState.currentConnection.segments, { x: wireGridX, y: wireGridY }]
       setWirePreview(currentSegments)
     }
-  }, [selectedModule, zoom, gridOffset, wiringState, snapToGridCoords])
+  }, [selectedModule, zoom, gridOffset, wiringState, snapToGridCoords, deleteMode, gridData])
 
   // Handle clicking on placed components
   const handleComponentClick = useCallback((e: React.MouseEvent, componentId: string, cellIndex: number) => {
@@ -762,6 +806,80 @@ export function ProjectGrid({
   const cancelWiring = useCallback(() => {
     setWiringState({ isWiring: false, currentConnection: null })
     setWirePreview(null)
+  }, [])
+
+  // Delete mode functions
+  const toggleDeleteMode = useCallback(() => {
+    setDeleteMode(prev => !prev)
+    setHoveredForDeletion(null)
+    // Exit wiring mode when entering delete mode
+    if (wiringState.isWiring) {
+      cancelWiring()
+    }
+    // Deselect module when entering delete mode
+    if (selectedModule) {
+      onModuleSelect(null)
+    }
+  }, [wiringState.isWiring, cancelWiring, selectedModule, onModuleSelect])
+
+  const deleteComponent = useCallback((componentId: string) => {
+    setGridData(prev => {
+      const newGrid = [...prev]
+      let hasChanges = false
+      
+      // Remove all cells belonging to this component
+      for (let y = 0; y < newGrid.length; y++) {
+        if (newGrid[y]) {
+          for (let x = 0; x < newGrid[y].length; x++) {
+            if (newGrid[y][x]?.componentId === componentId) {
+              if (!hasChanges) {
+                newGrid[y] = [...newGrid[y]]
+                hasChanges = true
+              }
+              newGrid[y][x] = {
+                ...newGrid[y][x],
+                occupied: false,
+                componentId: undefined,
+                componentType: undefined,
+                moduleDefinition: undefined,
+                isPowered: false,
+                cellIndex: undefined,
+                isClickable: false
+              }
+            }
+          }
+        }
+      }
+      
+      return hasChanges ? newGrid : prev
+    })
+    
+    // Remove component from component states
+    setComponentStates(prev => {
+      const newStates = new Map(prev)
+      newStates.delete(componentId)
+      return newStates
+    })
+    
+    // Delete connected wires
+    deleteWiresConnectedToComponent(componentId)
+  }, [])
+
+  const deleteWiresConnectedToComponent = useCallback((componentId: string) => {
+    setWires(prev => {
+      const newWires = prev.filter(wire => {
+        // Check if any segment of this wire connects to the component
+        return !wire.segments.some(segment => {
+          const cell = gridData[segment.from.y]?.[segment.from.x] || gridData[segment.to.y]?.[segment.to.x]
+          return cell?.componentId === componentId
+        })
+      })
+      return newWires
+    })
+  }, [gridData])
+
+  const deleteWire = useCallback((wireId: string) => {
+    setWires(prev => prev.filter(wire => wire.id !== wireId))
   }, [])
 
   // Update wire color
@@ -1239,17 +1357,40 @@ export function ProjectGrid({
     const rect = gridRef.current?.getBoundingClientRect()
     if (!rect) return
     
-    const cellSizeVw = 2.5 * zoom
-    const cellSizePx = (window.innerWidth * cellSizeVw) / 100
+    // Use actual cell size with zoom since grid cells are sized with 2.5 * zoom vw
+    // Grid cells are sized with 2.5vw, so we need to convert this to pixels
+    const baseCellSize = (window.innerWidth * 2.5) / 100
     
-    // Fine-tuned offset for precise alignment
-    const offsetX = -cellSizePx / 2 // Center the cursor in the cell
-    const offsetY = -cellSizePx / 2
-    const rawX = (e.clientX - rect.left - gridOffset.x + offsetX) / cellSizePx
-    const rawY = (e.clientY - rect.top - gridOffset.y + offsetY) / cellSizePx
+    // Calculate coordinates relative to the grid container
+    // The grid is transformed with: scale(${zoom}) translate(${gridOffset.x + 4 / zoom}px, ${gridOffset.y + 4 / zoom}px)
+    // We need to account for the transform by using the inverse calculation
+    const translateX = gridOffset.x + 4 / zoom
+    const translateY = gridOffset.y + 4 / zoom
+    
+    // Calculate the mouse position relative to the transformed grid
+    const mouseX = e.clientX - rect.left
+    const mouseY = e.clientY - rect.top
+    
+    // Apply inverse transform: first subtract translation, then divide by scale
+    const transformedX = (mouseX - translateX) / zoom
+    const transformedY = (mouseY - translateY) / zoom
+    
+    // Convert to grid coordinates
+    // Add half cell size offset to account for cell positioning
+    const rawX = (transformedX - baseCellSize / 2) / baseCellSize
+    const rawY = (transformedY - baseCellSize / 2) / baseCellSize
     
     // Snap to grid if enabled
     const { x, y } = snapToGridCoords(rawX, rawY)
+    
+    // Handle delete mode
+    if (deleteMode) {
+      const cell = gridData[y]?.[x]
+      if (cell?.occupied && cell.componentId) {
+        deleteComponent(cell.componentId)
+      }
+      return
+    }
     
     // Check if clicking on a connection point or wire
     const isConnection = isConnectionPoint(x, y)
@@ -1262,18 +1403,23 @@ export function ProjectGrid({
     
     // Handle wiring mode
     if (wiringState.isWiring) {
+      // For wires, use offset coordinates to account for cell positioning
+      const wireX = (transformedX - (baseCellSize * 2) / 2) / baseCellSize
+      const wireY = (transformedY - (baseCellSize * 2) / 2) / baseCellSize
+      const { x: wireGridX, y: wireGridY } = snapToGridCoords(wireX, wireY)
+      
       if (wiringState.currentConnection) {
         // Add segment or finish wiring
         if (e.ctrlKey || e.metaKey) {
           // Ctrl/Cmd + click to add segment
-          addWireSegment(x, y)
+          addWireSegment(wireGridX, wireGridY)
         } else {
           // Regular click to finish wiring
-          finishWiringWithValidation(x, y)
+          finishWiringWithValidation(wireGridX, wireGridY)
         }
       } else {
         // Start new wire
-        startWiring(x, y)
+        startWiring(wireGridX, wireGridY)
       }
       return
     }
@@ -1547,9 +1693,14 @@ export function ProjectGrid({
           }}
           onClick={(e) => {
             e.stopPropagation()
-            console.log('Wire segment clicked:', segment.id)
-            // Start new wire from this segment
-            startWiring(segment.to.x, segment.to.y)
+            if (deleteMode) {
+              // Delete the wire in delete mode
+              deleteWire(wireId)
+            } else {
+              console.log('Wire segment clicked:', segment.id)
+              // Start new wire from this segment
+              startWiring(segment.to.x, segment.to.y)
+            }
           }}
         />
         
@@ -1850,7 +2001,9 @@ const GridCell = React.memo(({
   getResistorColorBands,
   componentStates,
   zoom,
-  highlightedMicrocontroller
+  highlightedMicrocontroller,
+  deleteMode,
+  hoveredForDeletion
 }: {
   x: number
   y: number
@@ -1867,8 +2020,11 @@ const GridCell = React.memo(({
   componentStates: Map<string, ComponentState>
   zoom: number
   highlightedMicrocontroller: string | null
+  deleteMode: boolean
+  hoveredForDeletion: { type: 'component' | 'wire', id: string } | null
 }) => {
   const occupied = isCellOccupied(x, y)
+  const isHoveredForDeletion = deleteMode && hoveredForDeletion?.type === 'component' && hoveredForDeletion.id === cell.componentId
   
   return (
     <div
@@ -1940,6 +2096,12 @@ const GridCell = React.memo(({
               ...(isMicrocontrollerHighlighted && {
                 boxShadow: '0 0 12px #3b82f6',
                 border: '2px solid #3b82f6'
+              }),
+              // Add delete mode highlighting
+              ...(isHoveredForDeletion && {
+                boxShadow: '0 0 12px #ef4444',
+                border: '2px solid #ef4444',
+                filter: 'brightness(0.8)'
               })
             }}
           >
@@ -2115,6 +2277,7 @@ const GridCell = React.memo(({
       ref={gridRef}
       className={`relative w-full h-full overflow-hidden bg-gray-100 dark:bg-dark-bg ${
         isPanning ? 'cursor-grabbing' : 
+        deleteMode ? 'cursor-pointer' :
         wiringState.isWiring ? 'cursor-crosshair' :
         selectedModule ? 'cursor-crosshair' : 'cursor-grab'
       }`}
@@ -2225,7 +2388,7 @@ const GridCell = React.memo(({
       <div 
         className="absolute inset-0 opacity-30"
         style={{
-          transform: `scale(${zoom}) translate(${gridOffset.x / zoom}px, ${gridOffset.y / zoom}px)`,
+          transform: `scale(${zoom}) translate(${gridOffset.x + 4 / zoom}px, ${gridOffset.y + 4 / zoom}px)`,
           transformOrigin: 'top left',
           width: `${gridSize.width * 2.5}vw`,
           height: `${gridSize.height * 2.5}vw`,
@@ -2233,7 +2396,7 @@ const GridCell = React.memo(({
             linear-gradient(to right, ${isDark ? '#d1d5db' : '#9ca3af'} 1px, transparent 1px),
             linear-gradient(to bottom, ${isDark ? '#d1d5db' : '#9ca3af'} 1px, transparent 1px)
           `,
-          backgroundSize: `${(window.innerWidth * 2.5 * zoom) / 100}px ${(window.innerWidth * 2.5 * zoom) / 100}px`
+          backgroundSize: `${(window.innerWidth * 2.5) / 100}px ${(window.innerWidth * 2.5) / 100}px`
         }}
       />
 
@@ -2275,6 +2438,8 @@ const GridCell = React.memo(({
                     componentStates={componentStates}
                     zoom={zoom}
                     highlightedMicrocontroller={highlightedMicrocontroller}
+                    deleteMode={deleteMode}
+                    hoveredForDeletion={hoveredForDeletion}
                   />
                 )
               })}
@@ -2469,8 +2634,23 @@ const GridCell = React.memo(({
         </div>
       </div>
 
-      {/* Tutorial Button */}
-      <div className="absolute top-4 right-4">
+      {/* Control Buttons */}
+      <div className="absolute top-4 right-4 flex gap-2 z-50">
+        {/* Delete Mode Button */}
+        <button
+          onClick={toggleDeleteMode}
+          className={`px-3 py-2 rounded-lg shadow-lg transition-colors text-sm flex items-center gap-2 ${
+            deleteMode 
+              ? 'bg-red-500 text-white hover:bg-red-600' 
+              : 'bg-gray-500 text-white hover:bg-gray-600'
+          }`}
+          title={deleteMode ? 'Exit delete mode' : 'Enter delete mode'}
+        >
+          <Eraser className="h-4 w-4" />
+          {deleteMode ? 'Exit Delete' : 'Delete'}
+        </button>
+        
+        {/* Tutorial Button */}
         <button
           onClick={() => setShowTutorial(true)}
           className="px-3 py-2 bg-green-500 text-white rounded-lg shadow-lg hover:bg-green-600 transition-colors text-sm"
