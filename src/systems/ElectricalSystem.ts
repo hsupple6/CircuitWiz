@@ -21,6 +21,8 @@ export interface ComponentState {
   outputCurrent: number
   power: number
   status: string
+  isPowered: boolean
+  isGrounded: boolean
   [key: string]: any // Additional properties like voltageDrop, isOn, etc.
 }
 
@@ -124,6 +126,18 @@ export const componentCalculators = {
       power: component.voltage * inputCurrent,
       status: 'active'
     }
+  },
+
+  'arduino uno r3': (component: any, inputVoltage: number, inputCurrent: number) => {
+    // Arduino Uno consumes power and provides regulated outputs
+    const isPowered = inputVoltage >= 4.5 // Minimum operating voltage
+    return {
+      outputVoltage: isPowered ? 5.0 : 0, // Regulated 5V output when powered
+      outputCurrent: inputCurrent,
+      power: isPowered ? 5.0 * inputCurrent : 0,
+      status: isPowered ? 'powered' : 'unpowered',
+      isPowered
+    }
   }
 }
 
@@ -133,13 +147,29 @@ export const componentCalculators = {
 export function findPowerSources(gridData: GridCell[][]): PowerSource[] {
   const powerSources: PowerSource[] = []
   
+  console.log('🔍 Finding power sources in grid...')
+  
   gridData.forEach((row, y) => {
     if (!row) return
     row.forEach((cell, x) => {
       if (cell && cell.occupied && cell.componentId && cell.moduleDefinition) {
         const moduleCell = cell.moduleDefinition.grid[cell.cellIndex || 0]
-        if (moduleCell?.isPowerable && moduleCell?.voltage > 0 && 
-            (moduleCell.type === 'VCC' || moduleCell.type === 'POSITIVE' || moduleCell.type === 'DIGITAL')) {
+        console.log(`Checking cell at (${x}, ${y}):`, {
+          componentId: cell.componentId,
+          moduleType: cell.moduleDefinition.module,
+          cellType: moduleCell?.type,
+          isPowerable: moduleCell?.isPowerable,
+          voltage: moduleCell?.voltage,
+          pin: moduleCell?.pin
+        })
+        
+        // Only treat actual power source components as power sources, not microcontroller pins
+        const isActualPowerSource = cell.moduleDefinition.module === 'PowerSupply' || 
+                                   cell.moduleDefinition.module === 'Battery'
+        
+        if (isActualPowerSource && moduleCell?.isPowerable && moduleCell?.voltage > 0 && 
+            (moduleCell.type === 'VCC' || moduleCell.type === 'POSITIVE')) {
+          console.log(`✅ Found power source: ${cell.componentId} at (${x}, ${y}) with ${moduleCell.voltage}V`)
           powerSources.push({
             id: cell.componentId,
             voltage: moduleCell.voltage,
@@ -151,6 +181,7 @@ export function findPowerSources(gridData: GridCell[][]): PowerSource[] {
     })
   })
   
+  console.log(`🔍 Found ${powerSources.length} power sources:`, powerSources)
   return powerSources
 }
 
@@ -590,79 +621,167 @@ export function processCircuitPathway(
 }
 
 /**
- * Update wire states based on component states
+ * Update wire states based on power and ground propagation
  */
 export function updateWireStates(
   wires: WireConnection[],
-  componentStates: Map<string, ComponentState>,
-  circuitCurrent: number = 0
+  gridData: GridCell[][],
+  componentStates: Map<string, ComponentState>
 ): WireConnection[] {
+  console.log('🔌 Updating wire states...')
+  
   return wires.map(wire => {
     let wireVoltage = 0
     let wireCurrent = 0
-    let wirePower = 0
     let isPowered = false
+    let isGrounded = false
     
-    // Find the component states that this wire connects to
-    const connectedStates: ComponentState[] = []
-    
+    // Check each segment of the wire to see what it connects to
     for (const segment of wire.segments) {
-      const fromKey = `${segment.from.x},${segment.from.y}`
-      const toKey = `${segment.to.x},${segment.to.y}`
+      const fromCell = gridData[segment.from.y]?.[segment.from.x]
+      const toCell = gridData[segment.to.y]?.[segment.to.x]
       
-      // Check if this segment connects to a component with state
-      componentStates.forEach((state) => {
-        const componentKey = `${state.position.x},${state.position.y}`
-        if (fromKey === componentKey || toKey === componentKey) {
-          connectedStates.push(state)
-        }
-      })
-    }
-    
-    // If no direct connections found, try to find components within a small radius
-    if (connectedStates.length === 0) {
-      for (const segment of wire.segments) {
-        componentStates.forEach((state) => {
-          const dx = Math.abs(segment.from.x - state.position.x)
-          const dy = Math.abs(segment.from.y - state.position.y)
-          const distance = Math.sqrt(dx * dx + dy * dy)
-          
-          // If component is within 2 grid units of wire segment
-          if (distance <= 2) {
-            connectedStates.push(state)
+      // Check if this segment connects to a power source or ground
+      if (fromCell?.occupied && fromCell.moduleDefinition) {
+        const fromModuleCell = fromCell.moduleDefinition.grid[fromCell.cellIndex || 0]
+        if (fromModuleCell) {
+          // Check for power connection
+          if (fromModuleCell.isPowerable && fromModuleCell.voltage > 0) {
+            wireVoltage = Math.max(wireVoltage, fromModuleCell.voltage)
+            isPowered = true
+            console.log(`🔌 Wire ${wire.id} connected to power: ${fromModuleCell.voltage}V at (${segment.from.x}, ${segment.from.y})`)
           }
-        })
+          // Check for ground connection
+          if (fromModuleCell.isGroundable && fromModuleCell.voltage === 0) {
+            isGrounded = true
+            console.log(`🔌 Wire ${wire.id} connected to ground at (${segment.from.x}, ${segment.from.y})`)
+          }
+        }
+      }
+      
+      if (toCell?.occupied && toCell.moduleDefinition) {
+        const toModuleCell = toCell.moduleDefinition.grid[toCell.cellIndex || 0]
+        if (toModuleCell) {
+          // Check for power connection
+          if (toModuleCell.isPowerable && toModuleCell.voltage > 0) {
+            wireVoltage = Math.max(wireVoltage, toModuleCell.voltage)
+            isPowered = true
+            console.log(`🔌 Wire ${wire.id} connected to power: ${toModuleCell.voltage}V at (${segment.to.x}, ${segment.to.y})`)
+          }
+          // Check for ground connection
+          if (toModuleCell.isGroundable && toModuleCell.voltage === 0) {
+            isGrounded = true
+            console.log(`🔌 Wire ${wire.id} connected to ground at (${segment.to.x}, ${segment.to.y})`)
+          }
+        }
       }
     }
     
-    // Calculate wire properties based on connected components
-    if (connectedStates.length > 0) {
-      // In a series circuit, ALL wires have the SAME current
-      wireCurrent = circuitCurrent
-      
-      // Voltage varies along the circuit (drops across components)
-      // Use the highest voltage from connected components
-      wireVoltage = Math.max(...connectedStates.map(s => s.outputVoltage || 0))
-      wirePower = wireVoltage * wireCurrent
-      isPowered = wireVoltage > 0
-      
-      logger.debug(`Wire ${wire.id}: Connected to ${connectedStates.length} components, ${wireVoltage.toFixed(2)}V, ${(wireCurrent * 1000).toFixed(1)}mA`)
-    }
+    console.log(`🔌 Wire ${wire.id} final state: ${wireVoltage}V, powered: ${isPowered}, grounded: ${isGrounded}`)
     
     return {
       ...wire,
       voltage: wireVoltage,
       current: wireCurrent,
-      power: wirePower,
       isPowered,
+      isGrounded,
+      isPowerable: isPowered,
+      isGroundable: isGrounded,
       segments: wire.segments.map(segment => ({
         ...segment,
         isPowered,
+        isGrounded,
         voltage: wireVoltage,
         current: wireCurrent
       }))
     }
   })
+}
+
+/**
+ * Update component states based on wire connections
+ */
+export function updateComponentStatesFromWires(
+  gridData: GridCell[][],
+  wires: WireConnection[]
+): Map<string, ComponentState> {
+  console.log('🔧 Updating component states from wire connections...')
+  const componentStates = new Map<string, ComponentState>()
+  
+  // Find all components in the grid
+  gridData.forEach((row, y) => {
+    if (!row) return
+    row.forEach((cell, x) => {
+      if (cell?.occupied && cell.componentId && cell.moduleDefinition) {
+        const componentId = cell.componentId
+        const moduleType = cell.moduleDefinition.module
+        
+        // Initialize component state
+        let componentState: ComponentState = {
+          componentId,
+          componentType: moduleType,
+          position: { x, y },
+          outputVoltage: 0,
+          outputCurrent: 0,
+          power: 0,
+          status: 'unpowered',
+          isPowered: false,
+          isGrounded: false
+        }
+        
+        // Check if any wires connect to this component
+        let hasPowerConnection = false
+        let hasGroundConnection = false
+        let maxVoltage = 0
+        
+        wires.forEach(wire => {
+          wire.segments.forEach(segment => {
+            // Check if wire connects to this component
+            const fromCell = gridData[segment.from.y]?.[segment.from.x]
+            const toCell = gridData[segment.to.y]?.[segment.to.x]
+            
+            if ((fromCell?.componentId === componentId) || (toCell?.componentId === componentId)) {
+              // Wire connects to this component
+              if (wire.isPowered) {
+                hasPowerConnection = true
+                maxVoltage = Math.max(maxVoltage, wire.voltage)
+                console.log(`🔧 Component ${componentId} connected to power wire: ${wire.voltage}V`)
+              }
+              if (wire.isGrounded) {
+                hasGroundConnection = true
+                console.log(`🔧 Component ${componentId} connected to ground wire`)
+              }
+            }
+          })
+        })
+        
+        // Update component state based on connections
+        if (hasPowerConnection && hasGroundConnection) {
+          // Component has both power and ground - it's fully powered
+          componentState.isPowered = true
+          componentState.isGrounded = true
+          componentState.outputVoltage = maxVoltage
+          componentState.status = 'powered'
+          componentState.power = maxVoltage * 0.1 // Assume 100mA current
+          console.log(`🔧 Component ${componentId} is fully powered: ${maxVoltage}V`)
+        } else if (hasPowerConnection) {
+          componentState.isPowered = true
+          componentState.outputVoltage = maxVoltage
+          componentState.status = 'powered_no_ground'
+          console.log(`🔧 Component ${componentId} has power but no ground: ${maxVoltage}V`)
+        } else if (hasGroundConnection) {
+          componentState.isGrounded = true
+          componentState.status = 'grounded_no_power'
+          console.log(`🔧 Component ${componentId} has ground but no power`)
+        }
+        
+        componentStates.set(componentId, componentState)
+      }
+    })
+  })
+  
+  console.log(`🔧 Updated ${componentStates.size} component states`)
+  return componentStates
 }
 
 /**
@@ -688,7 +807,7 @@ export function updateGridData(
           ...newGrid[position.y][position.x],
           voltage: state.outputVoltage,
           current: state.outputCurrent,
-          isPowered: state.outputVoltage > 0
+          isPowered: state.isPowered
         }
       }
     }
@@ -709,41 +828,23 @@ export function calculateElectricalFlow(
   updatedWires: WireConnection[]
   updatedGridData: GridCell[][]
 } {
-  const powerSources = findPowerSources(gridData)
-  const connections = buildConnectionMap(wires)
-  const nodes = findCircuitNodes(gridData, connections)
+  console.log('⚡ Starting electrical flow calculation...')
+  console.log('Grid data:', gridData.length, 'rows')
+  console.log('Wires:', wires.length)
   
-  // Log connection information
-  logger.debug(`Found ${connections.size} wire connection points and ${nodes.size} circuit nodes`)
+  // Step 1: Update wire states based on power/ground connections
+  const updatedWires = updateWireStates(wires, gridData, new Map())
   
-  const allComponentStates = new Map<string, ComponentState>()
-  let globalCircuitCurrent = 0
-
-  // Find parallel resistors first
-  const parallelBranches = findParallelResistors(gridData, connections)
+  // Step 2: Update component states based on wire connections
+  const componentStates = updateComponentStatesFromWires(gridData, updatedWires)
   
-  powerSources.forEach((source, _sourceIndex) => {
-    const branches = findCircuitBranches(source.position, gridData, connections)
-    logger.info(`Power source ${source.id}: Found ${branches.length} branches`)
-
-    branches.forEach((branch) => {
-      logger.pathwayDetected(branch.map(c => c.id), source.voltage, 0) // Current will be calculated later
-      
-      const branchStates = processBranch(branch, source.voltage, source.maxCurrent, parallelBranches)
-      branchStates.forEach((state, id) => allComponentStates.set(id, state))
-      if (branchStates.size > 0 && globalCircuitCurrent === 0) {
-        globalCircuitCurrent = Array.from(branchStates.values())[0].outputCurrent
-      }
-    })
-  })
-
-  logger.info(`Total component states: ${allComponentStates.size}`)
-
-  const updatedWires = updateWireStates(wires, allComponentStates, globalCircuitCurrent)
-  const updatedGridData = updateGridData(gridData, allComponentStates)
-
+  // Step 3: Update grid data with component states
+  const updatedGridData = updateGridData(gridData, componentStates)
+  
+  console.log(`⚡ Electrical calculation completed: ${componentStates.size} component states, ${updatedWires.length} wires`)
+  
   return {
-    componentStates: allComponentStates,
+    componentStates,
     updatedWires,
     updatedGridData
   }

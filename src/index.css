@@ -50,6 +50,18 @@
     -ms-user-select: none;
   }
   
+  /* Wire pulse animation for simulation */
+  @keyframes wirePulse {
+    0% {
+      opacity: 0.4;
+      filter: drop-shadow(0 0 8px #00ff00);
+    }
+    100% {
+      opacity: 0.8;
+      filter: drop-shadow(0 0 16px #00ff00) drop-shadow(0 0 24px #00ff00);
+    }
+  }
+  
   .drag-handle * {
     user-select: none;
     -webkit-user-select: none;

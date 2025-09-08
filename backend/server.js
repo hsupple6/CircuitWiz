@@ -832,34 +832,103 @@ function analyzeArduinoCode(code) {
     blinkPattern: false
   };
   
-  // Extract digitalWrite calls
-  const digitalWriteRegex = /digitalWrite\s*\(\s*(\d+)\s*,\s*(HIGH|LOW)\s*\)/g;
+  // Extract digitalWrite calls - handle both literal numbers and variables
+  const digitalWriteRegex = /digitalWrite\s*\(\s*([^,)]+)\s*,\s*(HIGH|LOW)\s*\)/g;
   let match;
   while ((match = digitalWriteRegex.exec(code)) !== null) {
+    const pinValue = match[1].trim();
+    let pinNumber;
+    
+    // Try to parse as number first
+    if (!isNaN(pinValue)) {
+      pinNumber = parseInt(pinValue);
+    } else {
+      // Look for variable definitions in the code
+      const variableRegex = new RegExp(`(const\\s+int\\s+|int\\s+)${pinValue}\\s*=\\s*(\\d+)`, 'i');
+      const varMatch = code.match(variableRegex);
+      if (varMatch) {
+        pinNumber = parseInt(varMatch[2]);
+      } else {
+        // Default fallback - try to extract number from variable name
+        const numberMatch = pinValue.match(/(\d+)/);
+        pinNumber = numberMatch ? parseInt(numberMatch[1]) : 13; // Default to pin 13
+      }
+    }
+    
     analysis.digitalWriteCalls.push({
-      pin: parseInt(match[1]),
+      pin: pinNumber,
       state: match[2],
-      line: code.substring(0, match.index).split('\n').length
+      line: code.substring(0, match.index).split('\n').length,
+      originalPin: pinValue
     });
   }
   
-  // Extract pinMode calls
-  const pinModeRegex = /pinMode\s*\(\s*(\d+)\s*,\s*(INPUT|OUTPUT|INPUT_PULLUP)\s*\)/g;
+  // Extract pinMode calls - handle both literal numbers and variables
+  const pinModeRegex = /pinMode\s*\(\s*([^,)]+)\s*,\s*(INPUT|OUTPUT|INPUT_PULLUP)\s*\)/g;
   while ((match = pinModeRegex.exec(code)) !== null) {
+    const pinValue = match[1].trim();
+    let pinNumber;
+    
+    // Try to parse as number first
+    if (!isNaN(pinValue)) {
+      pinNumber = parseInt(pinValue);
+    } else {
+      // Look for variable definitions in the code
+      const variableRegex = new RegExp(`(const\\s+int\\s+|int\\s+)${pinValue}\\s*=\\s*(\\d+)`, 'i');
+      const varMatch = code.match(variableRegex);
+      if (varMatch) {
+        pinNumber = parseInt(varMatch[2]);
+      } else {
+        // Default fallback - try to extract number from variable name
+        const numberMatch = pinValue.match(/(\d+)/);
+        pinNumber = numberMatch ? parseInt(numberMatch[1]) : 13; // Default to pin 13
+      }
+    }
+    
     analysis.pinModeCalls.push({
-      pin: parseInt(match[1]),
+      pin: pinNumber,
       mode: match[2],
-      line: code.substring(0, match.index).split('\n').length
+      line: code.substring(0, match.index).split('\n').length,
+      originalPin: pinValue
     });
   }
   
-  // Extract analogWrite calls
-  const analogWriteRegex = /analogWrite\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/g;
+  // Extract analogWrite calls - handle both literal numbers and variables
+  const analogWriteRegex = /analogWrite\s*\(\s*([^,)]+)\s*,\s*([^)]+)\s*\)/g;
   while ((match = analogWriteRegex.exec(code)) !== null) {
+    const pinValue = match[1].trim();
+    const valueStr = match[2].trim();
+    let pinNumber, value;
+    
+    // Try to parse pin as number first
+    if (!isNaN(pinValue)) {
+      pinNumber = parseInt(pinValue);
+    } else {
+      // Look for variable definitions in the code
+      const variableRegex = new RegExp(`(const\\s+int\\s+|int\\s+)${pinValue}\\s*=\\s*(\\d+)`, 'i');
+      const varMatch = code.match(variableRegex);
+      if (varMatch) {
+        pinNumber = parseInt(varMatch[2]);
+      } else {
+        // Default fallback - try to extract number from variable name
+        const numberMatch = pinValue.match(/(\d+)/);
+        pinNumber = numberMatch ? parseInt(numberMatch[1]) : 13; // Default to pin 13
+      }
+    }
+    
+    // Try to parse value as number
+    if (!isNaN(valueStr)) {
+      value = parseInt(valueStr);
+    } else {
+      value = 128; // Default PWM value
+    }
+    
     analysis.analogWriteCalls.push({
-      pin: parseInt(match[1]),
-      value: parseInt(match[2]),
-      line: code.substring(0, match.index).split('\n').length
+      pin: pinNumber,
+      value: value,
+      line: code.substring(0, match.index).split('\n').length,
+      originalPin: pinValue,
+      originalValue: valueStr
     });
   }
   

@@ -12,28 +12,17 @@ interface ComponentPaletteProps {
 export function ComponentPalette({ selectedModule, onModuleSelect }: ComponentPaletteProps) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['microcontrollers']))
   const categories = getCategories()
-  
-  console.log('ComponentPalette rendered with selectedModule:', selectedModule)
-  console.log('ComponentPalette received onModuleSelect:', onModuleSelect)
-  console.log('Available categories:', categories)
-
 
   const handleModuleClick = (module: ModuleDefinition) => {
-    console.log('Module clicked:', module.module)
-    console.log('onModuleSelect function:', onModuleSelect)
-    
     if (!onModuleSelect) {
-      console.error('onModuleSelect is not defined! Props received:', { selectedModule, onModuleSelect })
       alert('Error: Module selection function not available. Please refresh the page.')
       return
     }
     
     // If the same module is clicked, deselect it
     if (selectedModule?.module === module.module) {
-      console.log('Deselecting module')
       onModuleSelect(null)
     } else {
-      console.log('Selecting module:', module.module)
       onModuleSelect(module)
     }
   }
@@ -69,7 +58,6 @@ export function ComponentPalette({ selectedModule, onModuleSelect }: ComponentPa
           {categories.map((category) => {
             const modules = getModulesByCategory(category)
             const isExpanded = expandedCategories.has(category)
-            console.log(`Category ${category} has ${modules.length} modules:`, modules.map(m => m.module))
             
             return (
               <div key={category} className="border border-gray-200 dark:border-dark-border rounded-lg">

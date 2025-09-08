@@ -18,10 +18,10 @@
       "isGroundable": false,
       "type": "POSITIVE",
       "pin": "+",
-      "voltage": 9.0,
+      "voltage": 5.0,
       "current": 1.0,
       "properties": {
-        "voltage": "9.0V",
+        "voltage": "5.0V",
         "current": "1A",
         "capacity": "2000mAh",
         "chemistry": "Li-ion",

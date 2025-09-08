@@ -126,7 +126,6 @@ function App() {
   const clientId = (import.meta as any).env.VITE_AUTH0_CLIENT_ID
   const audience = (import.meta as any).env.VITE_AUTH0_AUDIENCE
 
-  console.log('Auth0 Config:', { domain, clientId, audience })
 
   if (!domain || !clientId) {
     return (
@@ -232,7 +231,6 @@ function AppContent() {
     try {
       return JSON.stringify(current) === JSON.stringify(saved)
     } catch (error) {
-      console.warn('🔧 App: Error comparing states:', error)
       return false
     }
   }
@@ -250,13 +248,6 @@ function AppContent() {
     const componentStatesChanged = !compareStates(currentState.componentStates, lastSavedState.componentStates)
 
     const hasChanges = gridDataChanged || wiresChanged || componentStatesChanged
-    
-    console.log('🔧 App: Checking for unsaved changes:', {
-      gridDataChanged,
-      wiresChanged,
-      componentStatesChanged,
-      hasChanges
-    })
 
     return hasChanges
   }
@@ -310,7 +301,6 @@ function AppContent() {
       const projects = await getProjects()
       setUserProjects(projects)
     } catch (error) {
-      console.error('Failed to load projects:', error)
       // Don't show error to user if it's just an authentication issue
       if (error instanceof Error && !error.message.includes('401') && !error.message.includes('403')) {
         alert('Failed to load projects. Please try refreshing the page.')
@@ -344,7 +334,6 @@ function AppContent() {
         setCurrentView('project')
       }
     } catch (error) {
-      console.error('Failed to create project:', error)
       alert('Failed to create project. Please try again.')
     } finally {
       setProjectsLoading(false)
@@ -385,7 +374,6 @@ function AppContent() {
         setCurrentView('projects')
       }
     } catch (error) {
-      console.error('Failed to delete project:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
       alert(`Failed to delete project: ${errorMessage}`)
     }
@@ -497,7 +485,6 @@ void loop() {
         }
       }
     } catch (error) {
-      console.error('Failed to create sample project:', error)
       alert('Failed to create sample project. Please try again.')
     } finally {
       setProjectsLoading(false)
@@ -518,7 +505,6 @@ void loop() {
   }, [showDevMenu])
   
   const handleModuleSelect = (module: ModuleDefinition | null) => {
-    console.log('App: Module selected:', module)
     setSelectedModule(module)
     
     // Show resistance selector if resistor is selected
@@ -547,11 +533,6 @@ void loop() {
 
 
   const handleProjectSelect = (project: UserProject) => {
-    console.log('🔧 App: Loading project:', project.name, {
-      gridDataRows: project.gridData?.length || 0,
-      wiresCount: project.wires?.length || 0,
-      componentStatesCount: Object.keys(project.componentStates || {}).length
-    })
     setSelectedProject(project)
     setCurrentView('project')
     
@@ -588,7 +569,6 @@ void loop() {
 
     // Handle unsaved changes notification
     if (projectData.hasUnsavedChanges !== undefined) {
-      console.log('🔧 App: Handling unsaved changes notification:', projectData.hasUnsavedChanges)
       setSaveStatus(prev => ({
         ...prev,
         hasUnsavedChanges: projectData.hasUnsavedChanges || false
@@ -596,14 +576,12 @@ void loop() {
       
       // If this is just a notification of unsaved changes, don't proceed with saving
       if (projectData.hasUnsavedChanges) {
-        console.log('🔧 App: Early return due to unsaved changes notification')
         return
       }
     }
 
     // Handle immediate unsaved check trigger
     if (projectData.triggerUnsavedCheck && selectedProject) {
-      console.log('🔧 App: Handling triggerUnsavedCheck')
       const currentState = {
         gridData: projectData.gridData || selectedProject.gridData,
         wires: projectData.wires || selectedProject.wires,
@@ -619,18 +597,11 @@ void loop() {
 
       // If this is just a trigger for unsaved check, don't proceed with saving
       if (projectData.triggerUnsavedCheck) {
-        console.log('🔧 App: Early return due to triggerUnsavedCheck')
         return
       }
     }
 
     try {
-      console.log('🔧 App: Project data changed, auto-saving...', {
-        gridDataRows: projectData.gridData?.length || 0,
-        wiresCount: projectData.wires?.length || 0,
-        componentStatesCount: Object.keys(projectData.componentStates || {}).length
-      })
-
       // Set saving status
       setSaveStatus({
         isSaving: true,
@@ -652,20 +623,11 @@ void loop() {
       } : null)
 
       // Auto-save to backend
-      console.log('🔧 App: Calling autoSaveProject with data:', {
-        projectId: selectedProject.id,
-        gridDataRows: projectData.gridData?.length || 0,
-        wiresCount: projectData.wires?.length || 0,
-        componentStatesCount: Object.keys(projectData.componentStates || {}).length
-      })
-      
       const saveResult = await autoSaveProject(selectedProject.id, {
         gridData: projectData.gridData,
         wires: projectData.wires,
         componentStates: projectData.componentStates
       })
-      
-      console.log('🔧 App: autoSaveProject result:', saveResult)
       
       // Set saved status with current time
       setSaveStatus({
@@ -681,10 +643,7 @@ void loop() {
         wires: projectData.wires,
         componentStates: projectData.componentStates
       })
-      
-      console.log('✅ App: Project data auto-saved successfully')
     } catch (error) {
-      console.error('❌ App: Failed to save project changes:', error)
       
       // Set error status
       setSaveStatus({

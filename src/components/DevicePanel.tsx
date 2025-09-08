@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import { ChevronDown, ChevronRight, Code, Play, Save, Check, AlertCircle, Cpu, Zap, FolderOpen, FileText, X, Plus, Download, Upload, Settings, Bug, ExternalLink } from 'lucide-react'
-import { GridCell, WireConnection } from '../modules/types'
+import { WireConnection } from '../modules/types'
+import { GridCell } from '../systems/ElectricalSystem'
 import { ArduinoCompilerReal, CompilationResult, CompilationError, ArduinoProject, ArduinoFile, SystemStatus } from '../services/ArduinoCompilerReal'
 import { FileManagerBrowser, FileNode, ProjectTemplate } from '../services/FileManagerBrowser'
 import { ESP32Flasher, FlashProgress, FlashResult, ESP32Device } from '../services/ESP32Flasher'
@@ -14,15 +15,32 @@ interface Microcontroller {
   isHighlighted: boolean
 }
 
+interface CompiledCode {
+  microcontrollerId: string
+  code: string
+  compilationResult: CompilationResult
+  compiledAt: Date
+}
+
+interface SimulationState {
+  isRunning: boolean
+  currentMicrocontroller: Microcontroller | null
+  gpioStates: Map<number, GPIOState>
+  wireStates: Map<string, 'active' | 'inactive'>
+  startTime: Date | null
+}
+
 interface DevicePanelProps {
   gridData: GridCell[][]
   wires: WireConnection[]
+  componentStates: Map<string, any>
   onMicrocontrollerHighlight: (id: string | null) => void
   onMicrocontrollerClick: (microcontroller: Microcontroller) => void
   onModalStateChange?: (isOpen: boolean) => void
+  onSimulationStateChange?: (state: SimulationState) => void
 }
 
-export function DevicePanel({ gridData, wires, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange }: DevicePanelProps) {
+export function DevicePanel({ gridData, wires, componentStates, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange }: DevicePanelProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [activeTab, setActiveTab] = useState<'microcontrollers' | 'wires'>('microcontrollers')
   const [showCodingModal, setShowCodingModal] = useState(false)
@@ -55,6 +73,24 @@ export function DevicePanel({ gridData, wires, onMicrocontrollerHighlight, onMic
   const [emulationResult, setEmulationResult] = useState<EmulationResult | null>(null)
   const [isEmulating, setIsEmulating] = useState(false)
   const [showEmulationPanel, setShowEmulationPanel] = useState(false)
+  
+  // New state for code linking and simulation
+  const [compiledCodes, setCompiledCodes] = useState<Map<string, CompiledCode>>(new Map())
+  const [simulationState, setSimulationState] = useState<SimulationState>({
+    isRunning: false,
+    currentMicrocontroller: null,
+    gpioStates: new Map(),
+    wireStates: new Map(),
+    startTime: null
+  })
+  const [showSimulationPanel, setShowSimulationPanel] = useState(false)
+
+  // Notify parent component when simulation state changes
+  useEffect(() => {
+    if (onSimulationStateChange) {
+      onSimulationStateChange(simulationState)
+    }
+  }, [simulationState, onSimulationStateChange])
 
   // Find all microcontrollers in the grid
   const findMicrocontrollers = useCallback((): Microcontroller[] => {
@@ -86,6 +122,19 @@ export function DevicePanel({ gridData, wires, onMicrocontrollerHighlight, onMic
   }, [gridData])
 
   const microcontrollers = findMicrocontrollers()
+
+  // Check if power is connected to the circuit using electrical system results
+  const hasPowerConnected = useCallback((): boolean => {
+    // Check if any component has power (voltage > 0) according to the electrical system
+    for (const [componentId, state] of componentStates) {
+      if (state.outputVoltage > 0) {
+        console.log('Found powered component:', componentId, 'voltage:', state.outputVoltage)
+        return true
+      }
+    }
+    console.log('No powered components found')
+    return false
+  }, [componentStates])
 
   // Initialize templates and check system status
   useEffect(() => {
@@ -184,6 +233,19 @@ export function DevicePanel({ gridData, wires, onMicrocontrollerHighlight, onMic
         setIsCompiled(true)
         setCompilationErrors([])
         setShowErrorPanel(false)
+        
+        // Link the compiled code to the selected microcontroller
+        if (selectedMicrocontroller) {
+          const compiledCode: CompiledCode = {
+            microcontrollerId: selectedMicrocontroller.id,
+            code: code,
+            compilationResult: result,
+            compiledAt: new Date()
+          }
+          setCompiledCodes(prev => new Map(prev.set(selectedMicrocontroller.id, compiledCode)))
+          console.log('Code linked to microcontroller:', selectedMicrocontroller.name, compiledCode)
+        }
+        
         console.log('Compilation successful!', result)
       } else {
         setIsCompiled(false)
@@ -219,13 +281,135 @@ export function DevicePanel({ gridData, wires, onMicrocontrollerHighlight, onMic
   }
 
   const handleRun = async () => {
-    if (isCompiled && compilationResult?.firmware) {
-      try {
-        await handleFlashFirmware()
-      } catch (error) {
-        console.error('Failed to flash firmware:', error)
-      }
+    if (!selectedMicrocontroller) {
+      alert('Please select a microcontroller first')
+      return
     }
+
+    if (!hasPowerConnected()) {
+      alert('Power must be connected to the circuit before running code')
+      return
+    }
+
+    if (!compilationResult?.firmware) {
+      alert('Please compile code for this microcontroller first')
+      return
+    }
+
+    try {
+      await startSimulation(selectedMicrocontroller, compilationResult)
+    } catch (error) {
+      console.error('Run failed:', error)
+      alert('Failed to start simulation: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    }
+  }
+
+  const startSimulation = async (microcontroller: Microcontroller, compilationResult: CompilationResult) => {
+    setSimulationState(prev => ({
+      ...prev,
+      isRunning: true,
+      currentMicrocontroller: microcontroller,
+      startTime: new Date()
+    }))
+    setShowSimulationPanel(true)
+
+    try {
+      // Start emulation with the compiled firmware
+      const result = await qemuEmulator.startEmulation(
+        compilationResult.firmware!,
+        getBoardForMicrocontroller(microcontroller.name),
+        'bin',
+        compilationResult.binPath,
+        code // Use the current code from the editor
+      )
+
+      if (result.success) {
+        // Update GPIO states from emulation result
+        const gpioStates = new Map<number, GPIOState>()
+        result.gpioStates.forEach(state => {
+          gpioStates.set(state.pin, state)
+        })
+
+        // Update wire states based on GPIO states
+        const wireStates = new Map<string, 'active' | 'inactive'>()
+        gpioStates.forEach((gpioState, pin) => {
+          // Find wires connected to this pin
+          const connectedWires = findWiresConnectedToPin(microcontroller, pin)
+          connectedWires.forEach(wireId => {
+            wireStates.set(wireId, gpioState.state === 'HIGH' ? 'active' : 'inactive')
+          })
+        })
+
+        setSimulationState(prev => ({
+          ...prev,
+          gpioStates,
+          wireStates
+        }))
+
+        setEmulationResult(result)
+        console.log('Simulation started successfully:', result)
+      } else {
+        throw new Error(result.error || 'Simulation failed')
+      }
+    } catch (error) {
+      console.error('Simulation error:', error)
+      setSimulationState(prev => ({
+        ...prev,
+        isRunning: false,
+        currentMicrocontroller: null,
+        startTime: null
+      }))
+      throw error
+    }
+  }
+
+  const stopSimulation = () => {
+    setSimulationState({
+      isRunning: false,
+      currentMicrocontroller: null,
+      gpioStates: new Map(),
+      wireStates: new Map(),
+      startTime: null
+    })
+    setShowSimulationPanel(false)
+  }
+
+  const findWiresConnectedToPin = (microcontroller: Microcontroller, pin: number): string[] => {
+    const connectedWires: string[] = []
+    
+    // Find the cell position of this pin on the microcontroller
+    // Check both pin name and GPIO properties
+    const pinCell = microcontroller.definition.grid?.find((g: any) => {
+      if (!g.pin) return false
+      
+      // Check if pin name contains the pin number (e.g., "D13" contains "13")
+      if (g.pin.includes(pin.toString())) return true
+      
+      // Check GPIO properties for exact match
+      if (g.properties && g.properties.gpio === pin.toString()) return true
+      
+      return false
+    })
+    
+    if (!pinCell) return connectedWires
+
+    // Find wires that connect to this pin
+    wires.forEach(wire => {
+      const isConnected = wire.segments.some(segment => {
+        const cell = gridData[segment.from.y]?.[segment.from.x]
+        return cell?.occupied && 
+               cell.componentId === microcontroller.id &&
+               cell.moduleDefinition === microcontroller.definition &&
+               segment.from.x === pinCell.x && 
+               segment.from.y === pinCell.y
+      })
+      
+      if (isConnected) {
+        connectedWires.push(wire.id)
+      }
+    })
+
+    return connectedWires
   }
 
   const handleFlashFirmware = async () => {
@@ -349,11 +533,13 @@ export function DevicePanel({ gridData, wires, onMicrocontrollerHighlight, onMic
   const getBoardForMicrocontroller = (microcontrollerName: string): string => {
     switch (microcontrollerName.toLowerCase()) {
       case 'arduino uno':
+      case 'arduino uno r3':
         return 'arduino:avr:uno'
       case 'esp32':
+      case 'esp32-wroom-32 (38-pin)':
         return 'esp32:esp32:esp32'
       default:
-        return 'esp32:esp32:esp32' // Default to ESP32 for better ARM64 compatibility
+        return 'arduino:avr:uno' // Default to Arduino Uno for better compatibility
     }
   }
 
@@ -544,23 +730,80 @@ export function DevicePanel({ gridData, wires, onMicrocontrollerHighlight, onMic
                       <p className="text-xs">Add microcontrollers from the component palette</p>
                     </div>
                   ) : (
-                    microcontrollers.map((microcontroller) => (
-                      <div
-                        key={microcontroller.id}
-                        className="p-3 border border-gray-200 dark:border-dark-border rounded-lg hover:border-blue-300 dark:hover:border-blue-600 transition-colors cursor-pointer"
-                        onMouseEnter={() => onMicrocontrollerHighlight(microcontroller.id)}
-                        onMouseLeave={() => onMicrocontrollerHighlight(null)}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <h4 className="font-medium text-gray-900 dark:text-dark-text-primary">
-                              {microcontroller.name}
-                            </h4>
-                            <p className="text-xs text-gray-500 dark:text-dark-text-muted">
-                              Position: ({microcontroller.position.x}, {microcontroller.position.y})
-                            </p>
+                    microcontrollers.map((microcontroller) => {
+                      // Check if this specific microcontroller has power using electrical system results
+                      const isMicrocontrollerPowered = (() => {
+                        // Check if this microcontroller has power according to the electrical system
+                        const state = componentStates.get(microcontroller.id)
+                        if (state && state.outputVoltage > 0) {
+                          console.log('Microcontroller', microcontroller.id, 'is powered with', state.outputVoltage, 'V')
+                          return true
+                        }
+                        return false
+                      })()
+                      
+                      return (
+                        <div
+                          key={microcontroller.id}
+                          className="p-3 border border-gray-200 dark:border-dark-border rounded-lg hover:border-blue-300 dark:hover:border-blue-600 transition-colors cursor-pointer"
+                          onMouseEnter={() => onMicrocontrollerHighlight(microcontroller.id)}
+                          onMouseLeave={() => onMicrocontrollerHighlight(null)}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-medium text-gray-900 dark:text-dark-text-primary">
+                                  {microcontroller.name}
+                                </h4>
+                                {/* Power indicator */}
+                                <div className={`w-2 h-2 rounded-full ${
+                                  isMicrocontrollerPowered 
+                                    ? 'bg-green-500' 
+                                    : 'bg-red-500'
+                                }`} 
+                                title={isMicrocontrollerPowered ? 'Powered' : 'No Power'} />
+                            {/* Debug info */}
+                            <button 
+                              className="text-xs text-gray-400 hover:text-gray-600"
+                              onClick={() => {
+                                console.log('=== DEBUGGING MICROCONTROLLER POWER ===')
+                                console.log('Microcontroller:', microcontroller.name)
+                                console.log('Total wires:', wires.length)
+                                console.log('Grid rows:', gridData.length)
+                                
+                                const powerPins = ['VCC', '3V3', '5V', 'VIN']
+                                let foundConnections = 0
+                                
+                                for (const wire of wires) {
+                                  console.log('Wire:', wire.id, 'segments:', wire.segments.length)
+                                  for (const segment of wire.segments) {
+                                    const cell = gridData[segment.from.y]?.[segment.from.x]
+                                    console.log('Segment at', segment.from.x, segment.from.y, 'cell:', cell?.occupied, cell?.componentId)
+                                    
+                                    if (cell?.occupied && 
+                                        cell.componentId === microcontroller.id &&
+                                        cell.moduleDefinition === microcontroller.definition) {
+                                      const pin = cell.moduleDefinition.grid?.find((g: any) => g.x === segment.from.x && g.y === segment.from.y)
+                                      console.log('Found pin:', pin?.type, pin?.pin, 'powerPins includes?', powerPins.includes(pin?.type))
+                                      if (pin && powerPins.includes(pin.type)) {
+                                        foundConnections++
+                                        console.log('✅ POWER CONNECTION FOUND:', pin.type, 'at', segment.from.x, segment.from.y)
+                                      }
+                                    }
+                                  }
+                                }
+                                console.log('Total power connections found:', foundConnections)
+                                console.log('=== END DEBUG ===')
+                              }}
+                            >
+                              
+                            </button>
+                              </div>
+                              <p className="text-xs text-gray-500 dark:text-dark-text-muted">
+                                Position: ({microcontroller.position.x}, {microcontroller.position.y})
+                              </p>
+                            </div>
                           </div>
-                        </div>
                         
                         <div className="flex gap-2">
                           <button
@@ -575,19 +818,35 @@ export function DevicePanel({ gridData, wires, onMicrocontrollerHighlight, onMic
                           </button>
                           <button
                             className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
-                              isCompiled
+                              isCompiled && hasPowerConnected() && !simulationState.isRunning
                                 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50'
                                 : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
                             }`}
-                            onClick={handleRun}
-                            disabled={!isCompiled}
+                            onClick={() => {
+                              console.log('Run button clicked - Debug info:', {
+                                isCompiled,
+                                hasPowerConnected: hasPowerConnected(),
+                                isRunning: simulationState.isRunning,
+                                selectedMicrocontroller: selectedMicrocontroller?.name,
+                                compilationResult: !!compilationResult?.firmware
+                              })
+                              handleRun()
+                            }}
+                            disabled={!isCompiled || !hasPowerConnected() || simulationState.isRunning}
+                            title={
+                              !isCompiled ? 'Please compile code first' :
+                              !hasPowerConnected() ? 'Power must be connected to run code' : 
+                              simulationState.isRunning ? 'Simulation is already running' :
+                              'Run compiled code'
+                            }
                           >
                             <Play className="w-3 h-3" />
-                            Run
+                            {simulationState.isRunning ? 'Running...' : 'Run'}
                           </button>
                         </div>
                       </div>
-                    ))
+                      )
+                    })
                   )}
                 </div>
               ) : (
@@ -1183,6 +1442,98 @@ export function DevicePanel({ gridData, wires, onMicrocontrollerHighlight, onMic
                         </button>
                       </div>
                     </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Simulation Panel */}
+      {showSimulationPanel && simulationState.isRunning && (
+        <div className="absolute top-4 right-4 bg-white dark:bg-dark-surface rounded-lg shadow-lg border border-gray-200 dark:border-dark-border z-50 min-w-[350px] max-w-[500px]">
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary flex items-center gap-2">
+                <Cpu className="w-5 h-5 text-green-500" />
+                Simulation Running
+              </h3>
+              <button
+                onClick={stopSimulation}
+                className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Microcontroller Info */}
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                <h4 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary mb-2">
+                  Active Microcontroller
+                </h4>
+                <div className="text-sm text-gray-600 dark:text-dark-text-muted">
+                  <div>Name: {simulationState.currentMicrocontroller?.name}</div>
+                  <div>Running since: {simulationState.startTime?.toLocaleTimeString()}</div>
+                </div>
+              </div>
+
+              {/* GPIO States */}
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                <h4 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary mb-2">
+                  GPIO Pin States
+                </h4>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {Array.from(simulationState.gpioStates.entries()).map(([pin, state]) => (
+                    <div key={pin} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600 dark:text-dark-text-muted">Pin {pin}:</span>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        state.state === 'HIGH' 
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                          : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                      }`}>
+                        {state.state}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Wire States */}
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                <h4 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary mb-2">
+                  Wire Activity
+                </h4>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {Array.from(simulationState.wireStates.entries()).map(([wireId, state]) => {
+                    const wire = wires.find(w => w.id === wireId)
+                    return (
+                      <div key={wireId} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600 dark:text-dark-text-muted">
+                          Wire {wireId.slice(0, 8)}...
+                        </span>
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          state === 'active' 
+                            ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
+                            : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                        }`}>
+                          {state === 'active' ? '⚡ Active' : '⚫ Inactive'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Emulation Output */}
+              {emulationResult && (
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary mb-2">
+                    Emulation Output
+                  </h4>
+                  <div className="text-xs text-gray-600 dark:text-dark-text-muted bg-white dark:bg-gray-900 rounded p-2 max-h-24 overflow-y-auto font-mono">
+                    {qemuEmulator.getSummary(emulationResult)}
                   </div>
                 </div>
               )}

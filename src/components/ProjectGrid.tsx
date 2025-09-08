@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { ModuleDefinition, WireConnection, WireSegment, WiringState } from '../modules/types'
+import { GPIOState } from '../services/QEMUEmulatorReal'
 import { useTheme } from '../contexts/ThemeContext'
 import { calculateElectricalFlow, ComponentState } from '../systems/ElectricalSystem'
 import { ElectricalValidator } from './ElectricalValidator'
@@ -17,6 +18,14 @@ interface Project {
   lastModified: string
   preview: string
   gridSize: { width: number; height: number }
+}
+
+interface SimulationState {
+  isRunning: boolean
+  currentMicrocontroller: any | null
+  gpioStates: Map<number, GPIOState>
+  wireStates: Map<string, 'active' | 'inactive'>
+  startTime: Date | null
 }
 
 interface ProjectGridProps {
@@ -76,11 +85,9 @@ export function ProjectGrid({
   const [gridData, setGridData] = useState<GridCell[][]>(() => {
     // Use initial data if provided, otherwise create empty grid
     if (initialGridData && initialGridData.length > 0) {
-      console.log('🔧 ProjectGrid: Initializing with saved grid data:', initialGridData.length, 'rows')
       return initialGridData as GridCell[][]
     }
     
-    console.log('🔧 ProjectGrid: Initializing with empty grid')
     // Initialize with a much smaller grid for better memory usage
     const initialGrid: GridCell[][] = []
     for (let y = 0; y < 50; y++) {
@@ -142,15 +149,18 @@ export function ProjectGrid({
   const [deleteMode, setDeleteMode] = useState(false)
   const [hoveredForDeletion, setHoveredForDeletion] = useState<{ type: 'component' | 'wire', id: string } | null>(null)
   
+  // Simulation state for wire visual feedback
+  const [simulationState, setSimulationState] = useState<SimulationState>({
+    isRunning: false,
+    currentMicrocontroller: null,
+    gpioStates: new Map(),
+    wireStates: new Map(),
+    startTime: null
+  })
+  
   // Auto-save functionality - call onProjectDataChange when data changes (debounced)
   useEffect(() => {
     if (onProjectDataChange) {
-      console.log('🔧 ProjectGrid: Data changed, triggering unsaved check and debounced save', {
-        gridDataRows: gridData.length,
-        wiresCount: wires.length,
-        componentStatesCount: componentStates.size,
-        occupiedCells: gridData.flat().filter(cell => cell.occupied).length
-      })
       
       // First, notify that there are unsaved changes and trigger immediate check
       onProjectDataChange({
@@ -162,12 +172,6 @@ export function ProjectGrid({
       })
 
       const timeoutId = setTimeout(() => {
-        console.log('🔧 ProjectGrid: Debounce timeout reached, triggering save', {
-          gridDataRows: gridData.length,
-          wiresCount: wires.length,
-          componentStatesCount: componentStates.size,
-          occupiedCells: gridData.flat().filter(cell => cell.occupied).length
-        })
         // After debounce, trigger the actual save (without hasUnsavedChanges flag)
         onProjectDataChange({
           gridData,
@@ -663,7 +667,6 @@ export function ProjectGrid({
     
     // Execute other component behaviors
     if (module.behavior?.onClick) {
-      logger.debug(`Executing component behavior for: ${module.module}`)
       executeComponentBehavior(module.behavior.onClick, componentId, cellIndex)
     }
   }, [gridData])
@@ -707,7 +710,6 @@ export function ProjectGrid({
           })
         },
         propagatePower: (fromX: number, fromY: number, isPowered: boolean) => {
-          logger.debug(`Propagating power from (${fromX}, ${fromY}) to ${isPowered}`)
           // TODO: Implement power propagation through connections
         }
       }
@@ -734,15 +736,22 @@ export function ProjectGrid({
   const performElectricalCalculation = useCallback(() => {
     // Prevent multiple simultaneous calculations
     if (isCalculating) {
-      logger.debug('Electrical calculation already in progress, skipping')
+      console.log('⚡ Electrical calculation already in progress, skipping...')
       return
     }
 
+    console.log('⚡ Triggering electrical calculation...')
     setIsCalculating(true)
 
     try {
       // Use the new electrical system
       const result = calculateElectricalFlow(gridData, wires)
+      
+      console.log('⚡ Electrical calculation completed:', {
+        componentStates: result.componentStates.size,
+        updatedWires: result.updatedWires.length,
+        updatedGridData: result.updatedGridData.length
+      })
       
       // Update states with results
       setComponentStates(result.componentStates)
@@ -768,8 +777,17 @@ export function ProjectGrid({
       const hasComponents = gridData.some(row => row.some(cell => cell.occupied))
       const hasWires = wires.length > 0
       
+      console.log('⚡ Electrical calculation trigger check:', {
+        hasComponents,
+        hasWires,
+        componentsCount: gridData.flat().filter(cell => cell?.occupied).length,
+        wiresCount: wires.length
+      })
+      
       if (hasComponents || hasWires) {
         performElectricalCalculation()
+      } else {
+        console.log('⚡ No components or wires, skipping electrical calculation')
       }
     }, 100) // 100ms debounce to prevent excessive calculations
 
@@ -1660,6 +1678,10 @@ export function ProjectGrid({
     
     const isSelected = selectedWire === wireId
     
+    // Check if wire is active in simulation
+    const isWireActive = simulationState.isRunning && simulationState.wireStates.get(wireId) === 'active'
+    const isWireInactive = simulationState.isRunning && simulationState.wireStates.get(wireId) === 'inactive'
+    
     // Rendering wire segment
     
     return (
@@ -1677,19 +1699,44 @@ export function ProjectGrid({
             className="pointer-events-none"
           />
         )}
+        {/* Animated pulse for active wires */}
+        {isWireActive && (
+          <line
+            x1={startX}
+            y1={startY}
+            x2={endX}
+            y2={endY}
+            stroke="#00ff00"
+            strokeWidth={(segment.thickness || 3) + 2}
+            strokeLinecap="round"
+            className="pointer-events-none"
+            style={{
+              filter: 'drop-shadow(0 0 12px #00ff00)',
+              opacity: 0.6,
+              animation: 'wirePulse 1s ease-in-out infinite alternate'
+            }}
+          />
+        )}
+        
         {/* Main wire */}
         <line
           x1={startX}
           y1={startY}
           x2={endX}
           y2={endY}
-          stroke={segment.color || '#666666'}
+          stroke={
+            isWireActive ? '#00ff00' : // Bright green when active
+            isWireInactive ? '#666666' : // Gray when inactive
+            segment.color || '#666666' // Default color
+          }
           strokeWidth={segment.thickness || 3}
           strokeLinecap="round"
           className="cursor-pointer"
           style={{
-            filter: segment.isPowered ? 'drop-shadow(0 0 6px #00ff00)' : 'none',
-            pointerEvents: 'stroke'
+            filter: isWireActive ? 'drop-shadow(0 0 8px #00ff00) drop-shadow(0 0 16px #00ff00)' : 
+                   segment.isPowered ? 'drop-shadow(0 0 6px #00ff00)' : 'none',
+            pointerEvents: 'stroke',
+            opacity: isWireInactive ? 0.3 : 1
           }}
           onClick={(e) => {
             e.stopPropagation()
@@ -2452,11 +2499,13 @@ const GridCell = React.memo(({
       <DevicePanel
         gridData={gridData}
         wires={wires}
+        componentStates={componentStates}
         onMicrocontrollerHighlight={setHighlightedMicrocontroller}
         onMicrocontrollerClick={(microcontroller) => {
           console.log('Microcontroller clicked:', microcontroller)
         }}
         onModalStateChange={setIsModalOpen}
+        onSimulationStateChange={setSimulationState}
       />
 
       {/* Legacy Wire Dashboard - Hidden */}

@@ -41,14 +41,6 @@ class LoggerService {
     // Notify listeners
     this.listeners.forEach(listener => listener([...this.logs]))
 
-    // Also log to console in development
-    if (process.env.NODE_ENV === 'development') {
-      const consoleMethod = level === 'error' ? 'error' : 
-                           level === 'warn' ? 'warn' : 
-                           level === 'debug' ? 'log' : 'log'
-      
-      console[consoleMethod](`[${level.toUpperCase()}] ${message}`, data || '')
-    }
   }
 
   // Public logging methods
