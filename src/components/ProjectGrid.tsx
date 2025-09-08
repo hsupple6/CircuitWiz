@@ -1404,8 +1404,8 @@ export function ProjectGrid({
     // Handle wiring mode
     if (wiringState.isWiring) {
       // For wires, use offset coordinates to account for cell positioning
-      const wireX = (transformedX - (baseCellSize * 2) / 2) / baseCellSize
-      const wireY = (transformedY - (baseCellSize * 2) / 2) / baseCellSize
+      const wireX = (transformedX - baseCellSize / 2) / baseCellSize
+      const wireY = (transformedY - baseCellSize / 2) / baseCellSize
       const { x: wireGridX, y: wireGridY } = snapToGridCoords(wireX, wireY)
       
       if (wiringState.currentConnection) {

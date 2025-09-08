@@ -35,43 +35,43 @@
 
     { "x": 0, "y": 6, "pin": "NC", "type": "NC", "css": "background:#111827; border:1px solid #0F172A;" },
     { "x": 1, "y": 6, "type": "BODY", "css": "background:#0f172a; border:1px solid #0b1220;" },
-    { "x": 2, "y": 6, "pin": "IO35", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO35"} },
+    { "x": 2, "y": 6, "pin": "IO35", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO35"} },
 
     { "x": 0, "y": 7, "pin": "IO19", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO19"} },
     { "x": 1, "y": 7, "type": "BODY", "css": "background:#0f172a; border:1px solid #0b1220;" },
     { "x": 2, "y": 7, "pin": "IO32", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO32"} },
 
-    { "x": 0, "y": 8, "pin": "IO18", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO18"} },
+    { "x": 0, "y": 8, "pin": "IO18", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO18"} },
     { "x": 1, "y": 8, "type": "BODY", "css": "background:#0f172a; border:1px solid #0b1220;" },
-    { "x": 2, "y": 8, "pin": "IO33", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO33"} },
+    { "x": 2, "y": 8, "pin": "IO33", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO33"} },
 
-    { "x": 0, "y": 9, "pin": "IO5", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO5"} },
+    { "x": 0, "y": 9, "pin": "IO5", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO5"} },
     { "x": 1, "y": 9, "type": "BODY", "css": "background:#0f172a; border:1px solid #0b1220;" },
-    { "x": 2, "y": 9, "pin": "IO25", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO25"} },
+    { "x": 2, "y": 9, "pin": "IO25", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO25"} },
 
-    { "x": 0, "y": 10, "pin": "IO17", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO17"} },
+    { "x": 0, "y": 10, "pin": "IO17", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO17"} },
     { "x": 1, "y": 10, "type": "BODY", "css": "background:#0f172a; border:1px solid #0b1220;" },
-    { "x": 2, "y": 10, "pin": "IO26", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO26"} },
+    { "x": 2, "y": 10, "pin": "IO26", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO26"} },
 
-    { "x": 0, "y": 11, "pin": "IO16", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO16"} },
+    { "x": 0, "y": 11, "pin": "IO16", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO16"} },
     { "x": 1, "y": 11, "type": "BODY", "css": "background:#0f172a; border:1px solid #0b1220;" },
-    { "x": 2, "y": 11, "pin": "IO27", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO27"} },
+    { "x": 2, "y": 11, "pin": "IO27", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO27"} },
 
-    { "x": 0, "y": 12, "pin": "IO4", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO4"} },
+    { "x": 0, "y": 12, "pin": "IO4", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO4"} },
     { "x": 1, "y": 12, "type": "BODY", "css": "background:#0f172a; border:1px solid #0b1220;" },
-    { "x": 2, "y": 12, "pin": "IO14", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO14"} },
+    { "x": 2, "y": 12, "pin": "IO14", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO14"} },
 
-    { "x": 0, "y": 13, "pin": "IO0", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO0"} },
+    { "x": 0, "y": 13, "pin": "IO0", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO0"} },
     { "x": 1, "y": 13, "type": "BODY", "css": "background:#0f172a; border:1px solid #0b1220;" },
-    { "x": 2, "y": 13, "pin": "IO12", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO12"} },
+    { "x": 2, "y": 13, "pin": "IO12", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO12"} },
 
-    { "x": 0, "y": 14, "pin": "IO2", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO2"} },
+    { "x": 0, "y": 14, "pin": "IO2", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO2"} },
     { "x": 1, "y": 14, "type": "BODY", "css": "background:#0f172a; border:1px solid #0b1220;" },
     { "x": 2, "y": 14, "pin": "GND", "type": "GND", "isConnectable": true, "isPowerable": false, "isGroundable": true, "voltage": 0, "current": 0, "css": "background: linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%); color:white; font-weight:bold; border:1px solid #0F172A;" },
 
-    { "x": 0, "y": 15, "pin": "IO15", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO15"} },
+    { "x": 0, "y": 15, "pin": "IO15", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO15"} },
     { "x": 1, "y": 15, "type": "BODY", "css": "background:#0f172a; border:1px solid #0b1220;" },
-    { "x": 2, "y": 15, "pin": "IO13", "type": "GPIO", "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO13"} },
+    { "x": 2, "y": 15, "pin": "IO13", "type": "GPIO", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 3.3, "current": 0.04, "css": "background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); border:1px solid #0F172A;", "properties": {"gpio":"GPIO13"} },
 
     { "x": 0, "y": 16, "pin": "SD1/SDI", "type": "RESERVED", "css": "background: linear-gradient(135deg, #9CA3AF 0%, #D1D5DB 100%); color:#111; border:1px solid #0F172A;", "properties": {"gpio":"GPIO8","note":"connected to module flash (reserved)"} },
     { "x": 1, "y": 16, "type": "BODY", "css": "background:#0f172a; border:1px solid #0b1220;" },
