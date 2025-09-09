@@ -1039,7 +1039,11 @@ export function calculateSystematicVoltageFlow(
             ...existingState,
             ...update
           })
+        } else {
+          // If no existing state, create a new one with the update
+          componentStates.set(componentId, update)
         }
+        console.log(`[MERGE DEBUG] Updated ${componentId} with status: ${update.status}`)
       })
       
       // Update wire voltage based on the traced voltage
@@ -1484,6 +1488,9 @@ function traceVoltageThroughComponent(
     const isOn = inputVoltage >= forwardVoltage && circuitCurrent > 0
     isPowered = inputVoltage > 0
     status = isOn ? 'on' : 'off'
+    
+    console.log(`[LED STATUS DEBUG] inputVoltage: ${inputVoltage}V, forwardVoltage: ${forwardVoltage}V, circuitCurrent: ${circuitCurrent}A`)
+    console.log(`[LED STATUS DEBUG] isOn: ${isOn}, isPowered: ${isPowered}, status: "${status}"`)
 
     // For LEDs, we need to process ALL cells of the component (like resistors)
     // Extract base component ID by removing the cell index suffix
@@ -1515,19 +1522,22 @@ function traceVoltageThroughComponent(
     
     // Update ALL cells of this LED with the same voltage calculation
       allLEDCells.forEach(cell => {
-        componentUpdates.set(cell.id, {
+        const updateData = {
           componentId: cell.id,  // Use the correct cell ID
+          inputVoltage,  // Add input voltage for debugging/UI
           outputVoltage,
           outputCurrent: circuitCurrent,
           power: forwardVoltage * circuitCurrent,
           forwardVoltage,
           isOn,
           status,
-          isPowered,
+          isPowered: inputVoltage > forwardVoltage,
           isGrounded: inputVoltage > 0
-        })
+        }
+        componentUpdates.set(cell.id, updateData)
         logger.componentsDebug(`[LED SYNC] Updated cell ${cell.id} at (${cell.position.x}, ${cell.position.y}) to ${outputVoltage}V`)
-        console.log('[LED DEBUG] Set ', cell.id, ' with status: ', status)
+        console.log(`[LED DEBUG] Set ${cell.id} with status: "${status}", isOn: ${isOn}, isPowered: ${isPowered}`)
+        console.log(`[LED DEBUG] Update data:`, updateData)
       })
 
     
@@ -1535,7 +1545,7 @@ function traceVoltageThroughComponent(
     console.log(`🔧 [LED DEBUG] componentUpdates size: ${componentUpdates.size}`)
     console.log(`🔧 [LED DEBUG] componentUpdates keys:`, Array.from(componentUpdates.keys()))
     
-    console.log('[LED DEBUG] All cells updated:', allLedCells.map(cell => `${cell.id}: ${componentUpdates.get(cell.id)?.status}`))
+    console.log('[LED DEBUG] All cells updated:', allLEDCells.map(cell => `${cell.id}: ${componentUpdates.get(cell.id)?.status}`))
     
   } else if (moduleType === 'PowerSupply' || moduleType === 'Battery') {
     // Power sources maintain their voltage

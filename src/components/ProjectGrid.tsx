@@ -2170,15 +2170,16 @@ const GridCell = React.memo(({
             
             {/* Show LED state indicator */}
             {cell.moduleDefinition.module === 'LED' && relativeX === 1 && relativeY === 0 && (() => {
-              // Get LED state from component states instead of cell voltage
-              const ledState = componentStates.get(cell.componentId || '')
+              // Get LED state from component states using the correct cell-specific key
+              const cellComponentId = `${cell.componentId}-${cell.cellIndex || 0}`
+              const ledState = componentStates.get(cellComponentId)
               const isOn = ledState?.isOn || false
               const forwardVoltage = ledState?.forwardVoltage || cell.moduleDefinition.properties?.forwardVoltage?.default || 2.0
               const ledColor = cell.moduleDefinition.properties?.color?.default || 'Red'
               
               // Debug log for LED state (only when LED is on)
-              if (cell.componentId && isOn) {
-                console.log(`💡 LED ${cell.componentId} is ON: ${forwardVoltage.toFixed(1)}V, ${(ledState?.outputCurrent || 0 * 1000).toFixed(0)}mA`)
+              if (cellComponentId && isOn) {
+                console.log(`💡 LED ${cellComponentId} is ON: ${forwardVoltage.toFixed(1)}V, ${(ledState?.outputCurrent || 0 * 1000).toFixed(0)}mA`)
               }
               
               // Calculate LED brightness based on LED state
