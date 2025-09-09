@@ -1531,7 +1531,7 @@ function traceVoltageThroughComponent(
           forwardVoltage,
           isOn,
           status,
-          isPowered: inputVoltage > forwardVoltage,
+          isPowered: inputVoltage >= forwardVoltage,
           isGrounded: inputVoltage > 0
         }
         componentUpdates.set(cell.id, updateData)
@@ -1555,7 +1555,7 @@ function traceVoltageThroughComponent(
     
     console.log(`🔧 Power source ${componentId}: maintains ${outputVoltage}V`)
     
-    componentUpdates.set(componentId, {
+    componentUpdates.set(cellComponentId, {
       outputVoltage,
       outputCurrent: circuitCurrent,
       power: outputVoltage * circuitCurrent,

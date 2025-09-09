@@ -702,6 +702,18 @@ function traceCircuitFromWire(
   
   console.log(`🔍 Found component ${component.componentId} (${component.moduleDefinition.module}) at destination (${wireDestination.x}, ${wireDestination.y})`);
   
+  // Debug: Check if this is an LED
+  if (component.moduleDefinition.module === 'LED') {
+    console.log(`🔍 [LED DEBUG] Processing LED component: ${component.componentId}`);
+    console.log(`🔍 [LED DEBUG] LED grid cells:`, component.moduleDefinition.grid.map((cell: any, index: number) => ({
+      index,
+      type: cell.type,
+      pin: cell.pin,
+      isConnectable: cell.isConnectable,
+      position: { x: component.x + cell.x, y: component.y + cell.y }
+    })));
+  }
+  
   // Check if this is a PowerSupply/Battery component
   if (component.moduleDefinition.module === 'PowerSupply' || component.moduleDefinition.module === 'Battery') {
     // Find the specific cell we're connecting to
@@ -822,6 +834,23 @@ function findOtherTerminal(component: any, currentPosition: { x: number; y: numb
       cell.type.includes('PIN')
     )
   );
+  
+  // Debug: Check if this is an LED
+  if (component.moduleDefinition.module === 'LED') {
+    console.log(`🔍 [LED DEBUG] Finding other terminal for LED ${component.componentId}`);
+    console.log(`🔍 [LED DEBUG] All LED cells:`, component.moduleDefinition.grid.map((cell: any, index: number) => ({
+      index,
+      type: cell.type,
+      pin: cell.pin,
+      isConnectable: cell.isConnectable,
+      position: { x: component.x + cell.x, y: component.y + cell.y }
+    })));
+    console.log(`🔍 [LED DEBUG] Connectable terminals:`, terminals.map((t: any) => ({
+      type: t.type,
+      pin: t.pin,
+      position: { x: component.x + t.x, y: component.y + t.y }
+    })));
+  }
   
   console.log(`🔍 Found ${terminals.length} connectable terminals:`, terminals.map((t: any) => ({
     type: t.type,
