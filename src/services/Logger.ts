@@ -1,108 +1,277 @@
 /**
- * Centralized logging service for CircuitWiz
- * Provides structured logging with different levels and dev menu integration
+ * Centralized Logging System for CircuitWiz
+ * All logs are controlled through this service and can be toggled via DEV menu
  */
 
-export type LogLevel = 'info' | 'warn' | 'error' | 'debug'
-
 export interface LogEntry {
-  id: string
-  timestamp: Date
-  level: LogLevel
+  timestamp: string
+  level: 'debug' | 'info' | 'warn' | 'error'
+  category: string
   message: string
   data?: any
 }
 
-class LoggerService {
-  private logs: LogEntry[] = []
-  private maxLogs = 100 // Keep only last 100 logs
-  private listeners: ((logs: LogEntry[]) => void)[] = []
+export interface LoggingConfig {
+  enabled: boolean
+  categories: {
+    electrical: boolean
+    components: boolean
+    wires: boolean
+    physics: boolean
+    circuit: boolean
+    grid: boolean
+    debug: boolean
+    performance: boolean
+  }
+  captureSnippet: boolean
+  snippetDuration: number // in milliseconds
+}
 
-  private generateId(): string {
-    return `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+class LoggerService {
+  private config: LoggingConfig = {
+    enabled: false, // Default OFF
+    categories: {
+      electrical: false,
+      components: false,
+      wires: false,
+      physics: false,
+      circuit: false,
+      grid: false,
+      debug: false,
+      performance: false
+    },
+    captureSnippet: false,
+    snippetDuration: 5000 // 5 seconds
   }
 
-  private addLog(level: LogLevel, message: string, data?: any): void {
-    const log: LogEntry = {
-      id: this.generateId(),
-      timestamp: new Date(),
+  private logBuffer: LogEntry[] = []
+  private snippetBuffer: LogEntry[] = []
+  private snippetTimer: NodeJS.Timeout | null = null
+  private subscribers: Set<(logs: LogEntry[]) => void> = new Set()
+
+  /**
+   * Update logging configuration
+   */
+  updateConfig(newConfig: Partial<LoggingConfig>) {
+    this.config = { ...this.config, ...newConfig }
+    
+    // Start snippet capture if enabled
+    if (this.config.captureSnippet && !this.snippetTimer) {
+      this.startSnippetCapture()
+    } else if (!this.config.captureSnippet && this.snippetTimer) {
+      this.stopSnippetCapture()
+    }
+  }
+
+  /**
+   * Get current logging configuration
+   */
+  getConfig(): LoggingConfig {
+    return { ...this.config }
+  }
+
+  /**
+   * Start capturing a snippet of logs
+   */
+  startSnippetCapture() {
+    this.snippetBuffer = []
+    this.snippetTimer = setTimeout(() => {
+      this.stopSnippetCapture()
+    }, this.config.snippetDuration)
+  }
+
+  /**
+   * Stop capturing snippet and return the captured logs
+   */
+  stopSnippetCapture(): LogEntry[] {
+    if (this.snippetTimer) {
+      clearTimeout(this.snippetTimer)
+      this.snippetTimer = null
+    }
+    const snippet = [...this.snippetBuffer]
+    this.snippetBuffer = []
+    return snippet
+  }
+
+  /**
+   * Get recent logs from buffer
+   */
+  getRecentLogs(count: number = 100): LogEntry[] {
+    return this.logBuffer.slice(-count)
+  }
+
+  /**
+   * Clear all logs
+   */
+  clearLogs() {
+    this.logBuffer = []
+    this.snippetBuffer = []
+    this.notifySubscribers()
+  }
+
+  /**
+   * Subscribe to log updates
+   */
+  subscribe(callback: (logs: LogEntry[]) => void): () => void {
+    this.subscribers.add(callback)
+    
+    // Return unsubscribe function
+    return () => {
+      this.subscribers.delete(callback)
+    }
+  }
+
+  /**
+   * Notify all subscribers of log updates
+   */
+  private notifySubscribers() {
+    this.subscribers.forEach(callback => {
+      try {
+        callback([...this.logBuffer])
+      } catch (error) {
+        console.error('Error in logger subscriber:', error)
+      }
+    })
+  }
+
+  /**
+   * Internal logging method
+   */
+  private log(level: LogEntry['level'], category: string, message: string, data?: any) {
+    const entry: LogEntry = {
+      timestamp: new Date().toISOString(),
       level,
+      category,
       message,
       data
     }
 
-    this.logs.unshift(log) // Add to beginning for newest first
-
-    // Keep only the most recent logs
-    if (this.logs.length > this.maxLogs) {
-      this.logs = this.logs.slice(0, this.maxLogs)
+    // Add to main buffer
+    this.logBuffer.push(entry)
+    
+    // Add to snippet buffer if capturing
+    if (this.config.captureSnippet && this.snippetTimer) {
+      this.snippetBuffer.push(entry)
     }
 
-    // Notify listeners
-    this.listeners.forEach(listener => listener([...this.logs]))
+    // Notify subscribers
+    this.notifySubscribers()
 
-  }
-
-  // Public logging methods
-  info(message: string, data?: any): void {
-    this.addLog('info', message, data)
-  }
-
-  warn(message: string, data?: any): void {
-    this.addLog('warn', message, data)
-  }
-
-  error(message: string, data?: any): void {
-    this.addLog('error', message, data)
-  }
-
-  debug(message: string, data?: any): void {
-    this.addLog('debug', message, data)
-  }
-
-  // Circuit-specific logging methods
-  circuitAnalysis(voltage: number, current: number, resistance: number): void {
-    this.info(`Circuit Analysis: ${voltage.toFixed(2)}V, ${(current * 1000).toFixed(1)}mA, ${resistance.toFixed(0)}Ω`)
-  }
-
-  componentState(componentType: string, componentId: string, voltage: number, current: number, status: string): void {
-    this.debug(`${componentType} (${componentId}): ${voltage.toFixed(2)}V, ${(current * 1000).toFixed(1)}mA, ${status}`)
-  }
-
-  pathwayDetected(components: string[], voltage: number, current: number): void {
-    this.info(`Pathway detected: ${components.length} components, ${voltage.toFixed(2)}V, ${(current * 1000).toFixed(1)}mA`)
-  }
-
-  parallelBranch(branchCount: number, totalResistance: number): void {
-    this.info(`Parallel branch: ${branchCount} resistors, ${totalResistance.toFixed(0)}Ω total`)
-  }
-
-  // Log management
-  getLogs(): LogEntry[] {
-    return [...this.logs]
-  }
-
-  clearLogs(): void {
-    this.logs = []
-    this.listeners.forEach(listener => listener([]))
-  }
-
-  // Subscribe to log updates
-  subscribe(listener: (logs: LogEntry[]) => void): () => void {
-    this.listeners.push(listener)
-    
-    // Return unsubscribe function
-    return () => {
-      const index = this.listeners.indexOf(listener)
-      if (index > -1) {
-        this.listeners.splice(index, 1)
+    // Output to console if the specific category is enabled
+    // The master 'enabled' flag is just for convenience - individual categories can be controlled independently
+    if (this.config.categories[category as keyof typeof this.config.categories]) {
+      const prefix = this.getLogPrefix(level, category)
+      if (data) {
+        console.log(prefix, message, data)
+      } else {
+        console.log(prefix, message)
       }
     }
+  }
+
+  /**
+   * Get formatted log prefix
+   */
+  private getLogPrefix(level: LogEntry['level'], category: string): string {
+    const timestamp = new Date().toLocaleTimeString()
+    const levelEmoji = {
+      debug: '🔍',
+      info: 'ℹ️',
+      warn: '⚠️',
+      error: '❌'
+    }
+    return `${levelEmoji[level]} [${timestamp}] [${category.toUpperCase()}]`
+  }
+
+  // Public logging methods for each category
+  electrical(message: string, data?: any) {
+    this.log('info', 'electrical', message, data)
+  }
+
+  electricalDebug(message: string, data?: any) {
+    this.log('debug', 'electrical', message, data)
+  }
+
+  electricalWarn(message: string, data?: any) {
+    this.log('warn', 'electrical', message, data)
+  }
+
+  electricalError(message: string, data?: any) {
+    this.log('error', 'electrical', message, data)
+  }
+
+  components(message: string, data?: any) {
+    this.log('info', 'components', message, data)
+  }
+
+  componentsDebug(message: string, data?: any) {
+    this.log('debug', 'components', message, data)
+  }
+
+  componentsWarn(message: string, data?: any) {
+    this.log('warn', 'components', message, data)
+  }
+
+  componentsError(message: string, data?: any) {
+    this.log('error', 'components', message, data)
+  }
+
+  wires(message: string, data?: any) {
+    this.log('info', 'wires', message, data)
+  }
+
+  wiresDebug(message: string, data?: any) {
+    this.log('debug', 'wires', message, data)
+  }
+
+  physics(message: string, data?: any) {
+    this.log('info', 'physics', message, data)
+  }
+
+  physicsDebug(message: string, data?: any) {
+    this.log('debug', 'physics', message, data)
+  }
+
+  circuit(message: string, data?: any) {
+    this.log('info', 'circuit', message, data)
+  }
+
+  circuitDebug(message: string, data?: any) {
+    this.log('debug', 'circuit', message, data)
+  }
+
+  grid(message: string, data?: any) {
+    this.log('info', 'grid', message, data)
+  }
+
+  gridDebug(message: string, data?: any) {
+    this.log('debug', 'grid', message, data)
+  }
+
+  debug(message: string, data?: any) {
+    this.log('debug', 'debug', message, data)
+  }
+
+  performance(message: string, data?: any) {
+    this.log('info', 'performance', message, data)
+  }
+
+  // Generic logging methods
+  info(message: string, data?: any) {
+    this.log('info', 'debug', message, data)
+  }
+
+  warn(message: string, data?: any) {
+    this.log('warn', 'debug', message, data)
+  }
+
+  error(message: string, data?: any) {
+    this.log('error', 'debug', message, data)
   }
 }
 
 // Export singleton instance
 export const logger = new LoggerService()
 
-// Export types for use in components
-export type { LogEntry, LogLevel }
+// Export types for use in other files
+export type Logger = typeof logger

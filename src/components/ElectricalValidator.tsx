@@ -25,6 +25,7 @@ export function ElectricalValidator({ gridData, wires, onValidationUpdate }: Ele
     // Find all components
     const components = new Map<string, any>()
     gridData.forEach((row, y) => {
+      if (!row || !Array.isArray(row)) return
       row.forEach((cell, x) => {
         if (cell.occupied && cell.componentId) {
           if (!components.has(cell.componentId)) {

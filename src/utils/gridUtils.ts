@@ -31,7 +31,7 @@ export function extractOccupiedComponents(gridData: any[][]): OccupiedComponent[
   if (!gridData || gridData.length === 0) return components
   
   gridData.forEach((row, y) => {
-    if (!row) return
+    if (!row || !Array.isArray(row)) return
     row.forEach((cell, x) => {
       if (cell?.occupied && cell.componentId) {
         components.push({

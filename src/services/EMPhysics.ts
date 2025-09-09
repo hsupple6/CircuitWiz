@@ -285,7 +285,7 @@ export function convertGridToNodes(gridData: any[][], _wires: any[]): CircuitNod
   let totalCells = 0;
   
   gridData.forEach((row, y) => {
-    if (!row) return;
+    if (!row || !Array.isArray(row)) return;
     row.forEach((cell, x) => {
       totalCells++;
       if (cell?.occupied && cell.componentId && cell.moduleDefinition) {
@@ -312,7 +312,7 @@ export function convertGridToNodes(gridData: any[][], _wires: any[]): CircuitNod
         
         let node: CircuitNode = {
           type: moduleType as any,
-          id: cell.componentId, // Use componentId instead of componentId_cellIndex
+          id: `${cell.componentId}-${cell.cellIndex || 0}`, // Use componentId-cellIndex for unique IDs
           position: { x, y }
         };
         
@@ -323,12 +323,14 @@ export function convertGridToNodes(gridData: any[][], _wires: any[]): CircuitNod
           // Check if this is the positive or negative terminal
           if (moduleCell.type === 'POSITIVE' || moduleCell.type === 'VCC' || moduleCell.pin === '+' || moduleCell.pin === '5V') {
             node.type = 'VoltageSource';
+            node.id = `${cell.componentId}_positive`; // Unique ID for positive terminal
             node.voltage = moduleCell.voltage || cell.moduleDefinition.properties?.voltage?.default || 5.0;
             node.current = moduleCell.current || cell.moduleDefinition.properties?.current?.default || 1.0;
             node.maxPower = moduleCell.maxPower || cell.moduleDefinition.properties?.maxPower?.default;
             console.log(`🔋 Found VoltageSource: ${node.id} at (${x}, ${y}) with ${node.voltage}V`);
           } else if (moduleCell.type === 'NEGATIVE' || moduleCell.type === 'GND' || moduleCell.pin === '-' || moduleCell.pin === 'GND') {
             node.type = 'GroundingSource';
+            node.id = `${cell.componentId}_negative`; // Unique ID for negative terminal
             node.voltage = 0;
             node.current = moduleCell.current || cell.moduleDefinition.properties?.current?.default || 1.0;
             console.log(`🔋 Found GroundingSource: ${node.id} at (${x}, ${y})`);

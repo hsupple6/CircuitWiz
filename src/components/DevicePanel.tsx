@@ -187,7 +187,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
     const microcontrollers: Microcontroller[] = []
     
     gridData.forEach((row, y) => {
-      if (!row) return
+      if (!row || !Array.isArray(row)) return
       row.forEach((cell, x) => {
         if (cell?.occupied && cell.componentId && cell.moduleDefinition) {
           const module = cell.moduleDefinition

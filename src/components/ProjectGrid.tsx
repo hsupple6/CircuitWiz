@@ -727,6 +727,10 @@ export function ProjectGrid({
     }
 
     console.log('⚡ Triggering electrical calculation...')
+    console.log('⚡ Grid data available:', !!gridData)
+    console.log('⚡ Wires available:', !!wires)
+    console.log('⚡ Grid data length:', gridData?.length)
+    console.log('⚡ Wires length:', wires?.length)
     setIsCalculating(true)
 
     try {
@@ -784,6 +788,10 @@ export function ProjectGrid({
 
   // Calculate electrical flow whenever grid or wires change (with debouncing)
   useEffect(() => {
+    console.log('⚡ useEffect triggered for electrical calculation')
+    console.log('⚡ Grid data changed:', gridData.length, 'rows')
+    console.log('⚡ Wires changed:', wires.length, 'wires')
+    
     const timeoutId = setTimeout(() => {
       // Only calculate if we have components and wires
       const hasComponents = gridData.some(row => row.some(cell => cell.occupied))
@@ -797,6 +805,7 @@ export function ProjectGrid({
       })
       
       if (hasComponents || hasWires) {
+        console.log('⚡ Triggering electrical calculation...')
         performElectricalCalculation()
       } else {
         console.log('⚡ No components or wires, skipping electrical calculation')

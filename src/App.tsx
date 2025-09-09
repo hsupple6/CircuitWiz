@@ -613,6 +613,11 @@ void loop() {
         hasUnsavedChanges: projectData.hasUnsavedChanges || false
       }))
       
+      // Always update gridData for DevMenu, even for unsaved changes notifications
+      if (projectData.gridData) {
+        setGridData(projectData.gridData)
+      }
+      
       // If this is just a notification of unsaved changes, don't proceed with saving
       if (projectData.hasUnsavedChanges) {
         return
@@ -633,6 +638,11 @@ void loop() {
         ...prev,
         hasUnsavedChanges
       }))
+
+      // Always update gridData for DevMenu, even for unsaved check triggers
+      if (projectData.gridData) {
+        setGridData(projectData.gridData)
+      }
 
       // If this is just a trigger for unsaved check, don't proceed with saving
       if (projectData.triggerUnsavedCheck) {
