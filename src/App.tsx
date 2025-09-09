@@ -511,6 +511,23 @@ void loop() {
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [showDevMenu])
+
+  // Ensure gridData is always synchronized with selectedProject
+  useEffect(() => {
+    if (selectedProject) {
+      let projectGridData = selectedProject.gridData || []
+      
+      // If gridData is empty but we have occupiedComponents, reconstruct it
+      if ((!projectGridData || projectGridData.length === 0) && selectedProject.occupiedComponents && selectedProject.occupiedComponents.length > 0) {
+        console.log('🔧 Syncing gridData from occupiedComponents')
+        const { reconstructGridData } = require('../utils/gridUtils')
+        projectGridData = reconstructGridData(selectedProject.occupiedComponents, selectedProject.metadata?.gridSize || { width: 50, height: 50 })
+      }
+      
+      setGridData(projectGridData)
+      setWires(selectedProject.wires || [])
+    }
+  }, [selectedProject])
   
   const handleModuleSelect = (module: ModuleDefinition | null) => {
     setSelectedModule(module)
@@ -545,7 +562,18 @@ void loop() {
     setCurrentView('project')
     
     // Update gridData for DevMenu when project is selected
-    setGridData(project.gridData || [])
+    // Ensure we always have valid gridData, even if it needs to be reconstructed
+    let projectGridData = project.gridData || []
+    
+    // If gridData is empty but we have occupiedComponents, reconstruct it
+    if ((!projectGridData || projectGridData.length === 0) && project.occupiedComponents && project.occupiedComponents.length > 0) {
+      console.log('🔧 Reconstructing gridData from occupiedComponents for DevMenu')
+      const { reconstructGridData } = require('../utils/gridUtils')
+      projectGridData = reconstructGridData(project.occupiedComponents, project.metadata?.gridSize || { width: 50, height: 50 })
+    }
+    
+    setGridData(projectGridData)
+    setWires(project.wires || [])
     
     // Reset save status when loading a project
     setSaveStatus({
@@ -557,7 +585,7 @@ void loop() {
 
     // Initialize the last saved state for comparison
     setLastSavedState({
-      gridData: project.gridData,
+      gridData: projectGridData,
       wires: project.wires,
       componentStates: project.componentStates
     })

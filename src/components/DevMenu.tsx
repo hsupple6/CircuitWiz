@@ -48,18 +48,29 @@ export function DevMenu({ isOpen, onClose, componentStates, circuitPathways = []
   }, [logs])
 
   const runCircuitAnalysis = async () => {
-    if (!gridData || !wires) {
-      console.log('❌ No grid data or wires available for analysis')
+    if (!gridData || gridData.length === 0) {
+      console.log('❌ No grid data available for analysis')
+      setAnalysisResults({ 
+        pathways: [], 
+        errors: ['No grid data available - please ensure a project is loaded'], 
+        warnings: [] 
+      })
       return
+    }
+
+    if (!wires || wires.length === 0) {
+      console.log('⚠️ No wires found - analyzing components only')
     }
 
     setIsAnalyzing(true)
     console.log('🔍 Running circuit pathway analysis...')
+    console.log(`📊 Grid data: ${gridData.length} rows, ${gridData[0]?.length || 0} columns`)
+    console.log(`📊 Wires: ${wires?.length || 0}`)
     
     try {
       // Extract occupied components
       const occupiedComponents = extractOccupiedComponents(gridData)
-      console.log(`📊 Analyzing ${occupiedComponents.length} components and ${wires.length} wires`)
+      console.log(`📊 Analyzing ${occupiedComponents.length} components and ${wires?.length || 0} wires`)
       
       // Run the circuit pathway analysis
       const result = findCircuitPathways(occupiedComponents, wires)
