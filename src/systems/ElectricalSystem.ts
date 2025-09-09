@@ -991,7 +991,11 @@ export function calculateSystematicVoltageFlow(
     comp.componentType === 'PowerSupply' && comp.isPowered
   )
   
-  powerSources.forEach(powerSource => {
+  // Only process the first power source to avoid multiple pathways
+  if (powerSources.length > 0) {
+    const powerSource = powerSources[0]
+    console.log(`[VOLTAGE TRACE] Using only first power source: ${powerSource.componentId} to avoid multiple pathways`)
+    
     logger.electrical(`Tracing voltage from power source ${powerSource.componentId}: ${powerSource.outputVoltage}V at (${powerSource.position.x}, ${powerSource.position.y})`)
     
     // Find wires connected to this power source
@@ -1001,6 +1005,9 @@ export function calculateSystematicVoltageFlow(
         (segment.to.x === powerSource.position.x && segment.to.y === powerSource.position.y)
       )
     )
+    
+    console.log(`[POWER SOURCE] ${powerSource.componentId} connected to wires:`, connectedWires.map(w => `${w.id} (${w.voltage}V)`))
+    console.log(`[POWER SOURCE] Wire details:`, connectedWires.map(w => `${w.id}: ${w.segments.map(s => `(${s.from.x},${s.from.y})→(${s.to.x},${s.to.y})`).join(', ')}`))
     
     logger.wires(`Found ${connectedWires.length} wires connected to power source ${powerSource.componentId}`)
     connectedWires.forEach(wire => {
@@ -1034,8 +1041,19 @@ export function calculateSystematicVoltageFlow(
           })
         }
       })
+      
+      // Update wire voltage based on the traced voltage
+      const wireIndex = wires.findIndex(w => w.id === wire.id)
+      if (wireIndex !== -1) {
+        wires[wireIndex] = {
+          ...wires[wireIndex],
+          voltage: currentVoltage
+        }
+        console.log(`🔌 Updated wire ${wire.id} voltage to ${currentVoltage}V`)
+        console.log(`🔌 Wire ${wire.id} segments:`, wire.segments.map(s => `(${s.from.x},${s.from.y})→(${s.to.x},${s.to.y})`))
+      }
     })
-  })
+  }
   
   // Step 3.5: Post-processing is no longer needed since we handle multi-cell components
   // directly in the voltage tracing phase
@@ -1052,11 +1070,12 @@ export function calculateSystematicVoltageFlow(
         const fromCell = gridData[segment.from.y]?.[segment.from.x]
         const toCell = gridData[segment.to.y]?.[segment.to.x]
         
-        // Check if this component is connected to this wire
-        const fromComponentId = fromCell?.occupied ? `${fromCell.componentId}-${fromCell.cellIndex || 0}` : null
-        const toComponentId = toCell?.occupied ? `${toCell.componentId}-${toCell.cellIndex || 0}` : null
+        // Check if this component is connected to this wire (check base component ID)
+        const fromBaseComponentId = fromCell?.occupied ? fromCell.componentId : null
+        const toBaseComponentId = toCell?.occupied ? toCell.componentId : null
+        const baseComponentId = componentId.replace(/-\d+$/, '') // Remove cell index
         
-        return fromComponentId === componentId || toComponentId === componentId
+        return fromBaseComponentId === baseComponentId || toBaseComponentId === baseComponentId
       })
     )
     
@@ -1072,6 +1091,7 @@ export function calculateSystematicVoltageFlow(
       const inputVoltage = maxVoltageWire.voltage || 0
       
       console.log(`📊 ${state.componentType} ${componentId} input voltage: ${inputVoltage}V from wire ${maxVoltageWire.id}`)
+      console.log(`📊 DEBUG: Wire ${maxVoltageWire.id} voltage: ${maxVoltageWire.voltage}V, segments:`, maxVoltageWire.segments.map(s => `(${s.from.x},${s.from.y})→(${s.to.x},${s.to.y})`))
       
       // Only recalculate if this component isn't a power source
       if (state.componentType !== 'PowerSupply' && state.componentType !== 'Battery') {
@@ -1090,6 +1110,50 @@ export function calculateSystematicVoltageFlow(
               forwardVoltage: cell?.moduleDefinition?.properties?.forwardVoltage?.default || 2.0 
             }
             console.log(`🔧 LED ${componentId} properties:`, componentProperties)
+            
+            const result = calculator(componentProperties, inputVoltage, circuitCurrent)
+            
+            console.log(`🧮 ${state.componentType} ${componentId} calculation: ${inputVoltage}V input → ${result.outputVoltage}V output (current: ${circuitCurrent}A)`)
+            
+            // For LEDs, we need to process ALL cells of the component (like resistors)
+            const baseComponentId = componentId.replace(/-\d+$/, '')
+            
+            // Find all cells of this LED component
+            const allLedCells: Array<{id: string, position: {x: number, y: number}, cellIndex: number}> = []
+            
+            // Search the grid for all cells belonging to this LED
+            for (let y = 0; y < gridData.length; y++) {
+              for (let x = 0; x < gridData[y].length; x++) {
+                const gridCell = gridData[y][x]
+                if (gridCell?.occupied && gridCell.componentId === baseComponentId) {
+                  const cellId = `${baseComponentId}-${gridCell.cellIndex || 0}`
+                  allLedCells.push({
+                    id: cellId,
+                    position: { x, y },
+                    cellIndex: gridCell.cellIndex || 0
+                  })
+                }
+              }
+            }
+            
+            console.log(`🔧 Found ${allLedCells.length} cells for LED ${baseComponentId}:`, allLedCells.map(c => c.id))
+            
+            // Update ALL cells of this LED with the same calculation result
+            allLedCells.forEach(ledCell => {
+              updatedComponentStates.set(ledCell.id, {
+                ...state,
+                outputVoltage: result.outputVoltage,
+                outputCurrent: result.outputCurrent,
+                power: result.power,
+                status: result.status,
+                isPowered: result.outputVoltage > 0,
+                isOn: (result as any).isOn,
+                forwardVoltage: (result as any).forwardVoltage
+              })
+              console.log(`🔧 Updated LED cell ${ledCell.id}: ${inputVoltage}V → ${result.outputVoltage}V (${result.status})`)
+            })
+            
+            return // Skip the single cell update below since we handled all cells above
           }
           
           const result = calculator(componentProperties, inputVoltage, circuitCurrent)
@@ -1113,10 +1177,11 @@ export function calculateSystematicVoltageFlow(
   })
 
   
-  // Post-processing: Ensure all resistor cells have matching voltages
+  // Post-processing: Ensure all resistor and LED cells have matching voltages
   const resistorGroups = new Map<string, Array<{id: string, state: ComponentState}>>()
+  const ledGroups = new Map<string, Array<{id: string, state: ComponentState}>>()
   
-  // Group resistor cells by base component ID
+  // Group resistor and LED cells by base component ID
   updatedComponentStates.forEach((state, componentId) => {
     if (state.componentType === 'Resistor') {
       const baseComponentId = componentId.replace(/-\d+$/, '')
@@ -1124,6 +1189,12 @@ export function calculateSystematicVoltageFlow(
         resistorGroups.set(baseComponentId, [])
       }
       resistorGroups.get(baseComponentId)!.push({ id: componentId, state })
+    } else if (state.componentType === 'LED') {
+      const baseComponentId = componentId.replace(/-\d+$/, '')
+      if (!ledGroups.has(baseComponentId)) {
+        ledGroups.set(baseComponentId, [])
+      }
+      ledGroups.get(baseComponentId)!.push({ id: componentId, state })
     }
   })
   
@@ -1142,6 +1213,29 @@ export function calculateSystematicVoltageFlow(
             outputVoltage: targetVoltage,
             isPowered: targetVoltage > 0,
             status: targetVoltage > 0 ? 'active' : 'unpowered'
+          })
+        }
+      })
+    }
+  })
+  
+  // For each LED group, ensure all cells have the same status and isPowered as cell -0
+  ledGroups.forEach((ledCells, baseComponentId) => {
+    const cell0 = ledCells.find(cell => cell.id.endsWith('-0'))
+    if (cell0) {
+      const targetStatus = cell0.state.status
+      const targetIsPowered = cell0.state.isPowered
+      const targetIsOn = cell0.state.isOn
+      console.log(`🔧 Synchronizing LED ${baseComponentId}: setting all cells to status=${targetStatus}, isPowered=${targetIsPowered}, isOn=${targetIsOn}`)
+      
+      ledCells.forEach(cell => {
+        if (cell.state.status !== targetStatus || cell.state.isPowered !== targetIsPowered || cell.state.isOn !== targetIsOn) {
+          console.log(`🔧 Updating ${cell.id} from status=${cell.state.status}, isPowered=${cell.state.isPowered} to status=${targetStatus}, isPowered=${targetIsPowered}`)
+          updatedComponentStates.set(cell.id, {
+            ...cell.state,
+            status: targetStatus,
+            isPowered: targetIsPowered,
+            isOn: targetIsOn
           })
         }
       })
@@ -1244,6 +1338,8 @@ function traceVoltageThroughCircuit(
   const visitedComponents = new Set<string>()
   
   logger.electricalDebug(`Starting voltage trace from ${initialVoltage}V`)
+  console.log(`[VOLTAGE TRACE START] Wire ${startWire.id} starting with ${initialVoltage}V`)
+  console.log(`[VOLTAGE TRACE START] Wire segments:`, startWire.segments.map(s => `(${s.from.x},${s.from.y})→(${s.to.x},${s.to.y})`))
   
   // Find the destination of the start wire (where it connects to a component)
   const wireDestination = findWireDestination(startWire, gridData)
@@ -1252,6 +1348,8 @@ function traceVoltageThroughCircuit(
     logger.wiresDebug(`Wire segments:`, startWire.segments.map(s => `(${s.from.x},${s.from.y}) -> (${s.to.x},${s.to.y})`))
     return { componentUpdates }
   }
+  
+  console.log(`[WIRE DESTINATION] Wire ${startWire.id} destination: (${wireDestination.x}, ${wireDestination.y})`)
   
   logger.wiresDebug(`Wire ${startWire.id} connects to component at (${wireDestination.x}, ${wireDestination.y})`)
   
@@ -1262,8 +1360,9 @@ function traceVoltageThroughCircuit(
     return { componentUpdates }
   }
   
-  logger.componentsDebug(`Found component at destination: ${component.componentId} (${component.moduleDefinition.module}) at (${component.x}, ${component.y})`)
+  console.log(`[COMPONENT FOUND] At (${wireDestination.x}, ${wireDestination.y}): ${component.componentId} (${component.moduleDefinition.module})`)
   
+  logger.componentsDebug(`Found component at destination: ${component.componentId} (${component.moduleDefinition.module}) at (${component.x}, ${component.y})`)
   // Trace voltage through this component and continue the path
   const result = traceVoltageThroughComponent(
     component,
@@ -1294,17 +1393,23 @@ function traceVoltageThroughComponent(
 } {
   const componentId = component.componentId
   const moduleType = component.moduleDefinition.module
+  console.log(`🔍 [TRACE START] Processing component: ${componentId}, moduleType: "${moduleType}"`)
   logger.componentsDebug(`[MODULE TYPE] ${moduleType}`)
   logger.componentsDebug(`[COMPONENT ID] ${componentId}`)
   
+  // Create cell-specific ID for visited check (consistent with recursive calls)
+  const cellComponentId = `${componentId}-${component.cellIndex || 0}`
+  
   // Avoid infinite loops
-  if (visitedComponents.has(componentId)) {
-    logger.componentsWarn(`Component ${componentId} already visited, skipping`)
+  if (visitedComponents.has(cellComponentId)) {
+    logger.componentsWarn(`Component ${cellComponentId} already visited, skipping`)
     return { componentUpdates }
   }
   
-  visitedComponents.add(componentId)
+  visitedComponents.add(cellComponentId)
   logger.components(`Processing ${moduleType} ${componentId} with input voltage ${inputVoltage}V`)
+  console.log(`🔍 [VOLTAGE TRACE] Processing ${moduleType} ${componentId} at (${component.x}, ${component.y}) with input voltage ${inputVoltage}V and circuit current ${circuitCurrent}A`)
+  console.log(`🔍 [VOLTAGE TRACE] Component cellIndex: ${component.cellIndex}, cellComponentId: ${cellComponentId}`)
   
   // Debug: Check if this is a resistor
   if (moduleType === 'Resistor') {
@@ -1317,6 +1422,7 @@ function traceVoltageThroughComponent(
   let status = 'unpowered'
   
   if (moduleType === 'Resistor') {
+    console.log(`🔍 [BRANCH] Taking Resistor branch for ${componentId}`)
     const resistance = component.moduleDefinition.grid[component.cellIndex || 0]?.resistance || 
                       component.moduleDefinition.properties?.resistance || 1000
     const voltageDrop = circuitCurrent * resistance
@@ -1324,6 +1430,7 @@ function traceVoltageThroughComponent(
     isPowered = outputVoltage > 0
     status = isPowered ? 'active' : 'unpowered'
     
+    console.log(`[RESISTOR CALC] ${componentId}: ${inputVoltage}V input → ${outputVoltage}V output (${voltageDrop}V drop, ${resistance}Ω, ${circuitCurrent}A)`)
     logger.componentsDebug(`[RESISTOR TRACKING] ${componentId}: ${voltageDrop}V drop, input: ${inputVoltage}V, output: ${outputVoltage}V`)
     
     // For resistors, we need to process ALL cells of the component
@@ -1364,25 +1471,71 @@ function traceVoltageThroughComponent(
       logger.componentsDebug(`[RESISTOR SYNC] Updated cell ${cell.id} at (${cell.position.x}, ${cell.position.y}) to ${outputVoltage}V`)
     })
   } else if (moduleType === 'LED') {
+    console.log('[INPUT] ', inputVoltage)
+    
+    // Calculate LED voltage drop properly in voltage trace
+    // Don't override inputVoltage - use what was passed in
     const forwardVoltage = component.moduleDefinition.grid[component.cellIndex || 0]?.voltage || 
-                           component.moduleDefinition.properties?.forwardVoltage || 2.0
+                          component.moduleDefinition.properties?.forwardVoltage?.default
+    
+    // For voltage tracing, LED inherits the input voltage directly
+    // The voltage drop is applied to the NEXT component, not this one
     outputVoltage = Math.max(0, inputVoltage - forwardVoltage)
     const isOn = inputVoltage >= forwardVoltage && circuitCurrent > 0
-    isPowered = isOn
+    isPowered = inputVoltage > 0
     status = isOn ? 'on' : 'off'
+
+    // For LEDs, we need to process ALL cells of the component (like resistors)
+    // Extract base component ID by removing the cell index suffix
+    const baseComponentId = componentId
     
-    console.log(`🔧 LED ${componentId}: ${forwardVoltage}V forward, output: ${outputVoltage}V, ${isOn ? 'ON' : 'OFF'}`)
     
-    componentUpdates.set(componentId, {
-      outputVoltage,
-      outputCurrent: circuitCurrent,
-      power: forwardVoltage * circuitCurrent,
-      forwardVoltage,
-      isOn,
-      status,
-      isPowered,
-      isGrounded: true
-    })
+    
+    const allLEDCells: Array<{id: string, position: {x: number, y: number}, cellIndex: number}> = []
+    // Search the grid for all cells belonging to this resistor
+    for (let y = 0; y < gridData.length; y++) {
+      for (let x = 0; x < gridData[y].length; x++) {
+        const cell = gridData[y][x]
+        if (cell?.occupied) {
+          console.log(`[LED DEBUG] Checking cell at (${x},${y}): componentId="${cell.componentId}", cellIndex=${cell.cellIndex}`)
+        }
+         if (cell?.occupied && cell.componentId === baseComponentId) {
+          console.log('[LED DEBUG] Found cell: ', cell.componentId, cell.cellIndex)
+           const cellId = `${cell.componentId}-${cell.cellIndex}`
+           allLEDCells.push({
+             id: cellId,
+             position: { x, y },
+             cellIndex: cell.cellIndex || 0
+           })
+         }
+      }
+    }
+
+    console.log('[LED DEBUG] All cells: ', allLEDCells.map(cell => `${cell.id}: ${cell.position.x}, ${cell.position.y}`))
+    
+    // Update ALL cells of this LED with the same voltage calculation
+      allLEDCells.forEach(cell => {
+        componentUpdates.set(cell.id, {
+          componentId: cell.id,  // Use the correct cell ID
+          outputVoltage,
+          outputCurrent: circuitCurrent,
+          power: forwardVoltage * circuitCurrent,
+          forwardVoltage,
+          isOn,
+          status,
+          isPowered,
+          isGrounded: inputVoltage > 0
+        })
+        logger.componentsDebug(`[LED SYNC] Updated cell ${cell.id} at (${cell.position.x}, ${cell.position.y}) to ${outputVoltage}V`)
+        console.log('[LED DEBUG] Set ', cell.id, ' with status: ', status)
+      })
+
+    
+    // Debug: Check what's actually in componentUpdates
+    console.log(`🔧 [LED DEBUG] componentUpdates size: ${componentUpdates.size}`)
+    console.log(`🔧 [LED DEBUG] componentUpdates keys:`, Array.from(componentUpdates.keys()))
+    
+    console.log('[LED DEBUG] All cells updated:', allLedCells.map(cell => `${cell.id}: ${componentUpdates.get(cell.id)?.status}`))
     
   } else if (moduleType === 'PowerSupply' || moduleType === 'Battery') {
     // Power sources maintain their voltage
@@ -1415,22 +1568,43 @@ function traceVoltageThroughComponent(
       )
     )
     
-    // Continue tracing through connected wires
-    connectedWires.forEach(wire => {
-      console.log(`🔗 Continuing trace through wire ${wire.id}`)
+    console.log(`[TERMINAL CONNECTIONS] Component ${componentId} terminal at (${otherTerminal.x}, ${otherTerminal.y}) connected to wires:`, connectedWires.map(w => `${w.id} (${w.voltage}V)`))
+    
+    // Find the wire with the highest voltage to continue tracing
+    if (connectedWires.length > 0) {
+      const highestVoltageWire = connectedWires.reduce((highest, current) => 
+        current.voltage > highest.voltage ? current : highest
+      )
+
+      console.log('[WIRES]', connectedWires.map(w => `${w.id} (${w.voltage}V)`))
+      
+      console.log(`[RECURSIVE TRACE] 🔗 Continuing trace through highest voltage wire ${highestVoltageWire.id} (${highestVoltageWire.voltage}V)`)
       
       // Find the next component connected to this wire
-      const nextDestination = findWireDestination(wire, gridData, otherTerminal)
+      const nextDestination = findWireDestination(highestVoltageWire, gridData, otherTerminal)
       if (nextDestination) {
         const nextComponent = findComponentAtPosition(nextDestination, gridData)
+        // Find the wire connected to the next component
+        const connectedWire = wires.find(wire => 
+          wire.segments.some(segment => 
+            (segment.from.x === nextComponent.x && segment.from.y === nextComponent.y) ||
+            (segment.to.x === nextComponent.x && segment.to.y === nextComponent.y)
+          )
+        )
         if (nextComponent) {
           // Create cell-specific ID for visited check
           const nextComponentCellId = `${nextComponent.componentId}-${nextComponent.cellIndex || 0}`
           if (!visitedComponents.has(nextComponentCellId)) {
             // Recursively trace through the next component
+            console.log(`[RECURSIVE TRACE] Passing ${highestVoltageWire.voltage}V from ${componentId} to ${nextComponent.componentId} via wire ${highestVoltageWire.id}`)
+            console.log('[VISITED COMPONENTS]', visitedComponents)
+            if (nextComponent.moduleDefinition.module === 'LED') {
+              console.log('[LED DEBUG] Passing voltage to LED', nextComponent.x, nextComponent.y, connectedWire?.id, 'from ', componentId)
+              console.log('[LED DEBUG] Connected wire:', connectedWire?.id, 'voltage:', connectedWire?.voltage)
+            }
             const nextResult = traceVoltageThroughComponent(
               nextComponent,
-              outputVoltage, // Use this component's output as next component's input
+              connectedWire?.voltage || 0, // Use the highest voltage wire's voltage
               circuitCurrent,
               componentUpdates,
               visitedComponents,
@@ -1445,7 +1619,7 @@ function traceVoltageThroughComponent(
           }
         }
       }
-    })
+    }
   }
   
   return { componentUpdates }
@@ -1478,15 +1652,42 @@ function findWireDestination(wire: WireConnection, gridData: GridCell[][], exclu
 function findComponentAtPosition(position: { x: number; y: number }, gridData: GridCell[][]): any | null {
   const cell = gridData[position.y]?.[position.x]
   if (cell?.occupied && cell.componentId && cell.moduleDefinition) {
+    // Find the base position of the component (cellIndex 0)
+    const basePosition = findComponentBasePosition(cell.componentId, gridData)
+    
     return {
       componentId: cell.componentId,
       moduleDefinition: cell.moduleDefinition,
       cellIndex: cell.cellIndex,
-      x: position.x,
-      y: position.y
+      x: basePosition.x,
+      y: basePosition.y
     }
   }
   return null
+}
+
+/**
+ * Find the base position (cellIndex 0) of a component
+ */
+function findComponentBasePosition(componentId: string, gridData: GridCell[][]): { x: number; y: number } {
+  for (let y = 0; y < gridData.length; y++) {
+    for (let x = 0; x < gridData[y].length; x++) {
+      const cell = gridData[y][x]
+      if (cell?.occupied && cell.componentId === componentId && cell.cellIndex === 0) {
+        return { x, y }
+      }
+    }
+  }
+  // Fallback: return the first found position if no cellIndex 0 found
+  for (let y = 0; y < gridData.length; y++) {
+    for (let x = 0; x < gridData[y].length; x++) {
+      const cell = gridData[y][x]
+      if (cell?.occupied && cell.componentId === componentId) {
+        return { x, y }
+      }
+    }
+  }
+  return { x: 0, y: 0 } // Should never reach here
 }
 
 /**
