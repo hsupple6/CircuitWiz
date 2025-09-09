@@ -581,8 +581,8 @@ function findVoltageSources(occupiedComponents: any[]): CircuitNode[] {
   
   occupiedComponents.forEach(component => {
     const moduleType = component.moduleDefinition.module;
-    
-    if (moduleType === 'Battery' || moduleType === 'PowerSupply') {
+        
+        if (moduleType === 'Battery' || moduleType === 'PowerSupply') {
       // Find the positive terminal (only create one voltage source per component)
       const positiveTerminal = component.moduleDefinition.grid.find((cell: any) => 
         cell.isConnectable && (cell.type === 'POSITIVE' || cell.type === 'VCC' || cell.pin === '+')
@@ -590,8 +590,8 @@ function findVoltageSources(occupiedComponents: any[]): CircuitNode[] {
       
       if (positiveTerminal) {
         const cellIndex = component.moduleDefinition.grid.indexOf(positiveTerminal);
-        voltageSources.push({
-          type: 'VoltageSource',
+            voltageSources.push({
+              type: 'VoltageSource',
           id: `${component.componentId}_positive`,
           voltage: positiveTerminal.voltage || 5.0,
           position: { 
@@ -601,9 +601,9 @@ function findVoltageSources(occupiedComponents: any[]): CircuitNode[] {
           componentId: component.componentId,
           cellIndex: cellIndex
         });
+        }
       }
-    }
-  });
+    });
   
   return voltageSources;
 }
@@ -1014,10 +1014,10 @@ function convertComponentToNode(component: any): CircuitNode | null {
                          moduleCell.properties?.forward_voltage ||
                          moduleCell.voltage || 2.0;
   } else if (moduleType === 'PowerSupply' || moduleType === 'Battery') {
-    node.voltage = moduleCell.voltage || 5.0;
+      node.voltage = moduleCell.voltage || 5.0;
   }
   
   return node;
-}
+  }
 
   

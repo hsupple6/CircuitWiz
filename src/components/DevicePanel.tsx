@@ -38,9 +38,10 @@ interface DevicePanelProps {
   onMicrocontrollerClick: (microcontroller: Microcontroller) => void
   onModalStateChange?: (isOpen: boolean) => void
   onSimulationStateChange?: (state: SimulationState) => void
+  onWiresChange?: (wires: WireConnection[]) => void
 }
 
-export function DevicePanel({ gridData, wires, componentStates, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange }: DevicePanelProps) {
+export function DevicePanel({ gridData, wires, componentStates, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange, onWiresChange }: DevicePanelProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [activeTab, setActiveTab] = useState<'microcontrollers' | 'wires' | 'simulation'>('microcontrollers')
   const [showCodingModal, setShowCodingModal] = useState(false)
@@ -84,6 +85,95 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
     startTime: null
   })
   const [showSimulationPanel, setShowSimulationPanel] = useState(false)
+  
+  // Wire editing state
+  const [selectedWire, setSelectedWire] = useState<string | null>(null)
+  const [editingWireColor, setEditingWireColor] = useState<string | null>(null)
+  const [editingWireGauge, setEditingWireGauge] = useState<string | null>(null)
+  
+  // Wire gauge specifications (AWG - American Wire Gauge)
+  const wireGauges = [
+    { gauge: 0, maxCurrent: 150, maxPower: 18000, thickness: 12, description: "0 AWG - Extra heavy duty" },
+    { gauge: 1, maxCurrent: 130, maxPower: 15600, thickness: 11, description: "1 AWG - Heavy duty" },
+    { gauge: 2, maxCurrent: 115, maxPower: 13800, thickness: 10, description: "2 AWG - Heavy duty" },
+    { gauge: 3, maxCurrent: 100, maxPower: 12000, thickness: 9, description: "3 AWG - Heavy duty" },
+    { gauge: 4, maxCurrent: 85, maxPower: 10200, thickness: 8, description: "4 AWG - Heavy duty" },
+    { gauge: 6, maxCurrent: 65, maxPower: 7800, thickness: 7, description: "6 AWG - Heavy duty" },
+    { gauge: 8, maxCurrent: 50, maxPower: 6000, thickness: 6, description: "8 AWG - Heavy duty" },
+    { gauge: 10, maxCurrent: 30, maxPower: 3600, thickness: 5, description: "10 AWG - Heavy duty" },
+    { gauge: 12, maxCurrent: 20, maxPower: 2400, thickness: 4, description: "12 AWG - Standard" },
+    { gauge: 14, maxCurrent: 15, maxPower: 1800, thickness: 3, description: "14 AWG - Standard" },
+    { gauge: 16, maxCurrent: 10, maxPower: 1200, thickness: 3, description: "16 AWG - Light duty" },
+    { gauge: 18, maxCurrent: 7, maxPower: 840, thickness: 3, description: "18 AWG - Signal" },
+    { gauge: 20, maxCurrent: 5, maxPower: 600, thickness: 3, description: "20 AWG - Low power" },
+    { gauge: 22, maxCurrent: 3, maxPower: 360, thickness: 3, description: "22 AWG - Data" },
+    { gauge: 24, maxCurrent: 2, maxPower: 240, thickness: 3, description: "24 AWG - Micro" }
+  ]
+
+  // Wire update functions
+  const updateWireColor = useCallback((wireId: string, newColor: string) => {
+    const updatedWires = wires.map(wire => {
+      // Update the wire and all its children
+      if (wire.id === wireId || wire.parentId === wireId || (wire.childIds && wire.childIds.includes(wireId))) {
+        return { 
+          ...wire, 
+          color: newColor, 
+          segments: wire.segments.map(segment => ({ ...segment, color: newColor })) 
+        }
+      }
+      return wire
+    })
+    onWiresChange?.(updatedWires)
+    setEditingWireColor(null)
+  }, [wires, onWiresChange])
+
+  const updateWireGauge = useCallback((wireId: string, newGauge: number) => {
+    const gaugeSpec = wireGauges.find(g => g.gauge === newGauge)
+    if (!gaugeSpec) return
+
+    const updatedWires = wires.map(wire => {
+      // Update the wire and all its children
+      if (wire.id === wireId || wire.parentId === wireId || (wire.childIds && wire.childIds.includes(wireId))) {
+        return { 
+          ...wire, 
+          gauge: gaugeSpec.gauge,
+          thickness: gaugeSpec.thickness,
+          maxCurrent: gaugeSpec.maxCurrent,
+          maxPower: gaugeSpec.maxPower,
+          segments: wire.segments.map(segment => ({ 
+            ...segment, 
+            gauge: gaugeSpec.gauge,
+            thickness: gaugeSpec.thickness,
+            maxCurrent: gaugeSpec.maxCurrent,
+            maxPower: gaugeSpec.maxPower
+          }))
+        }
+      }
+      return wire
+    })
+    onWiresChange?.(updatedWires)
+    setEditingWireGauge(null)
+  }, [wires, wireGauges, onWiresChange])
+
+  // Handle click outside to close color picker
+  useEffect(() => {
+    const handleClickOutside = (e: Event) => {
+      if (editingWireColor) {
+        // Check if click is inside the color picker
+        const colorPicker = document.querySelector('[data-color-picker]')
+        if (colorPicker && colorPicker.contains(e.target as Node)) {
+          return // Don't close if clicking inside color picker
+        }
+        setEditingWireColor(null)
+      }
+    }
+    
+    document.addEventListener('click', handleClickOutside)
+    
+    return () => {
+      document.removeEventListener('click', handleClickOutside)
+    }
+  }, [editingWireColor])
 
   // Notify parent component when simulation state changes
   useEffect(() => {
@@ -874,17 +964,31 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                     wires.map((wire) => {
                       const isOverCurrent = wire.current > wire.maxCurrent
                       const isOverPower = wire.power > wire.maxPower
+                      const isSelected = selectedWire === wire.id
                       
                       return (
                         <div
                           key={wire.id}
-                          className="p-2 border border-gray-200 dark:border-dark-border rounded"
+                          className={`p-2 border-2 rounded cursor-pointer transition-all relative ${
+                            isSelected ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-dark-border hover:border-gray-300'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedWire(selectedWire === wire.id ? null : wire.id)
+                          }}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <div
-                                className="w-3 h-3 rounded"
+                                className={`w-4 h-4 rounded cursor-pointer hover:scale-125 transition-transform border-2 ${
+                                  editingWireColor === wire.id ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'
+                                }`}
                                 style={{ backgroundColor: wire.color }}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  e.preventDefault()
+                                  setEditingWireColor(editingWireColor === wire.id ? null : wire.id)
+                                }}
                               />
                               <div>
                                 <div className="text-sm font-medium">Wire {wire.id.slice(-4)}</div>
@@ -901,6 +1005,117 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                               <div>{wire.voltage.toFixed(3)}V</div>
                             </div>
                           </div>
+                          
+                          {/* Gauge selector */}
+                          <div className="mt-2 flex items-center gap-2">
+                            <span className="text-xs">Gauge:</span>
+                            <button
+                              className="px-2 py-1 text-xs bg-gray-100 dark:bg-dark-border rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setEditingWireGauge(editingWireGauge === wire.id ? null : wire.id)
+                              }}
+                            >
+                              {wire.gauge} AWG
+                            </button>
+                          </div>
+                          
+                          {/* Gauge picker menu */}
+                          {editingWireGauge === wire.id && (
+                            <div className="mt-2 p-2 bg-gray-50 dark:bg-dark-border rounded">
+                              <div className="text-xs font-medium mb-2">Select Wire Gauge:</div>
+                              <div className="grid grid-cols-2 gap-1">
+                                {wireGauges.map(gauge => (
+                                  <button
+                                    key={gauge.gauge}
+                                    className={`px-2 py-1 text-xs rounded border ${
+                                      wire.gauge === gauge.gauge 
+                                        ? 'bg-blue-500 text-white border-blue-500' 
+                                        : 'bg-white dark:bg-dark-surface border-gray-300 hover:bg-gray-100'
+                                    }`}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      updateWireGauge(wire.id, gauge.gauge)
+                                    }}
+                                    title={gauge.description}
+                                  >
+                                    {gauge.gauge} AWG
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                Max: {wireGauges.find(g => g.gauge === wire.gauge)?.maxCurrent}A, {wireGauges.find(g => g.gauge === wire.gauge)?.maxPower}W
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Color picker menu */}
+                          {editingWireColor === wire.id && (
+                            <div className="absolute top-8 left-0 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded shadow-lg p-3 z-50 min-w-[200px]" data-color-picker>
+                              <div className="text-xs font-medium mb-2">Choose Wire Color:</div>
+                              
+                              {/* Predefined colors */}
+                              <div className="grid grid-cols-5 gap-1 mb-3">
+                                {[
+                                  { name: 'White', color: '#ffffff' },
+                                  { name: 'Brown', color: '#8B4513' },
+                                  { name: 'Black', color: '#000000' },
+                                  { name: 'Red', color: '#ff0000' },
+                                  { name: 'Orange', color: '#ff8800' },
+                                  { name: 'Yellow', color: '#ffff00' },
+                                  { name: 'Green', color: '#00ff00' },
+                                  { name: 'Blue', color: '#0000ff' },
+                                  { name: 'Purple', color: '#8800ff' },
+                                  { name: 'Pink', color: '#ff00ff' }
+                                ].map(({ name, color }) => (
+                                  <div
+                                    key={color}
+                                    className="w-6 h-6 rounded cursor-pointer border-2 border-gray-300 hover:scale-110 transition-transform"
+                                    style={{ backgroundColor: color }}
+                                    title={name}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      updateWireColor(wire.id, color)
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                              
+                              {/* Hex code input */}
+                              <div className="border-t border-gray-200 dark:border-dark-border pt-2">
+                                <div className="text-xs mb-1">Custom Hex:</div>
+                                <div className="flex gap-1">
+                                  <input
+                                    type="text"
+                                    placeholder="#000000"
+                                    className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-dark-border rounded bg-white dark:bg-dark-surface text-gray-900 dark:text-white"
+                                    maxLength={7}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        const hexValue = (e.target as HTMLInputElement).value
+                                        if (/^#[0-9A-Fa-f]{6}$/.test(hexValue)) {
+                                          updateWireColor(wire.id, hexValue)
+                                        }
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      const input = (e.target as HTMLElement).parentElement?.querySelector('input') as HTMLInputElement
+                                      const hexValue = input.value
+                                      if (/^#[0-9A-Fa-f]{6}$/.test(hexValue)) {
+                                        updateWireColor(wire.id, hexValue)
+                                      }
+                                    }}
+                                  >
+                                    Apply
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )
                     })
