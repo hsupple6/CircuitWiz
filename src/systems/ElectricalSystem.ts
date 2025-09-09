@@ -1028,7 +1028,8 @@ export function calculateSystematicVoltageFlow(
         circuitCurrent,
         componentStates,
         wires,
-        gridData
+        gridData,
+        gpioStates
       )
       
       // Update component states with calculated voltages
@@ -1041,7 +1042,20 @@ export function calculateSystematicVoltageFlow(
           })
         } else {
           // If no existing state, create a new one with the update
-          componentStates.set(componentId, update)
+          // Ensure all required fields are present
+          const newState: ComponentState = {
+            componentId: componentId,
+            componentType: update.componentType || 'Unknown',
+            position: update.position || { x: 0, y: 0 },
+            outputVoltage: update.outputVoltage || 0,
+            outputCurrent: update.outputCurrent || 0,
+            power: update.power || 0,
+            status: update.status || 'unpowered',
+            isPowered: update.isPowered || false,
+            isGrounded: update.isGrounded || false,
+            ...update
+          }
+          componentStates.set(componentId, newState)
         }
         console.log(`[MERGE DEBUG] Updated ${componentId} with status: ${update.status}`)
       })
@@ -1333,7 +1347,8 @@ function traceVoltageThroughCircuit(
   circuitCurrent: number,
   componentStates: Map<string, ComponentState>,
   wires: WireConnection[],
-  gridData: GridCell[][]
+  gridData: GridCell[][],
+  gpioStates?: Map<number, any>
 ): {
   componentUpdates: Map<string, Partial<ComponentState>>
 } {
@@ -1375,7 +1390,8 @@ function traceVoltageThroughCircuit(
     componentUpdates,
     visitedComponents,
     wires,
-    gridData
+    gridData,
+    gpioStates
   )
   
   return { componentUpdates: result.componentUpdates }
@@ -1391,7 +1407,8 @@ function traceVoltageThroughComponent(
   componentUpdates: Map<string, Partial<ComponentState>>,
   visitedComponents: Set<string>,
   wires: WireConnection[],
-  gridData: GridCell[][]
+  gridData: GridCell[][],
+  gpioStates?: Map<number, any>
 ): {
   componentUpdates: Map<string, Partial<ComponentState>>
 } {
@@ -1485,11 +1502,21 @@ function traceVoltageThroughComponent(
     // For voltage tracing, LED applies forward voltage drop
     // LED drops its forward voltage (2V) from the input voltage
     outputVoltage = Math.max(0, inputVoltage - forwardVoltage)
-    const isOn = inputVoltage >= forwardVoltage && circuitCurrent > 0
+    
+    // Check if LED is connected to a grounded wire
+    const isConnectedToGround = wires.some(wire => 
+      wire.isGrounded && wire.segments.some(segment => 
+        (segment.from.x === component.x && segment.from.y === component.y) ||
+        (segment.to.x === component.x && segment.to.y === component.y)
+      )
+    )
+    
+    const isOn = inputVoltage >= forwardVoltage && circuitCurrent > 0 && isConnectedToGround
     isPowered = inputVoltage > 0
     status = isOn ? 'on' : 'off'
     
     console.log(`[LED STATUS DEBUG] inputVoltage: ${inputVoltage}V, forwardVoltage: ${forwardVoltage}V, circuitCurrent: ${circuitCurrent}A`)
+    console.log(`[LED STATUS DEBUG] isConnectedToGround: ${isConnectedToGround}`)
     console.log(`[LED STATUS DEBUG] isOn: ${isOn}, isPowered: ${isPowered}, status: "${status}"`)
 
     // For LEDs, we need to process ALL cells of the component (like resistors)
@@ -1563,6 +1590,61 @@ function traceVoltageThroughComponent(
       isPowered,
       isGrounded: false
     })
+  } else if (moduleType === 'Arduino Uno R3' || moduleType === 'ESP32' || moduleType === 'ArduinoUno' || moduleType === 'ESP32DevKit') {
+    // Microcontroller pins only transfer voltage when set to HIGH
+    const moduleCell = component.moduleDefinition.grid[component.cellIndex || 0]
+    const isGPIOPin = moduleCell?.type === 'GPIO' || moduleCell?.type === 'ANALOG'
+    
+    if (isGPIOPin) {
+      // Extract pin number from pin name (D2, A0, etc.)
+      let pinNumber = parseInt(moduleCell.pin?.replace('D', '').replace('A', '') || '0')
+      
+      // Handle analog pins (A0-A5) by using pin numbers 100-105
+      if (moduleCell.type === 'ANALOG') {
+        pinNumber = pinNumber + 100
+      }
+      
+      // Check GPIO state - only transfer voltage if pin is HIGH
+      const gpioState = gpioStates?.get(pinNumber)
+      const pinIsHigh = gpioState && gpioState.state === 'HIGH'
+      
+      if (pinIsHigh) {
+        // Pin is HIGH - can transfer voltage
+        outputVoltage = inputVoltage
+        isPowered = true
+        status = 'active'
+        console.log(`🔧 MCU pin ${moduleCell.pin} (HIGH): transfers ${outputVoltage}V`)
+      } else {
+        // Pin is LOW - blocks voltage transfer
+        outputVoltage = 0
+        isPowered = false
+        status = 'inactive'
+        console.log(`🔧 MCU pin ${moduleCell.pin} (LOW): blocks voltage transfer`)
+      }
+      
+      componentUpdates.set(cellComponentId, {
+        outputVoltage,
+        outputCurrent: circuitCurrent,
+        power: outputVoltage * circuitCurrent,
+        status,
+        isPowered,
+        isGrounded: false
+      })
+    } else {
+      // Non-GPIO cells (like VCC, GND) behave normally
+      outputVoltage = inputVoltage
+      isPowered = true
+      status = 'active'
+      
+      componentUpdates.set(cellComponentId, {
+        outputVoltage,
+        outputCurrent: circuitCurrent,
+        power: outputVoltage * circuitCurrent,
+        status,
+        isPowered,
+        isGrounded: false
+      })
+    }
   }
   
   // Find the other terminal of this component and continue tracing
@@ -1619,7 +1701,8 @@ function traceVoltageThroughComponent(
               componentUpdates,
               visitedComponents,
               wires,
-              gridData
+              gridData,
+              gpioStates
             )
             
             // Merge component updates

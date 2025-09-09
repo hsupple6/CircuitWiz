@@ -1556,6 +1556,14 @@ export function ProjectGrid({
     }
   }, [wiringState.isWiring, cancelWiring])
 
+  // Disable delete mode when a component is selected for placement
+  useEffect(() => {
+    if (selectedModule && deleteMode) {
+      setDeleteMode(false)
+      setHoveredForDeletion(null)
+    }
+  }, [selectedModule, deleteMode])
+
   // Check if cell is occupied
   const isCellOccupied = (x: number, y: number) => {
     return gridData[y]?.[x]?.occupied || false
