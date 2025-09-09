@@ -1482,8 +1482,8 @@ function traceVoltageThroughComponent(
     const forwardVoltage = component.moduleDefinition.grid[component.cellIndex || 0]?.voltage || 
                           component.moduleDefinition.properties?.forwardVoltage?.default
     
-    // For voltage tracing, LED inherits the input voltage directly
-    // The voltage drop is applied to the NEXT component, not this one
+    // For voltage tracing, LED applies forward voltage drop
+    // LED drops its forward voltage (2V) from the input voltage
     outputVoltage = Math.max(0, inputVoltage - forwardVoltage)
     const isOn = inputVoltage >= forwardVoltage && circuitCurrent > 0
     isPowered = inputVoltage > 0
@@ -1614,7 +1614,7 @@ function traceVoltageThroughComponent(
             }
             const nextResult = traceVoltageThroughComponent(
               nextComponent,
-              connectedWire?.voltage || 0, // Use the highest voltage wire's voltage
+              outputVoltage, // Use this component's output voltage
               circuitCurrent,
               componentUpdates,
               visitedComponents,
