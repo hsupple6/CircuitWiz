@@ -42,7 +42,7 @@ interface DevicePanelProps {
 
 export function DevicePanel({ gridData, wires, componentStates, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange }: DevicePanelProps) {
   const [isExpanded, setIsExpanded] = useState(true)
-  const [activeTab, setActiveTab] = useState<'microcontrollers' | 'wires'>('microcontrollers')
+  const [activeTab, setActiveTab] = useState<'microcontrollers' | 'wires' | 'simulation'>('microcontrollers')
   const [showCodingModal, setShowCodingModal] = useState(false)
   const [selectedMicrocontroller, setSelectedMicrocontroller] = useState<Microcontroller | null>(null)
   const [code, setCode] = useState('// Your code here\nvoid setup() {\n  // Initialize pins\n}\n\nvoid loop() {\n  // Main program loop\n}')
@@ -717,6 +717,19 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                   Wires ({wires.length})
                 </div>
               </button>
+              <button
+                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                  activeTab === 'simulation'
+                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                    : 'text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:hover:text-dark-text-secondary'
+                }`}
+                onClick={() => setActiveTab('simulation')}
+              >
+                <div className="flex items-center justify-center gap-1">
+                  <Cpu className="w-4 h-4" />
+                  Simulation
+                </div>
+              </button>
             </div>
 
             {/* Content */}
@@ -849,7 +862,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                     })
                   )}
                 </div>
-              ) : (
+              ) : activeTab === 'wires' ? (
                 <div className="p-3 space-y-2">
                   {wires.length === 0 ? (
                     <div className="text-center py-8 text-gray-500 dark:text-dark-text-muted">
@@ -893,7 +906,138 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                     })
                   )}
                 </div>
-              )}
+              ) : activeTab === 'simulation' ? (
+                <div className="p-3 space-y-2">
+                  {!simulationState.isRunning ? (
+                    <div className="text-center py-8 text-gray-500 dark:text-dark-text-muted">
+                      <Cpu className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No simulation running</p>
+                      <p className="text-xs">Start a simulation to see outputs</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-medium text-gray-900 dark:text-dark-text-primary">
+                          Simulation Status
+                        </h4>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                          <span className="text-sm text-green-600 dark:text-green-400">Running</span>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <h5 className="text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+                          GPIO Pin States
+                        </h5>
+                        <div className="grid grid-cols-2 gap-1 text-xs">
+                          {/* Digital Pins D0-D13 */}
+                          {Array.from({length: 14}, (_, i) => i).map(pin => {
+                            const state = simulationState.gpioStates.get(pin)
+                            const isHigh = state?.state === 'HIGH'
+                            return (
+                              <div
+                                key={`D${pin}`}
+                                className={`flex items-center justify-between p-1 rounded ${
+                                  isHigh 
+                                    ? 'bg-green-100 dark:bg-green-900/30' 
+                                    : 'bg-gray-50 dark:bg-gray-800'
+                                }`}
+                              >
+                                <span className="text-gray-600 dark:text-dark-text-muted">D{pin}:</span>
+                                <span className={`px-1 py-0.5 rounded text-xs font-medium ${
+                                  isHigh 
+                                    ? 'bg-green-200 text-green-800 dark:bg-green-800 dark:text-green-200'
+                                    : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                                }`}>
+                                  {isHigh ? 'HIGH' : 'LOW'}
+                                </span>
+                              </div>
+                            )
+                          })}
+                          
+                          {/* Analog Pins A0-A5 */}
+                          {Array.from({length: 6}, (_, i) => i).map(pin => {
+                            const state = simulationState.gpioStates.get(pin + 100) // Use 100+ for analog pins to avoid conflict
+                            const isHigh = state?.state === 'HIGH'
+                            return (
+                              <div
+                                key={`A${pin}`}
+                                className={`flex items-center justify-between p-1 rounded ${
+                                  isHigh 
+                                    ? 'bg-blue-100 dark:bg-blue-900/30' 
+                                    : 'bg-gray-50 dark:bg-gray-800'
+                                }`}
+                              >
+                                <span className="text-gray-600 dark:text-dark-text-muted">A{pin}:</span>
+                                <span className={`px-1 py-0.5 rounded text-xs font-medium ${
+                                  isHigh 
+                                    ? 'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
+                                    : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                                }`}>
+                                  {isHigh ? 'HIGH' : 'LOW'}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        
+                        {/* Legend */}
+                        <div className="mt-2 pt-2 border-t border-gray-200 dark:border-dark-border">
+                          <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-dark-text-muted">
+                            <div className="flex items-center gap-1">
+                              <div className="w-2 h-2 bg-green-200 rounded"></div>
+                              <span>Digital HIGH</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-2 h-2 bg-blue-200 rounded"></div>
+                              <span>Analog HIGH</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-2 h-2 bg-gray-200 rounded"></div>
+                              <span>LOW</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {simulationState.wireStates && simulationState.wireStates.size > 0 && (
+                        <div>
+                          <h5 className="text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+                            Wire States
+                          </h5>
+                          <div className="space-y-1">
+                            {Array.from(simulationState.wireStates.entries()).map(([wireId, state]) => (
+                              <div
+                                key={wireId}
+                                className="flex items-center justify-between p-2 rounded text-sm bg-gray-50 dark:bg-gray-800"
+                              >
+                                <span className="text-gray-600 dark:text-dark-text-muted">Wire {wireId}:</span>
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                  state === 'active' 
+                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                                    : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                                }`}>
+                                  {state}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="pt-2 border-t border-gray-200 dark:border-dark-border">
+                        <button
+                          onClick={stopSimulation}
+                          className="w-full px-3 py-2 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                        >
+                          Stop Simulation
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
           </div>
         )}
@@ -1450,97 +1594,6 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
         </div>
       )}
 
-      {/* Simulation Panel */}
-      {showSimulationPanel && simulationState.isRunning && (
-        <div className="absolute top-4 right-4 bg-white dark:bg-dark-surface rounded-lg shadow-lg border border-gray-200 dark:border-dark-border z-50 min-w-[350px] max-w-[500px]">
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary flex items-center gap-2">
-                <Cpu className="w-5 h-5 text-green-500" />
-                Simulation Running
-              </h3>
-              <button
-                onClick={stopSimulation}
-                className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {/* Microcontroller Info */}
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-                <h4 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary mb-2">
-                  Active Microcontroller
-                </h4>
-                <div className="text-sm text-gray-600 dark:text-dark-text-muted">
-                  <div>Name: {simulationState.currentMicrocontroller?.name}</div>
-                  <div>Running since: {simulationState.startTime?.toLocaleTimeString()}</div>
-                </div>
-              </div>
-
-              {/* GPIO States */}
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-                <h4 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary mb-2">
-                  GPIO Pin States
-                </h4>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {Array.from(simulationState.gpioStates.entries()).map(([pin, state]) => (
-                    <div key={pin} className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600 dark:text-dark-text-muted">Pin {pin}:</span>
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        state.state === 'HIGH' 
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                          : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                      }`}>
-                        {state.state}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Wire States */}
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-                <h4 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary mb-2">
-                  Wire Activity
-                </h4>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {Array.from(simulationState.wireStates.entries()).map(([wireId, state]) => {
-                    const wire = wires.find(w => w.id === wireId)
-                    return (
-                      <div key={wireId} className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600 dark:text-dark-text-muted">
-                          Wire {wireId.slice(0, 8)}...
-                        </span>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          state === 'active' 
-                            ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
-                            : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                        }`}>
-                          {state === 'active' ? '⚡ Active' : '⚫ Inactive'}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Emulation Output */}
-              {emulationResult && (
-                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary mb-2">
-                    Emulation Output
-                  </h4>
-                  <div className="text-xs text-gray-600 dark:text-dark-text-muted bg-white dark:bg-gray-900 rounded p-2 max-h-24 overflow-y-auto font-mono">
-                    {qemuEmulator.getSummary(emulationResult)}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }

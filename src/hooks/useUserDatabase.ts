@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { UserDatabaseService, UserProject, UserSettings } from '../services/UserDatabaseService'
+import { UserDatabaseService, UserProject, UserSettings, ProjectSaveData } from '../services/UserDatabaseService'
 
 export function useUserDatabase() {
   const { getAccessToken, isAuthenticated } = useAuth()
@@ -73,7 +73,7 @@ export function useUserDatabase() {
     return await executeWithErrorHandling(() => userDatabase!.duplicateProject(projectId, newName))
   }, [executeWithErrorHandling, userDatabase])
 
-  const autoSaveProject = useCallback(async (projectId: string, projectData: Partial<UserProject>): Promise<void> => {
+  const autoSaveProject = useCallback(async (projectId: string, projectData: ProjectSaveData): Promise<void> => {
     await executeWithErrorHandling(() => userDatabase!.autoSaveProject(projectId, projectData))
   }, [executeWithErrorHandling, userDatabase])
 

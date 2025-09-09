@@ -18,6 +18,8 @@ import {
 import { Auth0Provider } from '@auth0/auth0-react'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { extractOccupiedComponents } from './utils/gridUtils'
+import { ProjectSaveData } from './services/UserDatabaseService'
 import { ThemeToggle } from './components/ThemeToggle'
 import { ProjectGrid } from './components/ProjectGrid'
 import { ComponentPalette } from './components/ComponentPalette'
@@ -170,6 +172,10 @@ function AppContent() {
   const [showDevMenu, setShowDevMenu] = useState(false)
   const [logs, setLogs] = useState<any[]>([])
   const [componentStates, setComponentStates] = useState<Map<string, any>>(new Map())
+  const [circuitPathways, setCircuitPathways] = useState<any[]>([])
+  const [wires, setWires] = useState<any[]>([])
+  const [circuitInfo, setCircuitInfo] = useState<any>(null)
+  const [gridData, setGridData] = useState<any[][]>([])
   const [userProjects, setUserProjects] = useState<UserProject[]>([])
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [deleteModal, setDeleteModal] = useState<{
@@ -331,6 +337,7 @@ function AppContent() {
       if (newProject) {
         setUserProjects(prev => [newProject, ...prev])
         setSelectedProject(newProject)
+        setGridData(newProject.gridData || []) // Initialize gridData for DevMenu
         setCurrentView('project')
       }
     } catch (error) {
@@ -481,6 +488,7 @@ void loop() {
         if (newProject) {
           setUserProjects(prev => [newProject, ...prev])
           setSelectedProject(newProject)
+          setGridData(newProject.gridData || []) // Initialize gridData for DevMenu
           setCurrentView('project')
         }
       }
@@ -535,6 +543,9 @@ void loop() {
   const handleProjectSelect = (project: UserProject) => {
     setSelectedProject(project)
     setCurrentView('project')
+    
+    // Update gridData for DevMenu when project is selected
+    setGridData(project.gridData || [])
     
     // Reset save status when loading a project
     setSaveStatus({
@@ -622,12 +633,19 @@ void loop() {
         }
       } : null)
 
-      // Auto-save to backend
-      const saveResult = await autoSaveProject(selectedProject.id, {
-        gridData: projectData.gridData,
-        wires: projectData.wires,
-        componentStates: projectData.componentStates
-      })
+      // Update gridData for DevMenu
+      if (projectData.gridData) {
+        setGridData(projectData.gridData)
+      }
+
+      // Auto-save to backend - only save occupied components and wires
+      const occupiedComponents = projectData.gridData ? 
+        extractOccupiedComponents(projectData.gridData) : []
+      
+      await autoSaveProject(selectedProject.id, {
+        occupiedComponents,
+        wires: projectData.wires
+      } as ProjectSaveData)
       
       // Set saved status with current time
       setSaveStatus({
@@ -865,6 +883,10 @@ void loop() {
               projectId={selectedProject.id}
               getAccessToken={getAccessToken}
               onProjectDataChange={handleProjectDataChange}
+              // Debug suite callbacks
+              onCircuitPathwaysChange={setCircuitPathways}
+              onWiresChange={setWires}
+              onCircuitInfoChange={setCircuitInfo}
             />
           </div>
         </div>
@@ -890,7 +912,11 @@ void loop() {
           isOpen={showDevMenu}
           onClose={() => setShowDevMenu(false)}
           componentStates={componentStates}
+          circuitPathways={circuitPathways}
           logs={logs}
+          wires={wires}
+          circuitInfo={circuitInfo}
+          gridData={gridData}
         />
       </div>
     )

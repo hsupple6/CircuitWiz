@@ -174,24 +174,42 @@ class SQLiteDatabase {
           console.error('❌ SQLite: Error getting project:', err);
           reject(err);
         } else if (row) {
-          const gridData = JSON.parse(row.grid_data || '[]');
+          const storedData = JSON.parse(row.grid_data || '[]');
           const wires = JSON.parse(row.wires || '[]');
           const componentStates = JSON.parse(row.component_states || '{}');
           
-          console.log('🔧 SQLite: Loading project:', row.name, {
-            gridDataRows: gridData.length,
-            wiresCount: wires.length,
-            componentStatesCount: Object.keys(componentStates).length,
-            hasGridData: gridData.length > 0,
-            hasWires: wires.length > 0,
-            hasComponentStates: Object.keys(componentStates).length > 0
-          });
+          // Detect if stored data is occupied components or full gridData
+          let gridData;
+          let occupiedComponents;
+          
+          if (storedData.length > 0 && Array.isArray(storedData[0])) {
+            // Old format: full gridData (2D array)
+            gridData = storedData;
+            occupiedComponents = null;
+            console.log('🔧 SQLite: Loading project with full gridData:', row.name, {
+              gridDataRows: gridData.length,
+              wiresCount: wires.length,
+              componentStatesCount: Object.keys(componentStates).length
+            });
+          } else {
+            // New format: occupied components array
+            occupiedComponents = storedData;
+            // Reconstruct gridData from occupied components
+            const gridSize = { width: 50, height: 50 }; // Default size
+            gridData = this.reconstructGridFromComponents(occupiedComponents, gridSize);
+            console.log('🔧 SQLite: Loading project with occupied components:', row.name, {
+              occupiedComponentsCount: occupiedComponents.length,
+              wiresCount: wires.length,
+              componentStatesCount: Object.keys(componentStates).length
+            });
+          }
           
           resolve({
             id: row.id,
             name: row.name,
             description: row.description,
             gridData,
+            occupiedComponents,
             wires,
             componentStates,
             arduinoProject: JSON.parse(row.arduino_project || '{}'),
@@ -377,33 +395,23 @@ class SQLiteDatabase {
   async autoSaveProject(projectId, userId, projectData) {
     return new Promise((resolve, reject) => {
       console.log('🔧 SQLite: Auto-saving project:', projectId, {
-        hasGridData: projectData.gridData !== undefined,
-        hasWires: projectData.wires !== undefined,
-        hasComponentStates: projectData.componentStates !== undefined,
-        hasMetadata: projectData.metadata !== undefined
+        hasOccupiedComponents: projectData.occupiedComponents !== undefined,
+        hasWires: projectData.wires !== undefined
       });
 
       const updateFields = [];
       const values = [];
 
-      if (projectData.gridData !== undefined) {
+      // Only save occupied components and wires - exclude componentStates and other fields
+      if (projectData.occupiedComponents !== undefined) {
         updateFields.push('grid_data = ?');
-        values.push(JSON.stringify(projectData.gridData));
-        console.log('🔧 SQLite: Saving grid data with', projectData.gridData.length, 'rows');
+        values.push(JSON.stringify(projectData.occupiedComponents));
+        console.log('🔧 SQLite: Saving', projectData.occupiedComponents.length, 'occupied components');
       }
       if (projectData.wires !== undefined) {
         updateFields.push('wires = ?');
         values.push(JSON.stringify(projectData.wires));
         console.log('🔧 SQLite: Saving', projectData.wires.length, 'wires');
-      }
-      if (projectData.componentStates !== undefined) {
-        updateFields.push('component_states = ?');
-        values.push(JSON.stringify(projectData.componentStates));
-        console.log('🔧 SQLite: Saving component states for', Object.keys(projectData.componentStates).length, 'components');
-      }
-      if (projectData.metadata !== undefined) {
-        updateFields.push('metadata = ?');
-        values.push(JSON.stringify(projectData.metadata));
       }
 
       if (updateFields.length === 0) {
@@ -647,6 +655,52 @@ class SQLiteDatabase {
     }
 
     return componentStates;
+  }
+
+  // Helper method to reconstruct gridData from occupied components
+  reconstructGridFromComponents(occupiedComponents, gridSize) {
+    // Initialize empty grid
+    const gridData = [];
+    for (let y = 0; y < gridSize.height; y++) {
+      const row = [];
+      for (let x = 0; x < gridSize.width; x++) {
+        row.push({
+          x,
+          y,
+          occupied: false,
+          componentId: undefined,
+          componentType: undefined,
+          moduleDefinition: undefined,
+          isPowered: false,
+          cellIndex: undefined,
+          isClickable: false
+        });
+      }
+      gridData.push(row);
+    }
+    
+    // Place components on the grid
+    occupiedComponents.forEach(component => {
+      const { x, y } = component;
+      if (x >= 0 && x < gridSize.width && y >= 0 && y < gridSize.height) {
+        gridData[y][x] = {
+          ...gridData[y][x],
+          occupied: true,
+          componentId: component.componentId,
+          componentType: component.componentType,
+          moduleDefinition: component.moduleDefinition,
+          cellIndex: component.cellIndex,
+          isPowered: component.isPowered || false,
+          voltage: component.voltage,
+          current: component.current,
+          resistance: component.resistance,
+          isOn: component.isOn,
+          isClickable: component.isClickable || false
+        };
+      }
+    });
+    
+    return gridData;
   }
 
   close() {

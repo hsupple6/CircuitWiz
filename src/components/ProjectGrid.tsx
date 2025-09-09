@@ -46,6 +46,10 @@ interface ProjectGridProps {
     hasUnsavedChanges?: boolean
     triggerUnsavedCheck?: boolean
   }) => void
+  // Debug suite callbacks
+  onCircuitPathwaysChange?: (pathways: any[]) => void
+  onWiresChange?: (wires: any[]) => void
+  onCircuitInfoChange?: (info: any) => void
 }
 
 interface GridCell {
@@ -75,7 +79,10 @@ export function ProjectGrid({
   initialComponentStates,
   projectId,
   getAccessToken,
-  onProjectDataChange
+  onProjectDataChange,
+  onCircuitPathwaysChange,
+  onWiresChange,
+  onCircuitInfoChange
 }: ProjectGridProps) {
   const { isDark } = useTheme()
   const gridRef = useRef<HTMLDivElement>(null)
@@ -745,7 +752,7 @@ export function ProjectGrid({
 
     try {
       // Use the new electrical system
-      const result = calculateElectricalFlow(gridData, wires)
+      const result = calculateElectricalFlow(gridData, wires, simulationState.gpioStates)
       
       console.log('⚡ Electrical calculation completed:', {
         componentStates: result.componentStates.size,
@@ -757,6 +764,32 @@ export function ProjectGrid({
       setComponentStates(result.componentStates)
       setWires(result.updatedWires as any)
       setGridData(result.updatedGridData as any)
+      
+      // Display circuit information in console for now (will be moved to device manager)
+      if (result.circuitInfo) {
+        console.log('📊 Circuit Information:')
+        console.log(`  Total Voltage: ${result.circuitInfo.totalVoltage}V`)
+        console.log(`  Total Current: ${result.circuitInfo.totalCurrent}A`)
+        console.log(`  Total Resistance: ${result.circuitInfo.totalResistance}Ω`)
+        console.log(`  Total Power: ${result.circuitInfo.totalPower}W`)
+        console.log(`  Pathways: ${result.circuitInfo.pathways.length}`)
+        if (result.circuitInfo.errors.length > 0) {
+          console.log('  Errors:', result.circuitInfo.errors)
+        }
+        
+        // Update debug suite data
+        if (onCircuitPathwaysChange) {
+          onCircuitPathwaysChange(result.circuitInfo.pathways || [])
+        }
+        if (onCircuitInfoChange) {
+          onCircuitInfoChange(result.circuitInfo)
+        }
+      }
+      
+      // Update wires for debug suite
+      if (onWiresChange) {
+        onWiresChange(result.updatedWires)
+      }
       
       // Notify parent of component state changes
       if (onComponentStatesChange) {
@@ -792,7 +825,7 @@ export function ProjectGrid({
     }, 100) // 100ms debounce to prevent excessive calculations
 
     return () => clearTimeout(timeoutId)
-  }, [gridData, wires, performElectricalCalculation])
+  }, [gridData, wires, simulationState.gpioStates, performElectricalCalculation])
 
   // Wire system functions
   const startWiring = useCallback((x: number, y: number) => {
@@ -1621,6 +1654,48 @@ export function ProjectGrid({
     return false
   }
 
+  // Check if a wire segment passes through a specific cell
+  const segmentPassesThroughCell = (segment: WireSegment, cellX: number, cellY: number) => {
+    const fromX = segment.from.x
+    const fromY = segment.from.y
+    const toX = segment.to.x
+    const toY = segment.to.y
+    
+    // If segment is a single point
+    if (fromX === toX && fromY === toY) {
+      return fromX === cellX && fromY === cellY
+    }
+    
+    // If segment is horizontal
+    if (fromY === toY) {
+      const minX = Math.min(fromX, toX)
+      const maxX = Math.max(fromX, toX)
+      return fromY === cellY && cellX >= minX && cellX <= maxX
+    }
+    
+    // If segment is vertical
+    if (fromX === toX) {
+      const minY = Math.min(fromY, toY)
+      const maxY = Math.max(fromY, toY)
+      return fromX === cellX && cellY >= minY && cellY <= maxY
+    }
+    
+    // For diagonal segments, check if the cell is on the line
+    // Using line equation: y = mx + b
+    const dx = toX - fromX
+    const dy = toY - fromY
+    const slope = dy / dx
+    const intercept = fromY - slope * fromX
+    
+    // Check if the cell's center is close to the line
+    const expectedY = slope * cellX + intercept
+    const tolerance = 0.5 // Allow some tolerance for diagonal lines
+    
+    return Math.abs(expectedY - cellY) <= tolerance && 
+           cellX >= Math.min(fromX, toX) && 
+           cellX <= Math.max(fromX, toX)
+  }
+
   // Check if placement would collide with existing wires
   const wouldCollideWithWire = (startX: number, startY: number, width: number, height: number) => {
     for (let dy = 0; dy < height; dy++) {
@@ -1785,47 +1860,6 @@ export function ProjectGrid({
     )
   }
 
-  // Check if a wire segment passes through a specific cell
-  const segmentPassesThroughCell = (segment: WireSegment, cellX: number, cellY: number) => {
-    const fromX = segment.from.x
-    const fromY = segment.from.y
-    const toX = segment.to.x
-    const toY = segment.to.y
-    
-    // If segment is a single point
-    if (fromX === toX && fromY === toY) {
-      return fromX === cellX && fromY === cellY
-    }
-    
-    // If segment is horizontal
-    if (fromY === toY) {
-      const minX = Math.min(fromX, toX)
-      const maxX = Math.max(fromX, toX)
-      return fromY === cellY && cellX >= minX && cellX <= maxX
-    }
-    
-    // If segment is vertical
-    if (fromX === toX) {
-      const minY = Math.min(fromY, toY)
-      const maxY = Math.max(fromY, toY)
-      return fromX === cellX && cellY >= minY && cellY <= maxY
-    }
-    
-    // For diagonal segments, check if the cell is on the line
-    // Using line equation: y = mx + b
-    const dx = toX - fromX
-    const dy = toY - fromY
-    const slope = dy / dx
-    const intercept = fromY - slope * fromX
-    
-    // Check if the cell's center is close to the line
-    const expectedY = slope * cellX + intercept
-    const tolerance = 0.5 // Allow some tolerance for diagonal lines
-    
-    return Math.abs(expectedY - cellY) <= tolerance && 
-           cellX >= Math.min(fromX, toX) && 
-           cellX <= Math.max(fromX, toX)
-  }
 
 
 

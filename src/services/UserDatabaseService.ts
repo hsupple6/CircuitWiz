@@ -6,6 +6,7 @@ export interface UserProject {
   name: string
   description?: string
   gridData: GridCell[][]
+  occupiedComponents?: any[] // Compact storage of only occupied components
   wires: WireConnection[]
   componentStates: Record<string, ComponentState>
   metadata: {
@@ -27,6 +28,11 @@ export interface UserProject {
     board: string
     libraries: string[]
   }
+}
+
+export interface ProjectSaveData {
+  occupiedComponents?: any[]
+  wires?: WireConnection[]
 }
 
 export interface UserSettings {
@@ -156,7 +162,7 @@ export class UserDatabaseService {
   }
 
   // Auto-save functionality
-  async autoSaveProject(projectId: string, projectData: Partial<UserProject>): Promise<void> {
+  async autoSaveProject(projectId: string, projectData: ProjectSaveData): Promise<void> {
     try {
       await this.makeAuthenticatedRequest(`/api/user/projects/${projectId}/autosave`, {
         method: 'PATCH',

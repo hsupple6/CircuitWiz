@@ -177,14 +177,11 @@ class UserDatabase {
       return false
     }
     
-    // Only update specific fields for auto-save
-    if (projectData.gridData) project.gridData = projectData.gridData
+    // Only save occupied components and wires - exclude componentStates and other fields
+    if (projectData.occupiedComponents) project.occupiedComponents = projectData.occupiedComponents
     if (projectData.wires) project.wires = projectData.wires
-    if (projectData.componentStates) project.componentStates = projectData.componentStates
-    if (projectData.metadata) {
-      project.metadata = { ...project.metadata, ...projectData.metadata }
-    }
     
+    // Update metadata timestamp
     project.metadata.updatedAt = new Date().toISOString()
     this.projects.set(projectId, project)
     return true
