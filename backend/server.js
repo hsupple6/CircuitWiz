@@ -147,7 +147,6 @@ app.patch('/api/user/projects/:projectId/autosave', authenticateToken, async (re
     
     const success = await userDatabase.autoSaveProject(req.params.projectId, req.user.id, req.body);
     
-    console.log('✅ Backend: Auto-save result:', success);
     res.json({ success });
   } catch (error) {
     console.error('❌ Backend: Auto-save project error:', error);
@@ -258,7 +257,6 @@ async function ensureArduinoCLI() {
       console.log('ESP32 core already installed or installation failed:', error.message);
     }
     
-    console.log('Arduino CLI is ready');
   } catch (error) {
     console.error('Arduino CLI setup failed:', error.message);
     console.error('Please install Arduino CLI: https://arduino.github.io/arduino-cli/');

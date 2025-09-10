@@ -162,14 +162,7 @@ export function findPowerSources(gridData: GridCell[][]): PowerSource[] {
     row.forEach((cell, x) => {
       if (cell && cell.occupied && cell.componentId && cell.moduleDefinition) {
         const moduleCell = cell.moduleDefinition.grid[cell.cellIndex || 0]
-        console.log(`Checking cell at (${x}, ${y}):`, {
-          componentId: cell.componentId,
-          moduleType: cell.moduleDefinition.module,
-          cellType: moduleCell?.type,
-          isPowerable: moduleCell?.isPowerable,
-          voltage: moduleCell?.voltage,
-          pin: moduleCell?.pin
-        })
+  
         
         // Only treat actual power source components as power sources, not microcontroller pins
         const isActualPowerSource = cell.moduleDefinition.module === 'PowerSupply' || 
@@ -177,7 +170,6 @@ export function findPowerSources(gridData: GridCell[][]): PowerSource[] {
         
         if (isActualPowerSource && moduleCell?.isPowerable && moduleCell?.voltage > 0 && 
             (moduleCell.type === 'VCC' || moduleCell.type === 'POSITIVE')) {
-          console.log(`✅ Found power source: ${cell.componentId} at (${x}, ${y}) with ${moduleCell.voltage}V`)
           powerSources.push({
             id: cell.componentId,
             voltage: moduleCell.voltage,
@@ -189,7 +181,6 @@ export function findPowerSources(gridData: GridCell[][]): PowerSource[] {
     })
   })
   
-  console.log(`🔍 Found ${powerSources.length} power sources:`, powerSources)
   return powerSources
 }
 
@@ -686,13 +677,8 @@ function analyzeCircuit(
     })
   })
   
-  console.log('🔍 Found power sources:', powerSources)
-  console.log('🔍 Found ground connections:', groundConnections)
-  console.log('🔍 Total wires to analyze:', wires.length)
-  
   // For each power source, trace the circuit path
   powerSources.forEach(powerSource => {
-    console.log(`🔍 Tracing circuit from power source at (${powerSource.x}, ${powerSource.y})`)
     
     // Find wires connected to this power source
     const connectedWires = wires.filter(wire => 
@@ -702,18 +688,13 @@ function analyzeCircuit(
       )
     )
     
-    console.log(`🔍 Found ${connectedWires.length} wires connected to power source:`, connectedWires.map(w => w.id))
     
     // Trace each connected wire
     connectedWires.forEach(wire => {
-      console.log(`🔍 Tracing wire ${wire.id}`)
       
       // Find the path from this wire to ground
       const circuitPath = findCircuitPath(wire, wires, gridData, groundConnections)
-      console.log(`🔍 Circuit path for wire ${wire.id}:`, circuitPath.length, 'steps')
-      if (circuitPath.length > 0) {
-        console.log(`🔍 Path details:`, circuitPath.map(step => ({ type: step.type, hasComponent: !!step.component, hasWire: !!step.wire })))
-      }
+
       
       if (circuitPath.length > 0) {
         // Calculate total resistance of the circuit
@@ -728,7 +709,6 @@ function analyzeCircuit(
               const resistance = component.moduleDefinition.grid[component.cellIndex || 0]?.resistance || 
                                 component.moduleDefinition.properties?.resistance || 1000
               totalResistance += resistance
-              console.log(`🔍 Resistor in path: ${resistance}Ω`)
             } else if (moduleType === 'LED') {
               const forwardVoltage = component.moduleDefinition.grid[component.cellIndex || 0]?.voltage || 
                                    component.moduleDefinition.properties?.forwardVoltage || 2.0
@@ -736,14 +716,12 @@ function analyzeCircuit(
                                 component.moduleDefinition.properties?.maxCurrent || 0.02
               const ledResistance = forwardVoltage / maxCurrent
               totalResistance += ledResistance
-              console.log(`🔍 LED in path: ${ledResistance}Ω, forward voltage: ${forwardVoltage}V`)
             }
           }
         })
         
         // Calculate circuit current using the original source voltage
         const circuitCurrent = totalResistance > 0 ? powerSource.voltage / totalResistance : 0
-        console.log(`🔍 Circuit current: ${powerSource.voltage}V / ${totalResistance}Ω = ${circuitCurrent}A`)
         
         // Calculate voltage at each point in the circuit
         let voltageAtPoint = powerSource.voltage
@@ -767,12 +745,10 @@ function analyzeCircuit(
                                 component.moduleDefinition.properties?.resistance || 1000
               const voltageDrop = circuitCurrent * resistance
               voltageAtPoint -= voltageDrop
-              console.log(`🔍 Resistor voltage drop: ${voltageDrop}V, remaining voltage: ${voltageAtPoint}V`)
             } else if (moduleType === 'LED') {
               const forwardVoltage = component.moduleDefinition.grid[component.cellIndex || 0]?.voltage || 
                                    component.moduleDefinition.properties?.forwardVoltage || 2.0
               voltageAtPoint -= forwardVoltage
-              console.log(`🔍 LED voltage drop: ${forwardVoltage}V, remaining voltage: ${voltageAtPoint}V`)
             }
             
             // Find the next wire connected to this component
@@ -784,7 +760,6 @@ function analyzeCircuit(
                 isPowered: true,
                 isGrounded: circuitPath.some(step => step.type === 'ground')
               })
-              console.log(`🔍 Updated wire ${nextWire.id} with voltage: ${voltageAtPoint}V`)
             }
           }
         })
@@ -953,7 +928,6 @@ export function calculateSystematicVoltageFlow(
             componentState.outputVoltage = moduleCell.voltage
             componentState.isPowered = true
             componentState.status = 'active'
-            console.log(`🔋 Power source ${cellComponentId}: ${componentState.outputVoltage}V`)
           }
         }
         
@@ -964,16 +938,12 @@ export function calculateSystematicVoltageFlow(
   
   // Step 2: Calculate circuit current using EMPhysics
   const occupiedComponents = extractOccupiedComponents(gridData)
-  console.log(`🔧 Found ${occupiedComponents.length} occupied components`)
   let resistorCount = 0
   occupiedComponents.forEach(comp => {
-    console.log(`🔧 Component: ${comp.componentId} (${comp.moduleDefinition.module}) at (${comp.x}, ${comp.y})`)
     if (comp.moduleDefinition.module === 'Resistor') {
       resistorCount++
-      console.log(`🔧 RESISTOR IN OCCUPIED COMPONENTS: ${comp.componentId}`)
     }
   })
-  console.log(`🔧 Resistors in occupied components: ${resistorCount}`)
   
   const nodes = convertGridToNodes(gridData, wires)
   const hasContinuity = checkContinuity(nodes, wires)
@@ -985,9 +955,6 @@ export function calculateSystematicVoltageFlow(
   }
   
   const circuitCurrent = physicsResult.current || 0
-  console.log(`⚡ Circuit current: ${circuitCurrent}A (${circuitCurrent * 1000}mA)`)
-  console.log(`📊 Physics result:`, physicsResult)
-  
   // Step 3: Systematic voltage flow calculation
   // Find power sources and trace voltage through circuit paths
   const powerSources = Array.from(componentStates.values()).filter(comp => 
@@ -997,7 +964,6 @@ export function calculateSystematicVoltageFlow(
   // Only process the first power source to avoid multiple pathways
   if (powerSources.length > 0) {
     const powerSource = powerSources[0]
-    console.log(`[VOLTAGE TRACE] Using only first power source: ${powerSource.componentId} to avoid multiple pathways`)
     
     logger.electrical(`Tracing voltage from power source ${powerSource.componentId}: ${powerSource.outputVoltage}V at (${powerSource.position.x}, ${powerSource.position.y})`)
     
@@ -1008,9 +974,6 @@ export function calculateSystematicVoltageFlow(
         (segment.to.x === powerSource.position.x && segment.to.y === powerSource.position.y)
       )
     )
-    
-    console.log(`[POWER SOURCE] ${powerSource.componentId} connected to wires:`, connectedWires.map(w => `${w.id} (${w.voltage}V)`))
-    console.log(`[POWER SOURCE] Wire details:`, connectedWires.map(w => `${w.id}: ${w.segments.map(s => `(${s.from.x},${s.from.y})→(${s.to.x},${s.to.y})`).join(', ')}`))
     
     logger.wires(`Found ${connectedWires.length} wires connected to power source ${powerSource.componentId}`)
     connectedWires.forEach(wire => {
@@ -1060,7 +1023,6 @@ export function calculateSystematicVoltageFlow(
           }
           componentStates.set(componentId, newState)
         }
-        console.log(`[MERGE DEBUG] Updated ${componentId} with status: ${update.status}`)
       })
       
       // Update wire voltage based on the traced voltage
@@ -1070,8 +1032,6 @@ export function calculateSystematicVoltageFlow(
           ...wires[wireIndex],
           voltage: currentVoltage
         }
-        console.log(`🔌 Updated wire ${wire.id} voltage to ${currentVoltage}V`)
-        console.log(`🔌 Wire ${wire.id} segments:`, wire.segments.map(s => `(${s.from.x},${s.from.y})→(${s.to.x},${s.to.y})`))
       }
     })
   }
@@ -1110,10 +1070,7 @@ export function calculateSystematicVoltageFlow(
       )
       
       const inputVoltage = maxVoltageWire.voltage || 0
-      
-      console.log(`📊 ${state.componentType} ${componentId} input voltage: ${inputVoltage}V from wire ${maxVoltageWire.id}`)
-      console.log(`📊 DEBUG: Wire ${maxVoltageWire.id} voltage: ${maxVoltageWire.voltage}V, segments:`, maxVoltageWire.segments.map(s => `(${s.from.x},${s.from.y})→(${s.to.x},${s.to.y})`))
-      
+ 
       // Only recalculate if this component isn't a power source
       if (state.componentType !== 'PowerSupply' && state.componentType !== 'Battery') {
         // Recalculate component voltage using the input voltage from wires
@@ -1125,16 +1082,13 @@ export function calculateSystematicVoltageFlow(
           
           if (state.componentType === 'Resistor') {
             componentProperties = { resistance: cell?.resistance || 1000 }
-            console.log(`🔧 Resistor ${componentId} properties:`, componentProperties)
           } else if (state.componentType === 'LED') {
             componentProperties = { 
               forwardVoltage: cell?.moduleDefinition?.properties?.forwardVoltage?.default || 2.0 
             }
-            console.log(`🔧 LED ${componentId} properties:`, componentProperties)
             
             const result = calculator(componentProperties, inputVoltage, circuitCurrent)
             
-            console.log(`🧮 ${state.componentType} ${componentId} calculation: ${inputVoltage}V input → ${result.outputVoltage}V output (current: ${circuitCurrent}A)`)
             
             // For LEDs, we need to process ALL cells of the component (like resistors)
             const baseComponentId = componentId.replace(/-\d+$/, '')
@@ -1157,7 +1111,6 @@ export function calculateSystematicVoltageFlow(
               }
             }
             
-            console.log(`🔧 Found ${allLedCells.length} cells for LED ${baseComponentId}:`, allLedCells.map(c => c.id))
             
             // Update ALL cells of this LED with the same calculation result
             allLedCells.forEach(ledCell => {
@@ -1171,7 +1124,6 @@ export function calculateSystematicVoltageFlow(
                 isOn: (result as any).isOn,
                 forwardVoltage: (result as any).forwardVoltage
               })
-              console.log(`🔧 Updated LED cell ${ledCell.id}: ${inputVoltage}V → ${result.outputVoltage}V (${result.status})`)
             })
             
             return // Skip the single cell update below since we handled all cells above
@@ -1179,7 +1131,6 @@ export function calculateSystematicVoltageFlow(
           
           const result = calculator(componentProperties, inputVoltage, circuitCurrent)
           
-          console.log(`🧮 ${state.componentType} ${componentId} calculation: ${inputVoltage}V input → ${result.outputVoltage}V output (current: ${circuitCurrent}A)`)
           
           // Update component state with new calculation
           updatedComponentStates.set(componentId, {
@@ -1191,7 +1142,6 @@ export function calculateSystematicVoltageFlow(
             isPowered: result.outputVoltage > 0
           })
           
-          console.log(`🔧 Updated ${state.componentType} ${componentId}: ${inputVoltage}V → ${result.outputVoltage}V`)
         }
       }
     }
@@ -1224,11 +1174,9 @@ export function calculateSystematicVoltageFlow(
     const cell0 = resistorCells.find(cell => cell.id.endsWith('-0'))
     if (cell0 && cell0.state.outputVoltage > 0) {
       const targetVoltage = cell0.state.outputVoltage
-      console.log(`🔧 Synchronizing resistor ${baseComponentId}: setting all cells to ${targetVoltage}V`)
       
       resistorCells.forEach(cell => {
         if (cell.state.outputVoltage !== targetVoltage) {
-          console.log(`🔧 Updating ${cell.id} from ${cell.state.outputVoltage}V to ${targetVoltage}V`)
           updatedComponentStates.set(cell.id, {
             ...cell.state,
             outputVoltage: targetVoltage,
@@ -1247,11 +1195,9 @@ export function calculateSystematicVoltageFlow(
       const targetStatus = cell0.state.status
       const targetIsPowered = cell0.state.isPowered
       const targetIsOn = cell0.state.isOn
-      console.log(`🔧 Synchronizing LED ${baseComponentId}: setting all cells to status=${targetStatus}, isPowered=${targetIsPowered}, isOn=${targetIsOn}`)
       
       ledCells.forEach(cell => {
         if (cell.state.status !== targetStatus || cell.state.isPowered !== targetIsPowered || cell.state.isOn !== targetIsOn) {
-          console.log(`🔧 Updating ${cell.id} from status=${cell.state.status}, isPowered=${cell.state.isPowered} to status=${targetStatus}, isPowered=${targetIsPowered}`)
           updatedComponentStates.set(cell.id, {
             ...cell.state,
             status: targetStatus,
@@ -1264,13 +1210,11 @@ export function calculateSystematicVoltageFlow(
   })
   
   // Step 6: Update wires with inherited voltages from synchronized components
-  console.log('🔌 Starting wire voltage inheritance...')
   const updatedWires = wires.map(wire => {
     let wireVoltage = 0
     let isPowered = false
     let isGrounded = false
     
-    console.log(`🔌 Processing wire ${wire.id}...`)
     
     // Find components connected to this wire by checking grid data
     const connectedComponents: ComponentState[] = []
@@ -1286,7 +1230,6 @@ export function calculateSystematicVoltageFlow(
         const fromComponent = updatedComponentStates.get(cellComponentId)
         if (fromComponent) {
           connectedComponents.push(fromComponent)
-          console.log(`🔍 Wire ${wire.id} connects from ${fromComponent.componentType} at (${segment.from.x}, ${segment.from.y}) with ${fromComponent.outputVoltage}V`)
         }
       }
       
@@ -1296,13 +1239,11 @@ export function calculateSystematicVoltageFlow(
         const toComponent = updatedComponentStates.get(cellComponentId)
         if (toComponent) {
           connectedComponents.push(toComponent)
-          console.log(`🔍 Wire ${wire.id} connects to ${toComponent.componentType} at (${segment.to.x}, ${segment.to.y}) with ${toComponent.outputVoltage}V`)
         }
       }
     })
     
     // Wire inherits voltage from component with highest output voltage
-    console.log(`🔌 Wire ${wire.id} found ${connectedComponents.length} connected components`)
     if (connectedComponents.length > 0) {
       const maxVoltageComponent = connectedComponents.reduce((max, comp) => 
         (comp.outputVoltage || 0) > (max.outputVoltage || 0) ? comp : max
@@ -1312,10 +1253,7 @@ export function calculateSystematicVoltageFlow(
       isPowered = maxVoltageComponent.isPowered || false
       isGrounded = connectedComponents.some(comp => comp.isGrounded)
       
-      console.log(`🔌 Wire ${wire.id} inherits ${wireVoltage}V from ${maxVoltageComponent.componentType} (connected to ${connectedComponents.length} components: ${connectedComponents.map(c => `${c.componentType}(${c.outputVoltage}V)`).join(', ')})`)
-    } else {
-      console.log(`🔌 Wire ${wire.id} has no connected components, keeping 0V`)
-    }
+    } 
     
     return {
       ...wire,
@@ -1336,7 +1274,6 @@ export function calculateSystematicVoltageFlow(
     }
   })
   
-  console.log('✅ Systematic voltage calculation complete')
   return { componentStates: updatedComponentStates, updatedWires }
 }
 
@@ -1360,9 +1297,7 @@ function traceVoltageThroughCircuit(
   const visitedComponents = new Set<string>()
   
   logger.electricalDebug(`Starting voltage trace from ${initialVoltage}V`)
-  console.log(`[VOLTAGE TRACE START] Wire ${startWire.id} starting with ${initialVoltage}V`)
-  console.log(`[VOLTAGE TRACE START] Wire segments:`, startWire.segments.map(s => `(${s.from.x},${s.from.y})→(${s.to.x},${s.to.y})`))
-  
+
   // Find the destination of the start wire (where it connects to a component)
   const wireDestination = findWireDestination(startWire, gridData)
   if (!wireDestination) {
@@ -1371,7 +1306,6 @@ function traceVoltageThroughCircuit(
     return { componentUpdates }
   }
   
-  console.log(`[WIRE DESTINATION] Wire ${startWire.id} destination: (${wireDestination.x}, ${wireDestination.y})`)
   
   logger.wiresDebug(`Wire ${startWire.id} connects to component at (${wireDestination.x}, ${wireDestination.y})`)
   
@@ -1382,7 +1316,6 @@ function traceVoltageThroughCircuit(
     return { componentUpdates }
   }
   
-  console.log(`[COMPONENT FOUND] At (${wireDestination.x}, ${wireDestination.y}): ${component.componentId} (${component.moduleDefinition.module})`)
   
   logger.componentsDebug(`Found component at destination: ${component.componentId} (${component.moduleDefinition.module}) at (${component.x}, ${component.y})`)
   // Trace voltage through this component and continue the path
@@ -1417,10 +1350,7 @@ function traceVoltageThroughComponent(
 } {
   const componentId = component.componentId
   const moduleType = component.moduleDefinition.module
-  console.log(`🔍 [TRACE START] Processing component: ${componentId}, moduleType: "${moduleType}"`)
-  logger.componentsDebug(`[MODULE TYPE] ${moduleType}`)
-  logger.componentsDebug(`[COMPONENT ID] ${componentId}`)
-  
+
   // Create cell-specific ID for visited check (consistent with recursive calls)
   const cellComponentId = `${componentId}-${component.cellIndex || 0}`
   
@@ -1431,25 +1361,15 @@ function traceVoltageThroughComponent(
   }
   
   visitedComponents.add(cellComponentId)
-  logger.components(`Processing ${moduleType} ${componentId} with input voltage ${inputVoltage}V`)
-  console.log(`🔍 [VOLTAGE TRACE] Processing ${moduleType} ${componentId} at (${component.x}, ${component.y}) with input voltage ${inputVoltage}V and circuit current ${circuitCurrent}A`)
-  console.log(`🔍 [VOLTAGE TRACE] Component cellIndex: ${component.cellIndex}, cellComponentId: ${cellComponentId}`)
-  
-  // Debug: Check if this is a resistor
-  if (moduleType === 'Resistor') {
-    logger.componentsDebug(`[RESISTOR DEBUG] Found resistor component: ${componentId}`)
-  }
-  
+
   // Calculate component output voltage based on input voltage and circuit current
   let outputVoltage = 0
   let isPowered = false
   let status = 'unpowered'
   
   // Create cell-specific ID for visited check (consistent with recursive calls)
-  
   switch (moduleType) {
     case 'Resistor':
-      console.log(`🔍 [BRANCH] Taking Resistor branch for ${componentId}`)
     
       // Call the Resistor voltage flow function
       const resistorResult = ResistorVoltageFlow(
@@ -1468,7 +1388,6 @@ function traceVoltageThroughComponent(
       status = resistorResult.status
       break
     case 'LED':
-      console.log(`🔍 [BRANCH] Taking LED branch for ${componentId}`)
     
       // Call the LED voltage flow function
       const ledResult = LEDVoltageFlow(
@@ -1491,7 +1410,6 @@ function traceVoltageThroughComponent(
     case 'ESP32':
     case 'ArduinoUno':
     case 'ESP32DevKit':
-      console.log(`🔍 [BRANCH] Taking Microcontroller branch for ${componentId}`)
     
       // Call the Microcontroller voltage flow function
       const mcuResult = MicrocontrollerVoltageFlow(
@@ -1518,7 +1436,6 @@ function traceVoltageThroughComponent(
       isPowered = true
       status = 'active'
       
-      console.log(`🔧 Power source ${componentId}: maintains ${outputVoltage}V`)
       
       componentUpdates.set(cellComponentId, {
         outputVoltage,
@@ -1537,7 +1454,6 @@ function traceVoltageThroughComponent(
   // Find the other terminal of this component and continue tracing
   const otherTerminal = findOtherTerminal(component, gridData)
   if (otherTerminal) {
-    console.log(`🔗 Component ${componentId} has other terminal at (${otherTerminal.x}, ${otherTerminal.y})`)
     
     // Find wires connected to the other terminal
     const connectedWires = wires.filter(wire => 
@@ -1547,17 +1463,12 @@ function traceVoltageThroughComponent(
       )
     )
     
-    console.log(`[TERMINAL CONNECTIONS] Component ${componentId} terminal at (${otherTerminal.x}, ${otherTerminal.y}) connected to wires:`, connectedWires.map(w => `${w.id} (${w.voltage}V)`))
     
     // Find the wire with the highest voltage to continue tracing
     if (connectedWires.length > 0) {
       const highestVoltageWire = connectedWires.reduce((highest, current) => 
         current.voltage > highest.voltage ? current : highest
       )
-
-      console.log('[WIRES]', connectedWires.map(w => `${w.id} (${w.voltage}V)`))
-      
-      console.log(`[RECURSIVE TRACE] 🔗 Continuing trace through highest voltage wire ${highestVoltageWire.id} (${highestVoltageWire.voltage}V)`)
       
       // Find the next component connected to this wire
       const nextDestination = findWireDestination(highestVoltageWire, gridData, otherTerminal)
@@ -1574,13 +1485,7 @@ function traceVoltageThroughComponent(
           // Create cell-specific ID for visited check
           const nextComponentCellId = `${nextComponent.componentId}-${nextComponent.cellIndex || 0}`
           if (!visitedComponents.has(nextComponentCellId)) {
-            // Recursively trace through the next component
-            console.log(`[RECURSIVE TRACE] Passing ${highestVoltageWire.voltage}V from ${componentId} to ${nextComponent.componentId} via wire ${highestVoltageWire.id}`)
-            console.log('[VISITED COMPONENTS]', visitedComponents)
-            if (nextComponent.moduleDefinition.module === 'LED') {
-              console.log('[LED DEBUG] Passing voltage to LED', nextComponent.x, nextComponent.y, connectedWire?.id, 'from ', componentId)
-              console.log('[LED DEBUG] Connected wire:', connectedWire?.id, 'voltage:', connectedWire?.voltage)
-            }
+
             const nextResult = traceVoltageThroughComponent(
               nextComponent,
               outputVoltage, // Use this component's output voltage
@@ -1685,15 +1590,11 @@ function findOtherTerminal(component: any, gridData: GridCell[][]): { x: number;
     )
   )
   
-  console.log(`🔍 Finding other terminal for ${component.componentId} at (${component.x}, ${component.y})`)
-  console.log(`🔍 Available terminals:`, terminals.map((t: any) => `(${component.x + t.x}, ${component.y + t.y}) type: ${t.type}`))
-  
   // Find terminal that's not at the current position
   const otherTerminal = terminals.find((terminal: any) => {
     const terminalX = component.x + terminal.x
     const terminalY = component.y + terminal.y
     const isDifferentPosition = terminalX !== component.x || terminalY !== component.y
-    console.log(`🔍 Checking terminal at (${terminalX}, ${terminalY}): different position = ${isDifferentPosition}`)
     return isDifferentPosition
   })
   
@@ -1702,11 +1603,9 @@ function findOtherTerminal(component: any, gridData: GridCell[][]): { x: number;
       x: component.x + otherTerminal.x,
       y: component.y + otherTerminal.y
     }
-    console.log(`🔍 Found other terminal at (${result.x}, ${result.y})`)
     return result
   }
   
-  console.log(`🔍 No other terminal found for ${component.componentId}`)
   return null
 }
 
@@ -1745,7 +1644,6 @@ export function updateWiresFromEMPhysics(
   physicsResult: any,
   gridData: GridCell[][]
 ): WireConnection[] {
-  console.log('🔌 Updating wire states from EMPhysics results...')
   
   return wires.map(wire => {
     // Find components connected to this wire
@@ -1783,7 +1681,6 @@ export function updateWiresFromEMPhysics(
 
     // Determine wire voltage based on connected components
     if (connectedComponents.length > 0) {
-      console.log(`🔍 Wire ${wire.id} connected to components:`, connectedComponents.map(c => `${c.componentType}(${c.outputVoltage}V)`));
       
       // Check if any component is a voltage source (power supply positive)
       const voltageSource = connectedComponents.find(comp => 
@@ -1793,7 +1690,6 @@ export function updateWiresFromEMPhysics(
       if (voltageSource) {
         wireVoltage = voltageSource.outputVoltage || physicsResult.batteryVoltage || 5
         isPowered = true
-        console.log(`🔋 Wire ${wire.id} connected to voltage source: ${wireVoltage}V`);
       } else {
         // Use the component with the highest output voltage (closest to power source)
         const maxVoltageComponent = connectedComponents.reduce((max, comp) => 
@@ -1803,7 +1699,6 @@ export function updateWiresFromEMPhysics(
         if (maxVoltageComponent) {
           wireVoltage = maxVoltageComponent.outputVoltage || 0
           isPowered = maxVoltageComponent.isPowered || false
-          console.log(`⚡ Wire ${wire.id} using max voltage component: ${maxVoltageComponent.componentType} at ${wireVoltage}V`);
         }
       }
 
@@ -1815,7 +1710,6 @@ export function updateWiresFromEMPhysics(
         if (isGrounded && !isPowered) {
           wireVoltage = 0
         }
-        console.log(`🔌 Wire ${wire.id} connected to ground`);
       }
 
       // Set current from physics result
@@ -1829,7 +1723,6 @@ export function updateWiresFromEMPhysics(
       isPowered = true
     }
     
-    console.log(`🔌 Wire ${wire.id} updated: ${wireVoltage}V, ${wireCurrent}A, powered: ${isPowered}, grounded: ${isGrounded}`)
     
     return {
       ...wire,
@@ -1849,416 +1742,6 @@ export function updateWiresFromEMPhysics(
       }))
     }
   })
-}
-
-/**
- * Update wire states based on power and ground propagation, including GPIO pin states
- * @deprecated - Use updateWiresFromEMPhysics instead
- */
-export function updateWireStates(
-  wires: WireConnection[],
-  gridData: GridCell[][],
-  _componentStates: Map<string, ComponentState>,
-  gpioStates?: Map<number, any>
-): WireConnection[] {
-  console.log('🔌 Updating wire states...')
-  
-  // Use a simpler approach: propagate voltage through connected components
-  const wireStates = new Map<string, { voltage: number; current: number; isPowered: boolean; isGrounded: boolean }>()
-  
-  // First pass: find all power sources and set initial wire voltages
-  wires.forEach(wire => {
-    let wireVoltage = 0
-    let isPowered = false
-    let isGrounded = false
-    
-    // Check each segment of the wire to see what it connects to
-    for (const segment of wire.segments) {
-      const fromCell = gridData[segment.from.y]?.[segment.from.x]
-      const toCell = gridData[segment.to.y]?.[segment.to.x]
-      
-      // Check if this segment connects to a power source or ground
-      if (fromCell?.occupied && fromCell.moduleDefinition) {
-        const fromModuleCell = fromCell.moduleDefinition.grid[fromCell.cellIndex || 0]
-        if (fromModuleCell) {
-          // Check for power connection from power sources (PowerSupply, Battery)
-          if (fromModuleCell.isPowerable && fromModuleCell.voltage > 0 && 
-              (fromCell.moduleDefinition.module === 'PowerSupply' || fromCell.moduleDefinition.module === 'Battery')) {
-            wireVoltage = Math.max(wireVoltage, fromModuleCell.voltage)
-            isPowered = true
-            console.log(`🔌 Wire ${wire.id} connected to power source: ${fromModuleCell.voltage}V at (${segment.from.x}, ${segment.from.y})`)
-          }
-          // Check for GPIO pin HIGH state
-          else if (fromModuleCell.type === 'GPIO' || fromModuleCell.type === 'ANALOG') {
-            let pinNumber = parseInt(fromModuleCell.pin?.replace('D', '').replace('A', '') || '0')
-            
-            // Handle analog pins (A0-A5) by using pin numbers 100-105
-            if (fromModuleCell.type === 'ANALOG') {
-              pinNumber = pinNumber + 100
-            }
-            
-            const gpioState = gpioStates?.get(pinNumber)
-            
-            if (gpioState && gpioState.state === 'HIGH') {
-              wireVoltage = Math.max(wireVoltage, 5.0) // GPIO pins provide 5V when HIGH
-              isPowered = true
-              const pinName = fromModuleCell.type === 'ANALOG' ? `A${pinNumber - 100}` : `D${pinNumber}`
-              console.log(`🔌 Wire ${wire.id} connected to ${pinName} (HIGH): 5V at (${segment.from.x}, ${segment.from.y})`)
-            }
-          }
-          // Check for ground connection
-          if (fromModuleCell.isGroundable && fromModuleCell.voltage === 0) {
-            isGrounded = true
-            console.log(`🔌 Wire ${wire.id} connected to ground at (${segment.from.x}, ${segment.from.y})`)
-          }
-        }
-      }
-      
-      if (toCell?.occupied && toCell.moduleDefinition) {
-        const toModuleCell = toCell.moduleDefinition.grid[toCell.cellIndex || 0]
-        if (toModuleCell) {
-          // Check for power connection from power sources (PowerSupply, Battery)
-          if (toModuleCell.isPowerable && toModuleCell.voltage > 0 && 
-              (toCell.moduleDefinition.module === 'PowerSupply' || toCell.moduleDefinition.module === 'Battery')) {
-            wireVoltage = Math.max(wireVoltage, toModuleCell.voltage)
-            isPowered = true
-            console.log(`🔌 Wire ${wire.id} connected to power source: ${toModuleCell.voltage}V at (${segment.to.x}, ${segment.to.y})`)
-          }
-          // Check for GPIO pin HIGH state
-          else if (toModuleCell.type === 'GPIO' || toModuleCell.type === 'ANALOG') {
-            let pinNumber = parseInt(toModuleCell.pin?.replace('D', '').replace('A', '') || '0')
-            
-            // Handle analog pins (A0-A5) by using pin numbers 100-105
-            if (toModuleCell.type === 'ANALOG') {
-              pinNumber = pinNumber + 100
-            }
-            
-            const gpioState = gpioStates?.get(pinNumber)
-            
-            if (gpioState && gpioState.state === 'HIGH') {
-              wireVoltage = Math.max(wireVoltage, 5.0) // GPIO pins provide 5V when HIGH
-              isPowered = true
-              const pinName = toModuleCell.type === 'ANALOG' ? `A${pinNumber - 100}` : `D${pinNumber}`
-              console.log(`🔌 Wire ${wire.id} connected to ${pinName} (HIGH): 5V at (${segment.to.x}, ${segment.to.y})`)
-            }
-          }
-          // Check for ground connection
-          if (toModuleCell.isGroundable && toModuleCell.voltage === 0) {
-            isGrounded = true
-            console.log(`🔌 Wire ${wire.id} connected to ground at (${segment.to.x}, ${segment.to.y})`)
-          }
-        }
-      }
-    }
-    
-    wireStates.set(wire.id, { voltage: wireVoltage, current: 0, isPowered, isGrounded })
-  })
-  
-  // Second pass: propagate voltage through components
-  let changed = true
-  let iterations = 0
-  while (changed && iterations < 10) {
-    changed = false
-    iterations++
-    console.log(`🔌 Voltage propagation iteration ${iterations}`)
-    
-    wires.forEach(wire => {
-      const currentState = wireStates.get(wire.id)!
-      let newVoltage = currentState.voltage
-      let newCurrent = currentState.current
-      
-      // Check if this wire connects to a component that's connected to another powered wire
-      for (const segment of wire.segments) {
-        const fromCell = gridData[segment.from.y]?.[segment.from.x]
-        const toCell = gridData[segment.to.y]?.[segment.to.x]
-        
-        // Check if this wire connects to a component
-        if (fromCell?.occupied && fromCell.moduleDefinition) {
-          const moduleType = fromCell.moduleDefinition.module
-          if (moduleType === 'Resistor' || moduleType === 'LED') {
-            // Find other wires connected to this component
-            const otherWires = wires.filter(otherWire => 
-              otherWire.id !== wire.id &&
-              otherWire.segments.some(otherSegment =>
-                (otherSegment.from.x === segment.from.x && otherSegment.from.y === segment.from.y) ||
-                (otherSegment.to.x === segment.from.x && otherSegment.to.y === segment.from.y)
-              )
-            )
-            
-            // Check if any of these other wires have voltage
-            for (const otherWire of otherWires) {
-              const otherState = wireStates.get(otherWire.id)!
-              if (otherState.voltage > newVoltage) {
-                // Calculate voltage drop across component
-                let voltageDrop = 0
-                if (moduleType === 'Resistor') {
-                  const resistance = fromCell.moduleDefinition.grid[fromCell.cellIndex || 0]?.resistance || 
-                                    fromCell.moduleDefinition.properties?.resistance || 1000
-                  // For now, assume a small current to calculate voltage drop
-                  const estimatedCurrent = 0.005 // 5mA
-                  voltageDrop = estimatedCurrent * resistance
-                } else if (moduleType === 'LED') {
-                  const forwardVoltage = fromCell.moduleDefinition.grid[fromCell.cellIndex || 0]?.voltage || 
-                                       fromCell.moduleDefinition.properties?.forwardVoltage || 2.0
-                  voltageDrop = forwardVoltage
-                }
-                
-                newVoltage = Math.max(newVoltage, otherState.voltage - voltageDrop)
-                newCurrent = Math.max(newCurrent, otherState.current)
-                console.log(`🔌 Wire ${wire.id} voltage updated from ${currentState.voltage}V to ${newVoltage}V via ${moduleType}`)
-              }
-            }
-          }
-        }
-        
-        if (toCell?.occupied && toCell.moduleDefinition) {
-          const moduleType = toCell.moduleDefinition.module
-          if (moduleType === 'Resistor' || moduleType === 'LED') {
-            // Find other wires connected to this component
-            const otherWires = wires.filter(otherWire => 
-              otherWire.id !== wire.id &&
-              otherWire.segments.some(otherSegment =>
-                (otherSegment.from.x === segment.to.x && otherSegment.from.y === segment.to.y) ||
-                (otherSegment.to.x === segment.to.x && otherSegment.to.y === segment.to.y)
-              )
-            )
-            
-            // Check if any of these other wires have voltage
-            for (const otherWire of otherWires) {
-              const otherState = wireStates.get(otherWire.id)!
-              if (otherState.voltage > newVoltage) {
-                // Calculate voltage drop across component
-                let voltageDrop = 0
-                if (moduleType === 'Resistor') {
-                  const resistance = toCell.moduleDefinition.grid[toCell.cellIndex || 0]?.resistance || 
-                                    toCell.moduleDefinition.properties?.resistance || 1000
-                  // For now, assume a small current to calculate voltage drop
-                  const estimatedCurrent = 0.005 // 5mA
-                  voltageDrop = estimatedCurrent * resistance
-                } else if (moduleType === 'LED') {
-                  const forwardVoltage = toCell.moduleDefinition.grid[toCell.cellIndex || 0]?.voltage || 
-                                       toCell.moduleDefinition.properties?.forwardVoltage || 2.0
-                  voltageDrop = forwardVoltage
-                }
-                
-                newVoltage = Math.max(newVoltage, otherState.voltage - voltageDrop)
-                newCurrent = Math.max(newCurrent, otherState.current)
-                console.log(`🔌 Wire ${wire.id} voltage updated from ${currentState.voltage}V to ${newVoltage}V via ${moduleType}`)
-              }
-            }
-          }
-        }
-      }
-      
-      if (newVoltage !== currentState.voltage || newCurrent !== currentState.current) {
-        wireStates.set(wire.id, { voltage: newVoltage, current: newCurrent, isPowered: newVoltage > 0, isGrounded: currentState.isGrounded })
-        changed = true
-      }
-    })
-  }
-  
-  return wires.map(wire => {
-    const state = wireStates.get(wire.id)!
-    let wireVoltage = state.voltage
-    let wireCurrent = state.current
-    let isPowered = state.isPowered
-    let isGrounded = state.isGrounded
-    
-    // Calculate current based on connected components
-    if (isPowered && isGrounded) {
-      // Find all components connected to this wire
-      let totalResistance = 0
-      let hasLoad = false
-      
-      for (const segment of wire.segments) {
-        const fromCell = gridData[segment.from.y]?.[segment.from.x]
-        const toCell = gridData[segment.to.y]?.[segment.to.x]
-        
-        // Check components connected to this wire
-        if (fromCell?.occupied && fromCell.moduleDefinition) {
-          const moduleType = fromCell.moduleDefinition.module
-          const moduleCell = fromCell.moduleDefinition.grid[fromCell.cellIndex || 0]
-          
-          if (moduleType === 'Resistor') {
-            const resistance = moduleCell?.resistance || fromCell.moduleDefinition.properties?.resistance || 1000 // Default 1kΩ
-            totalResistance += resistance
-            hasLoad = true
-            console.log(`🔌 Wire ${wire.id} connected to resistor: ${resistance}Ω`)
-          } else if (moduleType === 'LED') {
-            // LED has forward voltage drop - calculate equivalent resistance
-            const forwardVoltage = moduleCell?.voltage || fromCell.moduleDefinition.properties?.forwardVoltage || 2.0
-            const maxCurrent = moduleCell?.current || fromCell.moduleDefinition.properties?.maxCurrent || 0.02
-            const ledResistance = forwardVoltage / maxCurrent // R = V / I
-            totalResistance += ledResistance
-            hasLoad = true
-            console.log(`🔌 Wire ${wire.id} connected to LED: ${ledResistance}Ω (${forwardVoltage}V, ${maxCurrent}A)`)
-          }
-        }
-        
-        if (toCell?.occupied && toCell.moduleDefinition) {
-          const moduleType = toCell.moduleDefinition.module
-          const moduleCell = toCell.moduleDefinition.grid[toCell.cellIndex || 0]
-          
-          if (moduleType === 'Resistor') {
-            const resistance = moduleCell?.resistance || toCell.moduleDefinition.properties?.resistance || 1000 // Default 1kΩ
-            totalResistance += resistance
-            hasLoad = true
-            console.log(`🔌 Wire ${wire.id} connected to resistor: ${resistance}Ω`)
-          } else if (moduleType === 'LED') {
-            // LED has forward voltage drop - calculate equivalent resistance
-            const forwardVoltage = moduleCell?.voltage || toCell.moduleDefinition.properties?.forwardVoltage || 2.0
-            const maxCurrent = moduleCell?.current || toCell.moduleDefinition.properties?.maxCurrent || 0.02
-            const ledResistance = forwardVoltage / maxCurrent // R = V / I
-            totalResistance += ledResistance
-            hasLoad = true
-            console.log(`🔌 Wire ${wire.id} connected to LED: ${ledResistance}Ω (${forwardVoltage}V, ${maxCurrent}A)`)
-          }
-        }
-      }
-      
-      // Calculate current using Ohm's Law: I = V / R
-      if (hasLoad && totalResistance > 0) {
-        wireCurrent = wireVoltage / totalResistance
-        console.log(`🔌 Wire ${wire.id} current calculation: ${wireVoltage}V / ${totalResistance}Ω = ${wireCurrent}A`)
-      } else if (isPowered && isGrounded) {
-        // Complete circuit but no load - this would be a short circuit
-        // In real circuits this would be dangerous, but for simulation we'll show high current
-        wireCurrent = 0.1 // 100mA default current
-        console.log(`🔌 Wire ${wire.id} complete circuit with no load: ${wireCurrent}A`)
-      }
-    }
-    
-    console.log(`🔌 Wire ${wire.id} final state: ${wireVoltage}V, ${wireCurrent}A, powered: ${isPowered}, grounded: ${isGrounded}`)
-    
-    return {
-      ...wire,
-      voltage: wireVoltage,
-      current: wireCurrent,
-      power: wireVoltage * wireCurrent, // Calculate power: P = V * I
-      isPowered,
-      isGrounded,
-      isPowerable: isPowered,
-      isGroundable: isGrounded,
-      segments: wire.segments.map(segment => ({
-        ...segment,
-        isPowered,
-        isGrounded,
-        voltage: wireVoltage,
-        current: wireCurrent
-      }))
-    }
-  })
-}
-
-/**
- * Update component states based on wire connections and GPIO states
- */
-export function updateComponentStatesFromWires(
-  gridData: GridCell[][],
-  wires: WireConnection[],
-  gpioStates?: Map<number, any>
-): Map<string, ComponentState> {
-  console.log('🔧 Updating component states from wire connections...')
-  const componentStates = new Map<string, ComponentState>()
-  
-  // Find all components in the grid
-  gridData.forEach((row, y) => {
-    if (!row || !Array.isArray(row)) return
-    row.forEach((cell, x) => {
-      if (cell?.occupied && cell.componentId && cell.moduleDefinition) {
-        const componentId = cell.componentId
-        const moduleType = cell.moduleDefinition.module
-        
-        // Initialize component state
-        let componentState: ComponentState = {
-          componentId,
-          componentType: moduleType,
-          position: { x, y },
-          outputVoltage: 0,
-          outputCurrent: 0,
-          power: 0,
-          status: 'unpowered',
-          isPowered: false,
-          isGrounded: false
-        }
-        
-        // Check if any wires connect to this component
-        let hasPowerConnection = false
-        let hasGroundConnection = false
-        let maxVoltage = 0
-        
-        wires.forEach(wire => {
-          wire.segments.forEach(segment => {
-            // Check if wire connects to this component
-            const fromCell = gridData[segment.from.y]?.[segment.from.x]
-            const toCell = gridData[segment.to.y]?.[segment.to.x]
-            
-            if ((fromCell?.componentId === componentId) || (toCell?.componentId === componentId)) {
-              // Wire connects to this component
-              if (wire.isPowered) {
-                hasPowerConnection = true
-                maxVoltage = Math.max(maxVoltage, wire.voltage)
-                console.log(`🔧 Component ${componentId} connected to power wire: ${wire.voltage}V`)
-              }
-              if (wire.isGrounded) {
-                hasGroundConnection = true
-                console.log(`🔧 Component ${componentId} connected to ground wire`)
-              }
-            }
-          })
-        })
-        
-        // Check if this is a microcontroller with GPIO pins set to HIGH
-        if (moduleType === 'Arduino Uno R3' && gpioStates) {
-          // Check if any GPIO pins are set to HIGH and connected to wires
-          const moduleCell = cell.moduleDefinition.grid[cell.cellIndex || 0]
-          if (moduleCell && (moduleCell.type === 'GPIO' || moduleCell.type === 'ANALOG')) {
-            let pinNumber = parseInt(moduleCell.pin?.replace('D', '').replace('A', '') || '0')
-            
-            // Handle analog pins (A0-A5) by using pin numbers 100-105
-            if (moduleCell.type === 'ANALOG') {
-              pinNumber = pinNumber + 100
-            }
-            
-            const gpioState = gpioStates.get(pinNumber)
-            
-            if (gpioState && gpioState.state === 'HIGH') {
-              // GPIO pin is HIGH - it can provide power
-              hasPowerConnection = true
-              maxVoltage = Math.max(maxVoltage, 5.0) // GPIO pins provide 5V when HIGH
-              const pinName = moduleCell.type === 'ANALOG' ? `A${pinNumber - 100}` : `D${pinNumber}`
-              console.log(`🔧 GPIO pin ${pinName} is HIGH - providing power to ${componentId}`)
-            }
-          }
-        }
-        
-        // Update component state based on connections
-        if (hasPowerConnection && hasGroundConnection) {
-          // Component has both power and ground - it's fully powered
-          componentState.isPowered = true
-          componentState.isGrounded = true
-          componentState.outputVoltage = maxVoltage
-          componentState.status = 'powered'
-          componentState.power = maxVoltage * 0.1 // Assume 100mA current
-          console.log(`🔧 Component ${componentId} is fully powered: ${maxVoltage}V`)
-        } else if (hasPowerConnection) {
-          componentState.isPowered = true
-          componentState.outputVoltage = maxVoltage
-          componentState.status = 'powered_no_ground'
-          console.log(`🔧 Component ${componentId} has power but no ground: ${maxVoltage}V`)
-        } else if (hasGroundConnection) {
-          componentState.isGrounded = true
-          componentState.status = 'grounded_no_power'
-          console.log(`🔧 Component ${componentId} has ground but no power`)
-        }
-        
-        componentStates.set(componentId, componentState)
-      }
-    })
-  })
-  
-  console.log(`🔧 Updated ${componentStates.size} component states`)
-  return componentStates
 }
 
 /**
@@ -2286,7 +1769,6 @@ export function updateGridData(
           current: state.outputCurrent,
           isPowered: state.isPowered
         }
-        console.log(`🔧 Updated grid cell (${position.x}, ${position.y}) with voltage ${state.outputVoltage}V`)
       }
     }
   })
@@ -2316,11 +1798,7 @@ export function calculateElectricalFlow(
     pathways: any[]
   }
 } {
-  logger.electrical('Starting electrical flow calculation with EMPhysics engine...')
-  logger.electricalDebug(`Grid data: ${gridData.length} rows`)
-  logger.electricalDebug(`Wires: ${wires.length}`)
-  logger.electricalDebug(`GPIO states: ${gpioStates?.size || 0}`)
-  
+
   // Debug: Check if we have any components at all
   let totalComponents = 0
   let resistorComponents = 0
@@ -2330,17 +1808,13 @@ export function calculateElectricalFlow(
       if (cell?.occupied && cell.componentId) {
         totalComponents++
         const moduleType = cell.moduleDefinition?.module
-        logger.componentsDebug(`Found component: ${cell.componentId} (${moduleType}) at (${x}, ${y})`)
         
         if (moduleType === 'Resistor') {
           resistorComponents++
-          logger.componentsDebug(`RESISTOR FOUND: ${cell.componentId} at (${x}, ${y})`)
         }
       }
     })
   })
-  logger.components(`Total components found: ${totalComponents}`)
-  logger.components(`Resistor components found: ${resistorComponents}`)
   
   // Debug: Check grid data content
   let occupiedCells = 0;
@@ -2349,50 +1823,34 @@ export function calculateElectricalFlow(
     row.forEach((cell, x) => {
       if (cell?.occupied && cell.componentId && cell.moduleDefinition) {
         occupiedCells++;
-        console.log(`🔍 Grid cell (${x}, ${y}): ${cell.moduleDefinition.module} - ${cell.componentId}`);
       }
     });
   });
-  console.log(`🔍 Total occupied cells in grid: ${occupiedCells}`);
   
   // Step 1: Extract occupied components and find circuit pathways
   const occupiedComponents = extractOccupiedComponents(gridData)
   const circuitAnalysis = findCircuitPathways(occupiedComponents, wires)
   const pathways = circuitAnalysis.pathways
-  console.log('🔍 Found circuit pathways:', pathways.length)
   
   // Step 2: Convert grid components to circuit nodes for EMPhysics
   const circuitNodes = convertGridToNodes(gridData, wires)
-  console.log('🔧 Converted to circuit nodes:', circuitNodes.length)
   
   // Step 3: Check continuity before calculating circuit
   const hasContinuity = checkContinuity(circuitNodes, wires)
-  console.log('🔍 Continuity check result:', hasContinuity)
   
   // TEMPORARY: Disable continuity check to debug the node creation issue
-  console.log('🔧 TEMPORARY: Bypassing continuity check to debug node creation')
   const hasContinuityOverride = circuitNodes.length > 0 // Allow if we have any nodes
   
   // Step 4: Use EMPhysics CalculateCircuit as primary physics engine
   const physicsResult = CalculateCircuit(circuitNodes, wires, hasContinuityOverride)
-  console.log('⚡ EMPhysics calculation result:', {
-    works: physicsResult.works,
-    batteryVoltage: physicsResult.batteryVoltage,
-    current: physicsResult.current,
-    totalResistance: physicsResult.totalResistance,
-    errors: physicsResult.errors
-  })
+
   
   if (physicsResult.works) {
     // Step 4: Use systematic voltage calculation approach
-    console.log('🔌 Using systematic voltage calculation approach...')
     const systematicResult = calculateSystematicVoltageFlow(gridData, wires, gpioStates)
 
     const componentStates = systematicResult.componentStates
-    console.log('[COMPONENT STATES] Full Map:', Array.from(componentStates.entries()))
-    console.log('[COMPONENT STATES] Size:', componentStates.size)
     componentStates.forEach((state, id) => {
-      console.log(`[COMPONENT STATES] ${id}:`, state)
     })
     
     // Step 5: Use systematic wire updates
@@ -2411,17 +1869,6 @@ export function calculateElectricalFlow(
         }
       });
     });
-    console.log(`🔍 Grid data after update: ${occupiedCellsAfter} occupied cells (was ${occupiedCells})`);
-    
-    console.log(`⚡ Electrical calculation completed: ${componentStates.size} component states, ${updatedWires.length} wires`)
-    
-    // Debug: Log wire states for troubleshooting
-    console.log('🔍 Wire Analysis:')
-    updatedWires.forEach(wire => {
-      if (wire.voltage > 0 || wire.current > 0) {
-        console.log(`  Wire ${wire.id}: ${wire.voltage}V, ${wire.current}A, ${wire.power}W (Powered: ${wire.isPowered}, Grounded: ${wire.isGrounded})`)
-      }
-    })
     
     // Create circuit info for device manager
     const circuitInfo = {
@@ -2439,10 +1886,7 @@ export function calculateElectricalFlow(
       updatedGridData,
       circuitInfo
     }
-  } else {
-    console.warn('⚠️ Circuit calculation failed:', physicsResult.reason)
-    console.warn('⚠️ Errors:', physicsResult.errors)
-    
+  } else {    
     // Create empty component states for failed circuits
     const componentStates = new Map<string, ComponentState>()
     
@@ -2460,7 +1904,6 @@ export function calculateElectricalFlow(
         }
       });
     });
-    console.log(`🔍 Grid data after failed update: ${occupiedCellsAfterFailed} occupied cells (was ${occupiedCells})`);
     
     return {
       componentStates,
@@ -2515,7 +1958,6 @@ export function processBranch(
   
   // Log parallel branch information
   if (updatedParallelBranches.length > 0) {
-    logger.info(`Parallel branches in this circuit: ${updatedParallelBranches.length} branches`)
   }
 
   let currentVoltage = sourceVoltage
@@ -2556,8 +1998,6 @@ export function processBranch(
           isPowered: result.outputVoltage > 0,
           isGrounded: false // Will be updated by wire connections
         })
-        
-        logger.components(`${comp.type} ${comp.id}: ${branch.voltage}V input, ${result.status}`)
       }
     })
   })

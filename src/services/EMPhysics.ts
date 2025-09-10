@@ -66,29 +66,23 @@ export function CalculateCircuit(nodes: CircuitNode[], wires: any[] = [], hasCon
     let errors: string[] = [];
   
     // Pass 1: classify nodes and calculate totals
-    console.log(`⚡ CalculateCircuit processing ${nodes.length} nodes with ${wires.length} wires, continuity: ${hasContinuity}:`, nodes.map(n => `${n.type}(${n.id})`));
     
     for (const node of nodes) {
       if (node.type === 'VoltageSource' || node.type === 'PowerSupply') {
         batteryVoltage += node.voltage || 0;
         hasVoltageSource = true;
-        console.log(`⚡ Found voltage source: ${node.id} with ${node.voltage}V`);
       }
       if (node.type === 'GroundingSource') {
         hasGroundingSource = true;
-        console.log(`⚡ Found grounding source: ${node.id}`);
       }
       if (node.type === 'Resistor') {
         totalResistance += node.resistance || 0;
-        console.log(`⚡ Found resistor: ${node.id} with ${node.resistance}Ω`);
       }
       if (node.type === 'LED') {
         totalLEDVoltage += node.forwardVoltage || 2.0;
-        console.log(`⚡ Found LED: ${node.id} with ${node.forwardVoltage}V forward voltage`);
       }
     }
     
-    console.log(`⚡ Circuit analysis: Voltage=${batteryVoltage}V, Resistance=${totalResistance}Ω, LEDVoltage=${totalLEDVoltage}V, HasVoltage=${hasVoltageSource}, HasGround=${hasGroundingSource}, HasContinuity=${hasContinuity}`);
   
     // Step 2: Check if we have both voltage source and grounding source
     if (!hasVoltageSource) {
@@ -153,9 +147,7 @@ export function CalculateCircuit(nodes: CircuitNode[], wires: any[] = [], hasCon
       : 0; // no resistor = no current flow
   
     totalCurrent = current;
-    
-    console.log(`⚡ Current calculation: ${voltageAcrossResistors}V / ${totalResistance}Ω = ${current}A (${(current * 1000).toFixed(2)}mA)`);
-  
+      
     // Step 5: calculate individual component states and check power limits
     // For series circuits, we need to calculate cumulative voltage drops
     let cumulativeVoltageDrop = 0;
@@ -208,7 +200,6 @@ export function CalculateCircuit(nodes: CircuitNode[], wires: any[] = [], hasCon
           status: 'active',
           isPowered: true
         };
-        console.log(`⚡ Resistor ${node.id}: ${voltageDrop}V drop, ${power.toFixed(3)}W power, output: ${outputVoltage}V`);
         
         // Add this resistor's voltage drop to cumulative
         cumulativeVoltageDrop += voltageDrop;
@@ -234,7 +225,6 @@ export function CalculateCircuit(nodes: CircuitNode[], wires: any[] = [], hasCon
           isPowered: isOn,
           isGrounded: true
         };
-        console.log(`⚡ LED ${node.id}: ${forwardVoltage}V forward, ${power.toFixed(3)}W power, output: ${outputVoltage}V, ${isOn ? 'ON' : 'OFF'}`);
         
         // Add this LED's forward voltage to cumulative
         cumulativeVoltageDrop += forwardVoltage;
@@ -277,10 +267,6 @@ export function convertGridToNodes(gridData: any[][], _wires: any[]): CircuitNod
   const nodes: CircuitNode[] = [];
   const processedComponents = new Set<string>();
   
-  console.log('🔍 Starting convertGridToNodes with gridData:', gridData.length, 'rows');
-  console.log('🔍 Wires passed to convertGridToNodes:', _wires.length);
-  
-  // Debug: Count occupied cells
   let occupiedCells = 0;
   let totalCells = 0;
   
@@ -292,14 +278,11 @@ export function convertGridToNodes(gridData: any[][], _wires: any[]): CircuitNod
         occupiedCells++;
         const moduleType = cell.moduleDefinition.module;
         const moduleCell = cell.moduleDefinition.grid[cell.cellIndex || 0];
-        
-        console.log(`🔍 Found occupied cell at (${x}, ${y}): ${moduleType}, cellIndex: ${cell.cellIndex}, isConnectable: ${moduleCell?.isConnectable}`);
-        
+                
         if (!moduleCell) return;
         
         // Only create nodes for connectable cells (terminals)
         if (!moduleCell.isConnectable) {
-          console.log(`⚠️ Skipping non-connectable cell: ${moduleType} at (${x}, ${y})`);
           return;
         }
         
@@ -318,8 +301,6 @@ export function convertGridToNodes(gridData: any[][], _wires: any[]): CircuitNod
         
         // Extract properties based on component type and cell type
         if (moduleType === 'Battery' || moduleType === 'PowerSupply') {
-          console.log(`🔍 Processing ${moduleType} cell: type="${moduleCell.type}", pin="${moduleCell.pin}", isConnectable=${moduleCell.isConnectable}, voltage=${moduleCell.voltage}`);
-          console.log(`🔍 Full moduleCell:`, moduleCell);
           // Check if this is the positive or negative terminal
           if (moduleCell.type === 'POSITIVE' || moduleCell.type === 'VCC' || moduleCell.pin === '+' || moduleCell.pin === '5V') {
             node.type = 'VoltageSource';
@@ -327,16 +308,12 @@ export function convertGridToNodes(gridData: any[][], _wires: any[]): CircuitNod
             node.voltage = moduleCell.voltage || cell.moduleDefinition.properties?.voltage?.default || 5.0;
             node.current = moduleCell.current || cell.moduleDefinition.properties?.current?.default || 1.0;
             node.maxPower = moduleCell.maxPower || cell.moduleDefinition.properties?.maxPower?.default;
-            console.log(`🔋 Found VoltageSource: ${node.id} at (${x}, ${y}) with ${node.voltage}V`);
           } else if (moduleCell.type === 'NEGATIVE' || moduleCell.type === 'GND' || moduleCell.pin === '-' || moduleCell.pin === 'GND') {
             node.type = 'GroundingSource';
             node.id = `${cell.componentId}_negative`; // Unique ID for negative terminal
             node.voltage = 0;
             node.current = moduleCell.current || cell.moduleDefinition.properties?.current?.default || 1.0;
-            console.log(`🔋 Found GroundingSource: ${node.id} at (${x}, ${y})`);
-          } else {
-            console.log(`⚠️ Unknown power supply cell type: ${moduleCell.type}, pin: ${moduleCell.pin}`);
-          }
+          } 
         } else if (moduleType === 'Resistor') {
           // Get resistance from the component's current value, not the default
           node.resistance = cell.resistance || moduleCell.resistance || cell.moduleDefinition.properties?.resistance?.default || 1000;
@@ -357,14 +334,9 @@ export function convertGridToNodes(gridData: any[][], _wires: any[]): CircuitNod
         }
         
         nodes.push(node);
-        console.log(`🔧 Created node: ${node.type} (${node.id}) at (${x}, ${y})`);
       }
     });
   });
-  
-  console.log(`🔧 Grid analysis: ${occupiedCells} occupied cells out of ${totalCells} total cells`);
-  console.log(`🔧 Total nodes created: ${nodes.length}`);
-  console.log(`🔧 Node types:`, nodes.map(n => n.type));
   
   return nodes;
 }
@@ -373,34 +345,27 @@ export function convertGridToNodes(gridData: any[][], _wires: any[]): CircuitNod
  * Check if there's continuity between voltage source and grounding source
  */
 export function checkContinuity(nodes: CircuitNode[], wires: any[]): boolean {
-  console.log(`🔍 Checking continuity with ${nodes.length} nodes and ${wires.length} wires`);
   
   // Find voltage source and grounding source
   const voltageSource = nodes.find(node => node.type === 'VoltageSource');
   const groundingSource = nodes.find(node => node.type === 'GroundingSource');
   
   if (!voltageSource || !groundingSource) {
-    console.log(`🔍 No voltage source or grounding source found - no continuity`);
     return false;
   }
   
-  console.log(`🔍 Voltage source at (${voltageSource.position?.x}, ${voltageSource.position?.y}), Ground at (${groundingSource.position?.x}, ${groundingSource.position?.y})`);
   
   // If no wires, check if they're adjacent (grid adjacency)
   if (wires.length === 0) {
     const distance = Math.abs((voltageSource.position?.x || 0) - (groundingSource.position?.x || 0)) + 
                     Math.abs((voltageSource.position?.y || 0) - (groundingSource.position?.y || 0));
     const isAdjacent = distance <= 2; // Allow for some adjacency
-    console.log(`🔍 No wires - checking grid adjacency: distance=${distance}, adjacent=${isAdjacent}`);
     return isAdjacent;
   }
   
   // Check if there's a path through wires from voltage source to grounding source
   const visited = new Set<string>();
   const queue: { x: number; y: number }[] = [voltageSource.position!];
-  
-  console.log(`🔍 Starting pathfinding from (${voltageSource.position?.x}, ${voltageSource.position?.y}) to (${groundingSource.position?.x}, ${groundingSource.position?.y})`);
-  console.log(`🔍 Available wires:`, wires.map(w => `${w.id}: ${w.segments.length} segments`));
   
   while (queue.length > 0) {
     const current = queue.shift()!;
@@ -409,11 +374,9 @@ export function checkContinuity(nodes: CircuitNode[], wires: any[]): boolean {
     if (visited.has(key)) continue;
     visited.add(key);
     
-    console.log(`🔍 Exploring position (${current.x}, ${current.y})`);
     
     // Check if we've reached the grounding source
     if (current.x === groundingSource.position?.x && current.y === groundingSource.position?.y) {
-      console.log(`🔍 Found path to grounding source - continuity confirmed`);
       return true;
     }
     
@@ -425,7 +388,6 @@ export function checkContinuity(nodes: CircuitNode[], wires: any[]): boolean {
       )
     );
     
-    console.log(`🔍 Found ${connectedWires.length} connected wires at (${current.x}, ${current.y})`);
     
     // Add connected positions to queue
     connectedWires.forEach(wire => {
@@ -485,15 +447,9 @@ export function findCircuitPathways(occupiedComponents: any[], wires: any[]): {
   const errors: string[] = [];
   const warnings: string[] = [];
   
-  console.log('🔍 Starting circuit pathway analysis...');
-  console.log(`📊 Components: ${occupiedComponents.length}, Wires: ${wires.length}`);
-  
   // Step 1: Find all voltage sources and ground sources with their exact coordinates
   const voltageSources = findVoltageSources(occupiedComponents);
   const groundSources = findGroundSources(occupiedComponents);
-  
-  console.log(`🔋 Found ${voltageSources.length} voltage sources:`, voltageSources.map(v => `${v.id} at (${v.position.x}, ${v.position.y})`));
-  console.log(`⚡ Found ${groundSources.length} ground sources:`, groundSources.map(g => `${g.id} at (${g.position.x}, ${g.position.y})`));
   
   // Debug: Check for duplicate voltage sources
   const voltageSourcePositions = voltageSources.map(v => `${v.position.x},${v.position.y}`);
@@ -521,11 +477,9 @@ export function findCircuitPathways(occupiedComponents: any[], wires: any[]): {
   
   // Step 2: For each voltage source, find all wires connected to it
   voltageSources.forEach(voltageSource => {
-    console.log(`🔍 Analyzing voltage source ${voltageSource.id} at (${voltageSource.position.x}, ${voltageSource.position.y})`);
     
     // Find all wires connected to this voltage source
     const connectedWires = findWiresAtPosition(voltageSource.position, wires);
-    console.log(`🔗 Found ${connectedWires.length} wires connected to voltage source`);
     
     if (connectedWires.length === 0) {
       errors.push(`❌ Voltage source ${voltageSource.id} has no wires connected - circuit is open`);
@@ -533,14 +487,11 @@ export function findCircuitPathways(occupiedComponents: any[], wires: any[]): {
     
     // Step 3: For each wire, trace a separate circuit path
     connectedWires.forEach((wire, wireIndex) => {
-      console.log(`🔍 Tracing circuit ${wireIndex + 1} from wire ${wire.id}`);
       const result = traceCircuitFromWire(wire, voltageSource, groundSources, occupiedComponents, wires);
       
       if (result.pathway.length > 0) {
-        console.log(`✅ Found complete circuit with ${result.pathway.length} components`);
         pathways.push(result.pathway);
       } else {
-        console.log(`❌ Open circuit - no path to ground found`);
         if (result.error) {
           errors.push(`❌ Open circuit from ${voltageSource.id}: ${result.error}`);
         }
@@ -571,7 +522,6 @@ export function findCircuitPathways(occupiedComponents: any[], wires: any[]): {
     warnings.push(`⚠️ Multiple voltage sources detected (${voltageSources.length}) - ensure they don't conflict`);
   }
   
-  console.log(`🎯 Circuit analysis complete: ${pathways.length} complete circuits found, ${errors.length} errors, ${warnings.length} warnings`);
   return { pathways, errors, warnings };
 }
 
@@ -668,11 +618,9 @@ function traceCircuitFromWire(
   const visitedWires = new Set<string>();
   const visitedComponents = new Set<string>();
   
-  console.log(`🔍 Starting circuit trace from wire ${startWire.id}`);
   
   // Follow the wire to its destination
   const wireDestination = getWireDestination(startWire, voltageSource.position);
-  console.log(`🔗 Wire destination: (${wireDestination.x}, ${wireDestination.y})`);
   
   // Check if destination is a ground source
   const isGround = groundSources.some(ground => 
@@ -693,26 +641,12 @@ function traceCircuitFromWire(
   // Find component at destination
   const component = findComponentAtPosition(wireDestination, occupiedComponents);
   if (!component) {
-    console.log(`❌ No component found at destination (${wireDestination.x}, ${wireDestination.y})`);
     return { 
       pathway: [], 
       error: `Wire leads to empty space at (${wireDestination.x}, ${wireDestination.y}) - no component found` 
     };
   }
-  
-  console.log(`🔍 Found component ${component.componentId} (${component.moduleDefinition.module}) at destination (${wireDestination.x}, ${wireDestination.y})`);
-  
-  // Debug: Check if this is an LED
-  if (component.moduleDefinition.module === 'LED') {
-    console.log(`🔍 [LED DEBUG] Processing LED component: ${component.componentId}`);
-    console.log(`🔍 [LED DEBUG] LED grid cells:`, component.moduleDefinition.grid.map((cell: any, index: number) => ({
-      index,
-      type: cell.type,
-      pin: cell.pin,
-      isConnectable: cell.isConnectable,
-      position: { x: component.x + cell.x, y: component.y + cell.y }
-    })));
-  }
+
   
   // Check if this is a PowerSupply/Battery component
   if (component.moduleDefinition.module === 'PowerSupply' || component.moduleDefinition.module === 'Battery') {
@@ -721,7 +655,6 @@ function traceCircuitFromWire(
       (component.x + cell.x) === wireDestination.x && (component.y + cell.y) === wireDestination.y
     );
     
-    console.log(`🔍 PowerSupply cell details:`, targetCell);
     
     // Allow connections to PowerSupply terminals (VCC, GND, POSITIVE, NEGATIVE)
     if (targetCell && (
@@ -755,14 +688,12 @@ function traceCircuitFromWire(
   // Find the other terminal of this component
   const otherTerminal = findOtherTerminal(component, wireDestination);
   if (!otherTerminal) {
-    console.log(`❌ No other terminal found for component ${component.componentId}`);
     return { 
       pathway: [], 
       error: `Component ${component.componentId} has only one terminal - cannot continue circuit` 
     };
   }
   
-  console.log(`🔍 Found other terminal at (${otherTerminal.x}, ${otherTerminal.y})`);
   
   // Recursively trace from the other terminal
   const result = traceFromTerminal(
@@ -821,7 +752,6 @@ function findComponentAtPosition(position: { x: number; y: number }, occupiedCom
  * Find the other terminal of a component (the one not at the given position)
  */
 function findOtherTerminal(component: any, currentPosition: { x: number; y: number }): { x: number; y: number } | null {
-  console.log(`🔍 Finding other terminal for ${component.componentId} at (${currentPosition.x}, ${currentPosition.y})`);
   
   const terminals = component.moduleDefinition.grid.filter((cell: any) => 
     cell.isConnectable && (
@@ -835,29 +765,6 @@ function findOtherTerminal(component: any, currentPosition: { x: number; y: numb
     )
   );
   
-  // Debug: Check if this is an LED
-  if (component.moduleDefinition.module === 'LED') {
-    console.log(`🔍 [LED DEBUG] Finding other terminal for LED ${component.componentId}`);
-    console.log(`🔍 [LED DEBUG] All LED cells:`, component.moduleDefinition.grid.map((cell: any, index: number) => ({
-      index,
-      type: cell.type,
-      pin: cell.pin,
-      isConnectable: cell.isConnectable,
-      position: { x: component.x + cell.x, y: component.y + cell.y }
-    })));
-    console.log(`🔍 [LED DEBUG] Connectable terminals:`, terminals.map((t: any) => ({
-      type: t.type,
-      pin: t.pin,
-      position: { x: component.x + t.x, y: component.y + t.y }
-    })));
-  }
-  
-  console.log(`🔍 Found ${terminals.length} connectable terminals:`, terminals.map((t: any) => ({
-    type: t.type,
-    pin: t.pin,
-    position: { x: component.x + t.x, y: component.y + t.y }
-  })));
-  
   // Find terminal that's not at current position
   const otherTerminal = terminals.find((terminal: any) => 
     (component.x + terminal.x) !== currentPosition.x || 
@@ -869,11 +776,9 @@ function findOtherTerminal(component: any, currentPosition: { x: number; y: numb
       x: component.x + otherTerminal.x,
       y: component.y + otherTerminal.y
     };
-    console.log(`✅ Found other terminal at (${result.x}, ${result.y})`);
     return result;
   }
   
-  console.log(`❌ No other terminal found for ${component.componentId}`);
   return null;
 }
 
@@ -888,16 +793,13 @@ function traceFromTerminal(
   circuitPath: CircuitNode[],
   visitedWires: Set<string>,
   visitedComponents: Set<string>
-): { pathway: CircuitNode[]; error?: string } {
-  console.log(`🔍 Tracing from terminal (${position.x}, ${position.y})`);
-  
+): { pathway: CircuitNode[]; error?: string } {  
   // Check if we've reached a ground source
   const groundSource = groundSources.find(ground => 
     ground.position.x === position.x && ground.position.y === position.y
   );
   
   if (groundSource) {
-    console.log(`✅ Reached ground source ${groundSource.id}!`);
     circuitPath.push(groundSource);
     return { pathway: circuitPath };
   }
@@ -908,7 +810,6 @@ function traceFromTerminal(
   );
   
   if (connectedWires.length === 0) {
-    console.log(`❌ No unvisited wires found - open circuit`);
     return { 
       pathway: [], 
       error: `Circuit ends at (${position.x}, ${position.y}) - no wires connected to continue path` 
@@ -919,7 +820,6 @@ function traceFromTerminal(
   const nextWire = connectedWires[0];
   visitedWires.add(nextWire.id);
   
-  console.log(`🔗 Following wire ${nextWire.id}`);
   
   // Get destination of this wire
   const destination = getWireDestination(nextWire, position);
@@ -930,7 +830,6 @@ function traceFromTerminal(
   );
   
   if (isGround) {
-    console.log(`✅ Wire leads directly to ground!`);
     const groundSource = groundSources.find(ground => 
       ground.position.x === destination.x && ground.position.y === destination.y
     );
@@ -943,7 +842,6 @@ function traceFromTerminal(
   // Find component at destination
   const component = findComponentAtPosition(destination, occupiedComponents);
   if (!component) {
-    console.log(`❌ No component found at destination (${destination.x}, ${destination.y})`);
     return { 
       pathway: [], 
       error: `Wire leads to empty space at (${destination.x}, ${destination.y}) - no component found` 
@@ -957,7 +855,6 @@ function traceFromTerminal(
       (component.x + cell.x) === destination.x && (component.y + cell.y) === destination.y
     );
     
-    console.log(`🔍 PowerSupply cell details:`, targetCell);
     
     // Allow connections to PowerSupply terminals (VCC, GND, POSITIVE, NEGATIVE)
     if (targetCell && (
@@ -970,10 +867,8 @@ function traceFromTerminal(
       targetCell.pin === '5V' ||
       targetCell.pin === 'GND'
     )) {
-      console.log(`✅ Connection to PowerSupply terminal ${targetCell.type || targetCell.pin} is allowed`);
       // This is a valid terminal connection - continue with normal processing
     } else {
-      console.log(`⚠️ Skipping ${component.moduleDefinition.module} component - not a terminal connection`);
       return { 
         pathway: [], 
         error: `Wire leads to ${component.moduleDefinition.module} component body - circuit should only use terminals` 
@@ -982,14 +877,12 @@ function traceFromTerminal(
   }
   
   if (visitedComponents.has(component.componentId)) {
-    console.log(`❌ Component ${component.componentId} already visited - potential loop`);
     return { 
       pathway: [], 
       error: `Circuit loop detected - component ${component.componentId} already in path` 
     };
   }
   
-  console.log(`🔍 Found new component ${component.componentId}`);
   
   // Add component to path
   const componentNode = convertComponentToNode(component);
@@ -1001,7 +894,6 @@ function traceFromTerminal(
   // Find other terminal and continue tracing
   const otherTerminal = findOtherTerminal(component, destination);
   if (!otherTerminal) {
-    console.log(`❌ No other terminal found`);
     return { 
       pathway: [], 
       error: `Component ${component.componentId} has only one terminal - cannot continue circuit` 

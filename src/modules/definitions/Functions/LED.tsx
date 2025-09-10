@@ -9,7 +9,6 @@ export function LEDVoltageFlow(
   gridData: any[][],
   componentId: string
 ): { outputVoltage: number, isPowered: boolean, status: string } {
-    console.log('[INPUT] ', inputVoltage)
     
     // Calculate LED voltage drop properly in voltage trace
     // Don't override inputVoltage - use what was passed in
@@ -32,10 +31,6 @@ export function LEDVoltageFlow(
     const isPowered = inputVoltage > 0
     const status = isOn ? 'on' : 'off'
     
-    console.log(`[LED STATUS DEBUG] inputVoltage: ${inputVoltage}V, forwardVoltage: ${forwardVoltage}V, circuitCurrent: ${circuitCurrent}A`)
-    console.log(`[LED STATUS DEBUG] isConnectedToGround: ${isConnectedToGround}`)
-    console.log(`[LED STATUS DEBUG] isOn: ${isOn}, isPowered: ${isPowered}, status: "${status}"`)
-
     // For LEDs, we need to process ALL cells of the component (like resistors)
     // Extract base component ID by removing the cell index suffix
     const baseComponentId = componentId
@@ -47,11 +42,8 @@ export function LEDVoltageFlow(
     for (let y = 0; y < gridData.length; y++) {
       for (let x = 0; x < gridData[y].length; x++) {
         const cell = gridData[y][x]
-        if (cell?.occupied) {
-          console.log(`[LED DEBUG] Checking cell at (${x},${y}): componentId="${cell.componentId}", cellIndex=${cell.cellIndex}`)
-        }
+
          if (cell?.occupied && cell.componentId === baseComponentId) {
-          console.log('[LED DEBUG] Found cell: ', cell.componentId, cell.cellIndex)
            const cellId = `${cell.componentId}-${cell.cellIndex}`
            allLEDCells.push({
              id: cellId,
@@ -62,7 +54,6 @@ export function LEDVoltageFlow(
       }
     }
 
-    console.log('[LED DEBUG] All cells: ', allLEDCells.map(cell => `${cell.id}: ${cell.position.x}, ${cell.position.y}`))
     
     // Update ALL cells of this LED with the same voltage calculation
       allLEDCells.forEach(cell => {
@@ -80,17 +71,9 @@ export function LEDVoltageFlow(
         }
         componentUpdates.set(cell.id, updateData)
         logger.componentsDebug(`[LED SYNC] Updated cell ${cell.id} at (${cell.position.x}, ${cell.position.y}) to ${outputVoltage}V`)
-        console.log(`[LED DEBUG] Set ${cell.id} with status: "${status}", isOn: ${isOn}, isPowered: ${isPowered}`)
-        console.log(`[LED DEBUG] Update data:`, updateData)
+
       })
 
-    
-    // Debug: Check what's actually in componentUpdates
-    console.log(`🔧 [LED DEBUG] componentUpdates size: ${componentUpdates.size}`)
-    console.log(`🔧 [LED DEBUG] componentUpdates keys:`, Array.from(componentUpdates.keys()))
-    
-    console.log('[LED DEBUG] All cells updated:', allLEDCells.map(cell => `${cell.id}: ${componentUpdates.get(cell.id)?.status}`))
-    
     // Return the calculated values
     return {
         outputVoltage,

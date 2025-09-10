@@ -127,10 +127,8 @@ export function ProjectGrid({
   // Wire system state
   const [wires, setWires] = useState<WireConnection[]>(() => {
     if (initialWires && initialWires.length > 0) {
-      console.log('🔧 ProjectGrid: Initializing with saved wires:', initialWires.length, 'wires')
       return initialWires
     }
-    console.log('🔧 ProjectGrid: Initializing with empty wires')
     return []
   })
   const [wiringState, setWiringState] = useState<WiringState>({
@@ -722,26 +720,14 @@ export function ProjectGrid({
   const performElectricalCalculation = useCallback(() => {
     // Prevent multiple simultaneous calculations
     if (isCalculating) {
-      console.log('⚡ Electrical calculation already in progress, skipping...')
       return
     }
-
-    console.log('⚡ Triggering electrical calculation...')
-    console.log('⚡ Grid data available:', !!gridData)
-    console.log('⚡ Wires available:', !!wires)
-    console.log('⚡ Grid data length:', gridData?.length)
-    console.log('⚡ Wires length:', wires?.length)
     setIsCalculating(true)
 
     try {
       // Use the new electrical system
       const result = calculateElectricalFlow(gridData, wires, simulationState.gpioStates)
-      
-      console.log('⚡ Electrical calculation completed:', {
-        componentStates: result.componentStates.size,
-        updatedWires: result.updatedWires.length,
-        updatedGridData: result.updatedGridData.length
-      })
+
       
       // Update states with results
       setComponentStates(result.componentStates)
@@ -788,28 +774,14 @@ export function ProjectGrid({
 
   // Calculate electrical flow whenever grid or wires change (with debouncing)
   useEffect(() => {
-    console.log('⚡ useEffect triggered for electrical calculation')
-    console.log('⚡ Grid data changed:', gridData.length, 'rows')
-    console.log('⚡ Wires changed:', wires.length, 'wires')
-    
     const timeoutId = setTimeout(() => {
       // Only calculate if we have components and wires
       const hasComponents = gridData.some(row => row.some(cell => cell.occupied))
       const hasWires = wires.length > 0
       
-      console.log('⚡ Electrical calculation trigger check:', {
-        hasComponents,
-        hasWires,
-        componentsCount: gridData.flat().filter(cell => cell?.occupied).length,
-        wiresCount: wires.length
-      })
-      
       if (hasComponents || hasWires) {
-        console.log('⚡ Triggering electrical calculation...')
         performElectricalCalculation()
-      } else {
-        console.log('⚡ No components or wires, skipping electrical calculation')
-      }
+      } 
     }, 100) // 100ms debounce to prevent excessive calculations
 
     return () => clearTimeout(timeoutId)
@@ -1029,28 +1001,13 @@ export function ProjectGrid({
   const finishWiringWithValidation = useCallback((x: number, y: number) => {
     if (!wiringState.currentConnection) return
 
-    console.log('🔌 FINISHING WIRING - Start validation process')
-    console.log('Finishing wiring at:', x, y)
-    console.log('Starting from:', wiringState.currentConnection.startX, wiringState.currentConnection.startY)
-    const segments = [...wiringState.currentConnection.segments, { x, y }]
-    console.log('Wire segments:', segments)
 
     // Get properties from start and end points
     const startProps = getComponentProperties(wiringState.currentConnection.startX, wiringState.currentConnection.startY)
     const endProps = getComponentProperties(x, y)
     const endWire = getWirePassingThrough(x, y)
     const startWire = getWirePassingThrough(wiringState.currentConnection.startX, wiringState.currentConnection.startY)
-
-    console.log('Start properties:', startProps)
-    console.log('End properties:', endProps)
-    console.log('End wire:', endWire)
-
-    // Check for power/ground conflicts
-    console.log('🔍 VALIDATION CHECK - startProps:', startProps, 'endProps:', endProps)
     if (startProps && endProps) {
-      console.log('✅ Both components found - Validating component-to-component connection:')
-      console.log('Start isPowerable:', startProps.isPowerable, 'isGroundable:', startProps.isGroundable)
-      console.log('End isPowerable:', endProps.isPowerable, 'isGroundable:', endProps.isGroundable)
       
       // Check if trying to connect powerable to groundable
       // Exception: Resistors can connect to both powerable and groundable components
@@ -1058,56 +1015,43 @@ export function ProjectGrid({
       const endIsResistor = endProps.componentType === 'Resistor'
       
       if (startProps.isPowerable && endProps.isGroundable && !startIsResistor && !endIsResistor) {
-        console.log('❌ BLOCKED: Cannot connect powerable to groundable!')
         alert('❌ Cannot connect powerable terminal to groundable terminal!')
         cancelWiring()
         return
       }
       if (startProps.isGroundable && endProps.isPowerable && !startIsResistor && !endIsResistor) {
-        console.log('❌ BLOCKED: Cannot connect groundable to powerable!')
         alert('❌ Cannot connect groundable terminal to powerable terminal!')
         cancelWiring()
         return
       }
-      console.log('✅ Component-to-component connection allowed')
-    } else {
-      console.log('⚠️ Missing component properties - startProps:', startProps, 'endProps:', endProps)
-    }
+    } 
 
     // Check for wire-to-wire conflicts
     if (endWire) {
-      console.log('🔍 WIRE-TO-WIRE VALIDATION - startWire:', startWire, 'endWire:', endWire)
       
       if (startWire) {
         // Wire to wire connection - check for conflicts
-        console.log('Wire-to-wire connection detected')
         if (startWire.isPowerable && endWire.isGroundable) {
-          console.log('❌ BLOCKED: Cannot connect powerable wire to groundable wire!')
           alert('❌ Cannot connect powerable wire to groundable wire!')
           cancelWiring()
           return
         }
         if (startWire.isGroundable && endWire.isPowerable) {
-          console.log('❌ BLOCKED: Cannot connect groundable wire to powerable wire!')
           alert('❌ Cannot connect groundable wire to powerable wire!')
           cancelWiring()
           return
         }
       } else if (startProps) {
-        // Component to wire connection - check for conflicts
-        console.log('Component-to-wire connection detected')
         
         // Exception: Resistors can connect to both powerable and groundable wires
         const startIsResistor = startProps.componentType === 'Resistor'
         
         if (startProps.isPowerable && endWire.isGroundable && !startIsResistor) {
-          console.log('❌ BLOCKED: Cannot connect powerable component to groundable wire!')
           alert('❌ Cannot connect powerable component to groundable wire!')
           cancelWiring()
           return
         }
         if (startProps.isGroundable && endWire.isPowerable && !startIsResistor) {
-          console.log('❌ BLOCKED: Cannot connect groundable component to powerable wire!')
           alert('❌ Cannot connect groundable component to powerable wire!')
           cancelWiring()
           return
@@ -1117,21 +1061,13 @@ export function ProjectGrid({
 
     // Check for wire-to-component conflicts (when starting from a wire)
     if (startWire && endProps) {
-      console.log('🔍 WIRE-TO-COMPONENT VALIDATION - startWire:', startWire, 'endProps:', endProps)
-      console.log('Wire-to-component connection detected')
-      
       // Exception: Resistors can connect to both powerable and groundable wires
       const endIsResistor = endProps.componentType === 'Resistor'
       
       if (startWire.isPowerable && endProps.isGroundable && !endIsResistor) {
-        console.log('❌ BLOCKED: Cannot connect powerable wire to groundable component!')
         alert('❌ Cannot connect powerable wire to groundable component!')
         cancelWiring()
         return
-      }
-      if (startWire.isGroundable && endProps.isPowerable && !endIsResistor) {
-        // Allow parallel circuit connections - this is needed for parallel resistor setups
-        console.log('✅ ALLOWED: Parallel circuit connection (groundable wire to powerable component)')
       }
     }
     
@@ -1211,19 +1147,16 @@ export function ProjectGrid({
       wireColor = startWire.color
       wireGauge = startWire.gauge
       wireThickness = startWire.thickness
-      console.log('Inheriting from start wire:', { color: wireColor, gauge: wireGauge, thickness: wireThickness })
     } else if (endWire) {
       wireColor = endWire.color
       wireGauge = endWire.gauge
       wireThickness = endWire.thickness
-      console.log('Inheriting from end wire:', { color: wireColor, gauge: wireGauge, thickness: wireThickness })
     } else {
       // Use power/ground colors for component connections
       wireColor = wireIsPowered ? '#00ff00' : wireIsGrounded ? '#ff0000' : '#666666'
       // Default to 14 AWG wire
       wireGauge = 14
       wireThickness = 3
-      console.log('Using default properties:', { color: wireColor, gauge: wireGauge, thickness: wireThickness })
     }
     
     // Create wire segments
@@ -1262,14 +1195,12 @@ export function ProjectGrid({
       parentId = existingWire.parentId || existingWire.id
       childIds = existingWire.childIds || []
       
-      console.log('Extending existing wire:', wireId, 'with parent:', parentId)
     } else {
       // Create a new wire with a new ID
       wireId = `wire-${Date.now()}`
       parentId = undefined
       childIds = []
       
-      console.log('Creating new wire:', wireId)
     }
     
     // Create wire connection
@@ -1332,12 +1263,10 @@ export function ProjectGrid({
             ? { ...wireConnection, segments: [...existingWire.segments, ...wireSegments] }
             : wire
         )
-        console.log('Updated existing wire:', updatedWires)
         return updatedWires
       } else {
         // Add new wire
         const newWires = [...prev, wireConnection]
-        console.log('Added new wire:', newWires)
         return newWires
       }
     })
@@ -1392,11 +1321,6 @@ export function ProjectGrid({
     const isConnection = isConnectionPoint(x, y)
     const wireAtPosition = getWirePassingThrough(x, y)
     
-    // Only log when clicking on occupied cells or when wiring
-    if (isConnection || wireAtPosition || wiringState.isWiring) {
-      console.log('🔍 GRID CLICK:', { x, y, isConnection, wireAtPosition, wiringState: wiringState.isWiring })
-    }
-    
     // Handle wiring mode
     if (wiringState.isWiring) {
       // For wires, use offset coordinates to account for cell positioning
@@ -1422,7 +1346,6 @@ export function ProjectGrid({
     
     // If clicking on a connection point or wire, start wiring
     if ((isConnection || wireAtPosition) && !wiringState.isWiring) {
-      console.log('Starting wire from:', isConnection ? 'connection point' : 'wire', 'at', x, y)
       startWiring(x, y)
       return
     }
@@ -1435,7 +1358,6 @@ export function ProjectGrid({
     
     // Handle module placement
     if (selectedModule) {
-      console.log('Grid clicked, selectedModule:', selectedModule)
       
       // Place the module with its top-left corner at the target cell
       const centeredX = x
@@ -1449,7 +1371,6 @@ export function ProjectGrid({
                      !wouldCollideWithWire(centeredX, centeredY, selectedModule.gridX, selectedModule.gridY)
       
       if (isValid) {
-        console.log('🔧 Placing module:', selectedModule.module, 'at', centeredX, centeredY)
         
         // Check if we need to expand the grid for this placement
         checkAndExpandForPlacement(centeredX, centeredY, selectedModule.gridX, selectedModule.gridY)
@@ -2070,11 +1991,7 @@ const GridCell = React.memo(({
             // Handle component-specific click behavior
             console.log('🔍 Component click:', cell.componentType, cell.cellIndex)
             onComponentClick(e, cell.componentId, cell.cellIndex)
-          } else if (isConnectable) {
-            // Handle connectable cell click for wiring (don't stop propagation)
-            console.log('🔍 Connectable cell clicked:', cell.componentType, cell.cellIndex, 'allowing event to bubble')
-            // Don't prevent default or stop propagation - let it bubble to grid click handler
-          }
+          } 
         }
       }}
     >
@@ -2184,11 +2101,6 @@ const GridCell = React.memo(({
               const isOn = ledState?.isOn || false
               const forwardVoltage = ledState?.forwardVoltage || cell.moduleDefinition.properties?.forwardVoltage?.default || 2.0
               const ledColor = cell.moduleDefinition.properties?.color?.default || 'Red'
-              
-              // Debug log for LED state (only when LED is on)
-              if (cellComponentId && isOn) {
-                console.log(`💡 LED ${cellComponentId} is ON: ${forwardVoltage.toFixed(1)}V, ${(ledState?.outputCurrent || 0 * 1000).toFixed(0)}mA`)
-              }
               
               // Calculate LED brightness based on LED state
               const getLEDColor = (color: string, isOn: boolean) => {

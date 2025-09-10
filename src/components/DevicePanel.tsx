@@ -218,11 +218,9 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
     // Check if any component has power (voltage > 0) according to the electrical system
     for (const [componentId, state] of componentStates) {
       if (state.outputVoltage > 0) {
-        console.log('Found powered component:', componentId, 'voltage:', state.outputVoltage)
         return true
       }
     }
-    console.log('No powered components found')
     return false
   }, [componentStates])
 
@@ -839,7 +837,6 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                         // Check if this microcontroller has power according to the electrical system
                         const state = componentStates.get(microcontroller.id)
                         if (state && state.outputVoltage > 0) {
-                          console.log('Microcontroller', microcontroller.id, 'is powered with', state.outputVoltage, 'V')
                           return true
                         }
                         return false
@@ -869,34 +866,24 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                             <button 
                               className="text-xs text-gray-400 hover:text-gray-600"
                               onClick={() => {
-                                console.log('=== DEBUGGING MICROCONTROLLER POWER ===')
-                                console.log('Microcontroller:', microcontroller.name)
-                                console.log('Total wires:', wires.length)
-                                console.log('Grid rows:', gridData.length)
                                 
                                 const powerPins = ['VCC', '3V3', '5V', 'VIN']
                                 let foundConnections = 0
                                 
                                 for (const wire of wires) {
-                                  console.log('Wire:', wire.id, 'segments:', wire.segments.length)
                                   for (const segment of wire.segments) {
                                     const cell = gridData[segment.from.y]?.[segment.from.x]
-                                    console.log('Segment at', segment.from.x, segment.from.y, 'cell:', cell?.occupied, cell?.componentId)
                                     
                                     if (cell?.occupied && 
                                         cell.componentId === microcontroller.id &&
                                         cell.moduleDefinition === microcontroller.definition) {
                                       const pin = cell.moduleDefinition.grid?.find((g: any) => g.x === segment.from.x && g.y === segment.from.y)
-                                      console.log('Found pin:', pin?.type, pin?.pin, 'powerPins includes?', powerPins.includes(pin?.type))
                                       if (pin && powerPins.includes(pin.type)) {
                                         foundConnections++
-                                        console.log('✅ POWER CONNECTION FOUND:', pin.type, 'at', segment.from.x, segment.from.y)
                                       }
                                     }
                                   }
                                 }
-                                console.log('Total power connections found:', foundConnections)
-                                console.log('=== END DEBUG ===')
                               }}
                             >
                               
