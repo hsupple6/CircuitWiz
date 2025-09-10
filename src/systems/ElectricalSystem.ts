@@ -14,6 +14,9 @@ import { WireConnection } from '../modules/types'
 import { logger } from '../services/Logger'
 import { CalculateCircuit, convertGridToNodes, findCircuitPathways, checkContinuity } from '../services/EMPhysics'
 import { extractOccupiedComponents } from '../utils/gridUtils'
+import { LEDVoltageFlow } from '../modules/definitions/Functions/LED'
+import { ResistorVoltageFlow } from '../modules/definitions/Functions/Resistor'
+import { MicrocontrollerVoltageFlow } from '../modules/definitions/Functions/Microcontroller'
 
 export interface ComponentState {
   componentId: string
@@ -1442,200 +1445,81 @@ function traceVoltageThroughComponent(
   let isPowered = false
   let status = 'unpowered'
   
-  if (moduleType === 'Resistor') {
-    console.log(`🔍 [BRANCH] Taking Resistor branch for ${componentId}`)
-    const resistance = component.moduleDefinition.grid[component.cellIndex || 0]?.resistance || 
-                      component.moduleDefinition.properties?.resistance || 1000
-    const voltageDrop = circuitCurrent * resistance
-    outputVoltage = Math.max(0, inputVoltage - voltageDrop)
-    isPowered = outputVoltage > 0
-    status = isPowered ? 'active' : 'unpowered'
+  // Create cell-specific ID for visited check (consistent with recursive calls)
+  
+  switch (moduleType) {
+    case 'Resistor':
+      console.log(`🔍 [BRANCH] Taking Resistor branch for ${componentId}`)
     
-    console.log(`[RESISTOR CALC] ${componentId}: ${inputVoltage}V input → ${outputVoltage}V output (${voltageDrop}V drop, ${resistance}Ω, ${circuitCurrent}A)`)
-    logger.componentsDebug(`[RESISTOR TRACKING] ${componentId}: ${voltageDrop}V drop, input: ${inputVoltage}V, output: ${outputVoltage}V`)
-    
-    // For resistors, we need to process ALL cells of the component
-    // Find all cells of this resistor component in the grid
-    const baseComponentId = componentId.replace(/-\d+$/, '')
-    
-    // Find all cells of this resistor component
-    const allResistorCells: Array<{id: string, position: {x: number, y: number}, cellIndex: number}> = []
-    
-    // Search the grid for all cells belonging to this resistor
-    for (let y = 0; y < gridData.length; y++) {
-      for (let x = 0; x < gridData[y].length; x++) {
-        const cell = gridData[y][x]
-        if (cell?.occupied && cell.componentId === baseComponentId) {
-          const cellId = `${baseComponentId}-${cell.cellIndex || 0}`
-          allResistorCells.push({
-            id: cellId,
-            position: { x, y },
-            cellIndex: cell.cellIndex || 0
-          })
-        }
-      }
-    }
-    
-    console.log(`🔧 Found ${allResistorCells.length} cells for resistor ${baseComponentId}:`, allResistorCells.map(c => c.id))
-    
-    // Update ALL cells of this resistor with the same voltage
-    allResistorCells.forEach(cell => {
-      componentUpdates.set(cell.id, {
-        outputVoltage: outputVoltage,
-        outputCurrent: circuitCurrent,
-        power: voltageDrop * circuitCurrent,
-        voltageDrop,
-        status,
-        isPowered,
-        isGrounded: false
-      })
-      logger.componentsDebug(`[RESISTOR SYNC] Updated cell ${cell.id} at (${cell.position.x}, ${cell.position.y}) to ${outputVoltage}V`)
-    })
-  } else if (moduleType === 'LED') {
-    console.log('[INPUT] ', inputVoltage)
-    
-    // Calculate LED voltage drop properly in voltage trace
-    // Don't override inputVoltage - use what was passed in
-    const forwardVoltage = component.moduleDefinition.grid[component.cellIndex || 0]?.voltage || 
-                          component.moduleDefinition.properties?.forwardVoltage?.default
-    
-    // For voltage tracing, LED applies forward voltage drop
-    // LED drops its forward voltage (2V) from the input voltage
-    outputVoltage = Math.max(0, inputVoltage - forwardVoltage)
-    
-    // Check if LED is connected to a grounded wire
-    const isConnectedToGround = wires.some(wire => 
-      wire.isGrounded && wire.segments.some(segment => 
-        (segment.from.x === component.x && segment.from.y === component.y) ||
-        (segment.to.x === component.x && segment.to.y === component.y)
+      // Call the Resistor voltage flow function
+      const resistorResult = ResistorVoltageFlow(
+        component,
+        inputVoltage,
+        circuitCurrent,
+        componentUpdates,
+        wires,
+        gridData,
+        componentId
       )
-    )
-    
-    const isOn = inputVoltage >= forwardVoltage && circuitCurrent > 0 && isConnectedToGround
-    isPowered = inputVoltage > 0
-    status = isOn ? 'on' : 'off'
-    
-    console.log(`[LED STATUS DEBUG] inputVoltage: ${inputVoltage}V, forwardVoltage: ${forwardVoltage}V, circuitCurrent: ${circuitCurrent}A`)
-    console.log(`[LED STATUS DEBUG] isConnectedToGround: ${isConnectedToGround}`)
-    console.log(`[LED STATUS DEBUG] isOn: ${isOn}, isPowered: ${isPowered}, status: "${status}"`)
-
-    // For LEDs, we need to process ALL cells of the component (like resistors)
-    // Extract base component ID by removing the cell index suffix
-    const baseComponentId = componentId
-    
-    
-    
-    const allLEDCells: Array<{id: string, position: {x: number, y: number}, cellIndex: number}> = []
-    // Search the grid for all cells belonging to this resistor
-    for (let y = 0; y < gridData.length; y++) {
-      for (let x = 0; x < gridData[y].length; x++) {
-        const cell = gridData[y][x]
-        if (cell?.occupied) {
-          console.log(`[LED DEBUG] Checking cell at (${x},${y}): componentId="${cell.componentId}", cellIndex=${cell.cellIndex}`)
-        }
-         if (cell?.occupied && cell.componentId === baseComponentId) {
-          console.log('[LED DEBUG] Found cell: ', cell.componentId, cell.cellIndex)
-           const cellId = `${cell.componentId}-${cell.cellIndex}`
-           allLEDCells.push({
-             id: cellId,
-             position: { x, y },
-             cellIndex: cell.cellIndex || 0
-           })
-         }
-      }
-    }
-
-    console.log('[LED DEBUG] All cells: ', allLEDCells.map(cell => `${cell.id}: ${cell.position.x}, ${cell.position.y}`))
-    
-    // Update ALL cells of this LED with the same voltage calculation
-      allLEDCells.forEach(cell => {
-        const updateData = {
-          componentId: cell.id,  // Use the correct cell ID
-          inputVoltage,  // Add input voltage for debugging/UI
-          outputVoltage,
-          outputCurrent: circuitCurrent,
-          power: forwardVoltage * circuitCurrent,
-          forwardVoltage,
-          isOn,
-          status,
-          isPowered: inputVoltage >= forwardVoltage,
-          isGrounded: inputVoltage > 0
-        }
-        componentUpdates.set(cell.id, updateData)
-        logger.componentsDebug(`[LED SYNC] Updated cell ${cell.id} at (${cell.position.x}, ${cell.position.y}) to ${outputVoltage}V`)
-        console.log(`[LED DEBUG] Set ${cell.id} with status: "${status}", isOn: ${isOn}, isPowered: ${isPowered}`)
-        console.log(`[LED DEBUG] Update data:`, updateData)
-      })
-
-    
-    // Debug: Check what's actually in componentUpdates
-    console.log(`🔧 [LED DEBUG] componentUpdates size: ${componentUpdates.size}`)
-    console.log(`🔧 [LED DEBUG] componentUpdates keys:`, Array.from(componentUpdates.keys()))
-    
-    console.log('[LED DEBUG] All cells updated:', allLEDCells.map(cell => `${cell.id}: ${componentUpdates.get(cell.id)?.status}`))
-    
-  } else if (moduleType === 'PowerSupply' || moduleType === 'Battery') {
-    // Power sources maintain their voltage
-    outputVoltage = inputVoltage
-    isPowered = true
-    status = 'active'
-    
-    console.log(`🔧 Power source ${componentId}: maintains ${outputVoltage}V`)
-    
-    componentUpdates.set(cellComponentId, {
-      outputVoltage,
-      outputCurrent: circuitCurrent,
-      power: outputVoltage * circuitCurrent,
-      status,
-      isPowered,
-      isGrounded: false
-    })
-  } else if (moduleType === 'Arduino Uno R3' || moduleType === 'ESP32' || moduleType === 'ArduinoUno' || moduleType === 'ESP32DevKit') {
-    // Microcontroller pins only transfer voltage when set to HIGH
-    const moduleCell = component.moduleDefinition.grid[component.cellIndex || 0]
-    const isGPIOPin = moduleCell?.type === 'GPIO' || moduleCell?.type === 'ANALOG'
-    
-    if (isGPIOPin) {
-      // Extract pin number from pin name (D2, A0, etc.)
-      let pinNumber = parseInt(moduleCell.pin?.replace('D', '').replace('A', '') || '0')
       
-      // Handle analog pins (A0-A5) by using pin numbers 100-105
-      if (moduleCell.type === 'ANALOG') {
-        pinNumber = pinNumber + 100
-      }
+      // Extract the results
+      outputVoltage = resistorResult.outputVoltage
+      isPowered = resistorResult.isPowered
+      status = resistorResult.status
+      break
+    case 'LED':
+      console.log(`🔍 [BRANCH] Taking LED branch for ${componentId}`)
+    
+      // Call the LED voltage flow function
+      const ledResult = LEDVoltageFlow(
+        component,
+        inputVoltage,
+        circuitCurrent,
+        componentUpdates,
+        wires,
+        gridData,
+        componentId
+      )
       
-      // Check GPIO state - only transfer voltage if pin is HIGH
-      const gpioState = gpioStates?.get(pinNumber)
-      const pinIsHigh = gpioState && gpioState.state === 'HIGH'
+      // Extract the results
+      outputVoltage = ledResult.outputVoltage
+      isPowered = ledResult.isPowered
+      status = ledResult.status
       
-      if (pinIsHigh) {
-        // Pin is HIGH - can transfer voltage
-        outputVoltage = inputVoltage
-        isPowered = true
-        status = 'active'
-        console.log(`🔧 MCU pin ${moduleCell.pin} (HIGH): transfers ${outputVoltage}V`)
-      } else {
-        // Pin is LOW - blocks voltage transfer
-        outputVoltage = 0
-        isPowered = false
-        status = 'inactive'
-        console.log(`🔧 MCU pin ${moduleCell.pin} (LOW): blocks voltage transfer`)
-      }
+      break
+    case 'Arduino Uno R3':
+    case 'ESP32':
+    case 'ArduinoUno':
+    case 'ESP32DevKit':
+      console.log(`🔍 [BRANCH] Taking Microcontroller branch for ${componentId}`)
+    
+      // Call the Microcontroller voltage flow function
+      const mcuResult = MicrocontrollerVoltageFlow(
+        component,
+        inputVoltage,
+        circuitCurrent,
+        componentUpdates,
+        wires,
+        gridData,
+        componentId,
+        gpioStates
+      )
       
-      componentUpdates.set(cellComponentId, {
-        outputVoltage,
-        outputCurrent: circuitCurrent,
-        power: outputVoltage * circuitCurrent,
-        status,
-        isPowered,
-        isGrounded: false
-      })
-    } else {
-      // Non-GPIO cells (like VCC, GND) behave normally
+      // Extract the results
+      outputVoltage = mcuResult.outputVoltage
+      isPowered = mcuResult.isPowered
+      status = mcuResult.status
+      
+      break
+    case 'Battery':
+    case 'PowerSupply':
+      // Power sources maintain their voltage
       outputVoltage = inputVoltage
       isPowered = true
       status = 'active'
       
+      console.log(`🔧 Power source ${componentId}: maintains ${outputVoltage}V`)
+      
       componentUpdates.set(cellComponentId, {
         outputVoltage,
         outputCurrent: circuitCurrent,
@@ -1644,7 +1528,10 @@ function traceVoltageThroughComponent(
         isPowered,
         isGrounded: false
       })
-    }
+      break
+    default:
+      console.log(`🔍 [BRANCH] Taking default branch for ${componentId}`)
+      break
   }
   
   // Find the other terminal of this component and continue tracing
@@ -1714,7 +1601,6 @@ function traceVoltageThroughComponent(
       }
     }
   }
-  
   return { componentUpdates }
 }
 
