@@ -7,18 +7,20 @@
 
 export interface CRDTOperation {
   id: string
-  type: 'ADD_COMPONENT' | 'REMOVE_COMPONENT' | 'ADD_WIRE' | 'REMOVE_WIRE' | 'UPDATE_COMPONENT'
+  type: 'ADD_COMPONENT' | 'REMOVE_COMPONENT' | 'ADD_WIRE' | 'REMOVE_WIRE' | 'UPDATE_COMPONENT' | 'UPDATE_MICROCONTROLLER_CODE'
   timestamp: number
   data: any
   position?: { x: number; y: number }
   componentId?: string
   wireId?: string
+  microcontrollerId?: string
 }
 
 export interface CRDTState {
   operations: Map<string, CRDTOperation>
   components: Map<string, any>
   wires: Map<string, any>
+  microcontrollerCode: Map<string, any>
   lastSyncTimestamp: number
 }
 
@@ -32,6 +34,7 @@ export class CRDTService {
       operations: new Map(),
       components: new Map(),
       wires: new Map(),
+      microcontrollerCode: new Map(),
       lastSyncTimestamp: Date.now()
     }
   }
@@ -109,6 +112,27 @@ export class CRDTService {
   }
 
   /**
+   * Update microcontroller code in the CRDT
+   */
+  updateMicrocontrollerCode(microcontrollerId: string, codeData: {
+    code: string
+    project?: any
+    compilationResult?: any
+    compiledAt?: Date
+  }): CRDTOperation {
+    const operation: CRDTOperation = {
+      id: this.generateOperationId(),
+      type: 'UPDATE_MICROCONTROLLER_CODE',
+      timestamp: Date.now(),
+      data: codeData,
+      microcontrollerId
+    }
+
+    this.applyOperation(operation)
+    return operation
+  }
+
+  /**
    * Apply an operation to the CRDT state
    */
   private applyOperation(operation: CRDTOperation): void {
@@ -162,6 +186,16 @@ export class CRDTService {
           }
         }
         break
+
+      case 'UPDATE_MICROCONTROLLER_CODE':
+        if (operation.microcontrollerId && operation.data) {
+          this.state.microcontrollerCode.set(operation.microcontrollerId, {
+            ...operation.data,
+            _crdt_timestamp: operation.timestamp,
+            _crdt_operation_id: operation.id
+          })
+        }
+        break
     }
 
     // Update last sync timestamp
@@ -195,12 +229,14 @@ export class CRDTService {
   getState(): {
     components: any[]
     wires: any[]
+    microcontrollerCode: any[]
     operations: CRDTOperation[]
     lastSyncTimestamp: number
   } {
     return {
       components: Array.from(this.state.components.values()),
       wires: Array.from(this.state.wires.values()),
+      microcontrollerCode: Array.from(this.state.microcontrollerCode.values()),
       operations: Array.from(this.state.operations.values()),
       lastSyncTimestamp: this.state.lastSyncTimestamp
     }
@@ -212,11 +248,13 @@ export class CRDTService {
   restoreState(state: {
     components: any[]
     wires: any[]
+    microcontrollerCode?: any[]
     operations: CRDTOperation[]
     lastSyncTimestamp: number
   }): void {
     this.state.components.clear()
     this.state.wires.clear()
+    this.state.microcontrollerCode.clear()
     this.state.operations.clear()
 
     // Restore operations first
@@ -234,6 +272,15 @@ export class CRDTService {
     for (const wire of state.wires) {
       if (wire._crdt_operation_id) {
         this.state.wires.set(wire._crdt_operation_id, wire)
+      }
+    }
+
+    // Restore microcontroller code
+    if (state.microcontrollerCode) {
+      for (const code of state.microcontrollerCode) {
+        if (code._crdt_operation_id) {
+          this.state.microcontrollerCode.set(code._crdt_operation_id, code)
+        }
       }
     }
 
@@ -319,12 +366,27 @@ export class CRDTService {
   }
 
   /**
+   * Get microcontroller code by ID
+   */
+  getMicrocontrollerCode(microcontrollerId: string): any | null {
+    return this.state.microcontrollerCode.get(microcontrollerId) || null
+  }
+
+  /**
+   * Get all microcontroller code
+   */
+  getAllMicrocontrollerCode(): Map<string, any> {
+    return new Map(this.state.microcontrollerCode)
+  }
+
+  /**
    * Clear all data (useful for testing or reset)
    */
   clear(): void {
     this.state.operations.clear()
     this.state.components.clear()
     this.state.wires.clear()
+    this.state.microcontrollerCode.clear()
     this.state.lastSyncTimestamp = Date.now()
   }
 }

@@ -6,6 +6,7 @@ export interface DynamicGPIOState {
   pattern?: 'BLINK' | 'FADE' | 'STATIC' | 'RANDOM'
   frequency?: number // Hz for blinking
   dutyCycle?: number // 0-1 for pulse width
+  microcontrollerId?: string // Added for multi-microcontroller support
 }
 
 export interface GPIOAnimation {
@@ -335,5 +336,167 @@ export class DynamicGPIO {
   }
 }
 
-// Export singleton instance
+// Export singleton instance for backward compatibility
 export const dynamicGPIO = new DynamicGPIO()
+
+// Multi-microcontroller GPIO manager
+export class MultiMicrocontrollerGPIO {
+  private microcontrollers: Map<string, DynamicGPIO> = new Map()
+  private globalStates: Map<number, DynamicGPIOState> = new Map()
+  private animationId: number | null = null
+  private isRunning: boolean = false
+
+  /**
+   * Start simulation for a specific microcontroller
+   */
+  startMicrocontrollerSimulation(microcontrollerId: string, code: string): void {
+    console.log(`[MULTI_MCU_GPIO] Starting simulation for ${microcontrollerId}`)
+    
+    // Create or get existing GPIO instance for this microcontroller
+    let mcuGPIO = this.microcontrollers.get(microcontrollerId)
+    if (!mcuGPIO) {
+      mcuGPIO = new DynamicGPIO()
+      this.microcontrollers.set(microcontrollerId, mcuGPIO)
+    }
+    
+    // Analyze code for GPIO patterns
+    const animations = mcuGPIO.analyzeCode(code)
+    console.log(`[MULTI_MCU_GPIO] Detected patterns for ${microcontrollerId}:`, animations)
+    
+    // Start simulation for this microcontroller
+    mcuGPIO.startSimulation(animations)
+    
+    // Start global animation loop if not already running
+    if (!this.isRunning) {
+      this.startGlobalAnimationLoop()
+    }
+    
+    // Update global states
+    this.updateGlobalStates()
+  }
+
+  /**
+   * Stop simulation for a specific microcontroller
+   */
+  stopMicrocontrollerSimulation(microcontrollerId: string): void {
+    console.log(`[MULTI_MCU_GPIO] Stopping simulation for ${microcontrollerId}`)
+    
+    const mcuGPIO = this.microcontrollers.get(microcontrollerId)
+    if (mcuGPIO) {
+      mcuGPIO.stopSimulation()
+      this.microcontrollers.delete(microcontrollerId)
+    }
+    
+    // Stop global animation loop if no microcontrollers are running
+    if (this.microcontrollers.size === 0) {
+      this.stopGlobalAnimationLoop()
+    }
+    
+    // Update global states
+    this.updateGlobalStates()
+  }
+
+  /**
+   * Stop all simulations
+   */
+  stopAllSimulations(): void {
+    console.log('[MULTI_MCU_GPIO] Stopping all simulations')
+    
+    this.microcontrollers.forEach((mcuGPIO, microcontrollerId) => {
+      mcuGPIO.stopSimulation()
+    })
+    
+    this.microcontrollers.clear()
+    this.globalStates.clear()
+    this.stopGlobalAnimationLoop()
+  }
+
+  /**
+   * Get GPIO states for a specific microcontroller
+   */
+  getMicrocontrollerStates(microcontrollerId: string): Map<number, DynamicGPIOState> {
+    const mcuGPIO = this.microcontrollers.get(microcontrollerId)
+    return mcuGPIO ? mcuGPIO.getCurrentStates() : new Map()
+  }
+
+  /**
+   * Get all GPIO states from all microcontrollers
+   */
+  getAllGPIOStates(): Map<number, DynamicGPIOState> {
+    return new Map(this.globalStates)
+  }
+
+  /**
+   * Update global states by merging all microcontroller states
+   */
+  private updateGlobalStates(): void {
+    this.globalStates.clear()
+    
+    this.microcontrollers.forEach((mcuGPIO, microcontrollerId) => {
+      const mcuStates = mcuGPIO.getCurrentStates()
+      mcuStates.forEach((state, pin) => {
+        // Add microcontroller ID to the state for debugging
+        const enhancedState = {
+          ...state,
+          microcontrollerId
+        }
+        this.globalStates.set(pin, enhancedState)
+      })
+    })
+    
+    console.log(`[MULTI_MCU_GPIO] Updated global states:`, Array.from(this.globalStates.entries()))
+  }
+
+  /**
+   * Get list of running microcontrollers
+   */
+  getRunningMicrocontrollers(): string[] {
+    return Array.from(this.microcontrollers.keys())
+  }
+
+  /**
+   * Check if a microcontroller is running
+   */
+  isMicrocontrollerRunning(microcontrollerId: string): boolean {
+    return this.microcontrollers.has(microcontrollerId)
+  }
+
+  /**
+   * Start the global animation loop
+   */
+  private startGlobalAnimationLoop(): void {
+    if (this.isRunning) return
+    
+    this.isRunning = true
+    console.log('[MULTI_MCU_GPIO] Starting global animation loop')
+    this.globalAnimationLoop()
+  }
+
+  /**
+   * Stop the global animation loop
+   */
+  private stopGlobalAnimationLoop(): void {
+    this.isRunning = false
+    if (this.animationId) {
+      cancelAnimationFrame(this.animationId)
+      this.animationId = null
+    }
+    console.log('[MULTI_MCU_GPIO] Stopped global animation loop')
+  }
+
+  /**
+   * Global animation loop that continuously updates states from all microcontrollers
+   */
+  private globalAnimationLoop(): void {
+    if (!this.isRunning) return
+    
+    // Update global states from all microcontrollers
+    this.updateGlobalStates()
+    
+    // Continue animation
+    this.animationId = requestAnimationFrame(() => this.globalAnimationLoop())
+  }
+}
+
+// Export singleton instance for multi-microcontroller support
+export const multiMCUGPIO = new MultiMicrocontrollerGPIO()

@@ -17,7 +17,7 @@ import { extractOccupiedComponents } from '../utils/gridUtils'
 import { LEDVoltageFlow } from '../modules/definitions/Functions/LED'
 import { ResistorVoltageFlow } from '../modules/definitions/Functions/Resistor'
 import { MicrocontrollerVoltageFlow } from '../modules/definitions/Functions/Microcontroller'
-import { dynamicGPIO, DynamicGPIOState } from '../services/DynamicGPIO'
+import { dynamicGPIO, DynamicGPIOState, multiMCUGPIO } from '../services/DynamicGPIO'
 
 export interface ComponentState {
   componentId: string
@@ -928,6 +928,58 @@ export function getDynamicGPIOStates(): Map<number, DynamicGPIOState> {
   return dynamicGPIO.getCurrentStates()
 }
 
+/**
+ * Start multi-microcontroller GPIO simulation
+ */
+export function startMultiMicrocontrollerGPIO(microcontrollerId: string, code: string): void {
+  console.log(`[MULTI_MCU_GPIO] Starting simulation for ${microcontrollerId}`)
+  multiMCUGPIO.startMicrocontrollerSimulation(microcontrollerId, code)
+}
+
+/**
+ * Stop multi-microcontroller GPIO simulation for specific microcontroller
+ */
+export function stopMultiMicrocontrollerGPIO(microcontrollerId: string): void {
+  console.log(`[MULTI_MCU_GPIO] Stopping simulation for ${microcontrollerId}`)
+  multiMCUGPIO.stopMicrocontrollerSimulation(microcontrollerId)
+}
+
+/**
+ * Stop all multi-microcontroller GPIO simulations
+ */
+export function stopAllMultiMicrocontrollerGPIO(): void {
+  console.log('[MULTI_MCU_GPIO] Stopping all simulations')
+  multiMCUGPIO.stopAllSimulations()
+}
+
+/**
+ * Get GPIO states for specific microcontroller
+ */
+export function getMicrocontrollerGPIOStates(microcontrollerId: string): Map<number, DynamicGPIOState> {
+  return multiMCUGPIO.getMicrocontrollerStates(microcontrollerId)
+}
+
+/**
+ * Get all GPIO states from all microcontrollers
+ */
+export function getAllMultiMicrocontrollerGPIOStates(): Map<number, DynamicGPIOState> {
+  return multiMCUGPIO.getAllGPIOStates()
+}
+
+/**
+ * Get list of running microcontrollers
+ */
+export function getRunningMicrocontrollers(): string[] {
+  return multiMCUGPIO.getRunningMicrocontrollers()
+}
+
+/**
+ * Check if microcontroller is running
+ */
+export function isMicrocontrollerRunning(microcontrollerId: string): boolean {
+  return multiMCUGPIO.isMicrocontrollerRunning(microcontrollerId)
+}
+
 export function calculateSystematicVoltageFlow(
   gridData: GridCell[][],
   wires: WireConnection[],
@@ -940,13 +992,16 @@ export function calculateSystematicVoltageFlow(
   logger.electricalDebug(`Grid data: ${gridData.length} rows`)
   logger.electricalDebug(`Wires: ${wires.length} wires`)
   
-  // Check for dynamic GPIO states first, then fall back to static states
-  const dynamicStates = getDynamicGPIOStates()
-  const effectiveGPIOStates = dynamicStates.size > 0 ? dynamicStates : gpioStates
+  // Check for multi-microcontroller GPIO states first, then single dynamic, then static
+  const multiMCUStates = getAllMultiMicrocontrollerGPIOStates()
+  const singleDynamicStates = getDynamicGPIOStates()
+  const effectiveGPIOStates = multiMCUStates.size > 0 ? multiMCUStates : 
+                              singleDynamicStates.size > 0 ? singleDynamicStates : 
+                              gpioStates
   
   // Debug: Log GPIO states
   console.log(`[GPIO] ElectricalSystem: GPIO states received:`, effectiveGPIOStates ? Array.from(effectiveGPIOStates.entries()) : 'undefined')
-  console.log(`[GPIO] Using ${dynamicStates.size > 0 ? 'dynamic' : 'static'} GPIO states`)
+  console.log(`[GPIO] Using ${multiMCUStates.size > 0 ? 'multi-MCU' : singleDynamicStates.size > 0 ? 'single dynamic' : 'static'} GPIO states`)
   
   // Debug: Check if pin 13 is HIGH
   if (effectiveGPIOStates && effectiveGPIOStates.has(13)) {

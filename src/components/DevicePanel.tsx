@@ -6,7 +6,18 @@ import { ArduinoCompilerReal, CompilationResult, CompilationError, ArduinoProjec
 import { FileManagerBrowser, FileNode, ProjectTemplate } from '../services/FileManagerBrowser'
 import { ESP32Flasher, FlashProgress, FlashResult, ESP32Device } from '../services/ESP32Flasher'
 import { QEMUEmulatorReal, EmulationResult, GPIOState } from '../services/QEMUEmulatorReal'
-import { startDynamicGPIO, stopDynamicGPIO, getDynamicGPIOStates } from '../systems/ElectricalSystem'
+import { 
+  startDynamicGPIO, 
+  stopDynamicGPIO, 
+  getDynamicGPIOStates,
+  startMultiMicrocontrollerGPIO,
+  stopMultiMicrocontrollerGPIO,
+  stopAllMultiMicrocontrollerGPIO,
+  getAllMultiMicrocontrollerGPIOStates,
+  getRunningMicrocontrollers,
+  isMicrocontrollerRunning
+} from '../systems/ElectricalSystem'
+import { crdtService } from '../services/CRDTService'
 
 interface Microcontroller {
   id: string
@@ -26,6 +37,7 @@ interface CompiledCode {
 interface SimulationState {
   isRunning: boolean
   currentMicrocontroller: Microcontroller | null
+  runningMicrocontrollers: Set<string>
   gpioStates: Map<number, GPIOState>
   wireStates: Map<string, 'active' | 'inactive'>
   startTime: Date | null
@@ -48,6 +60,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
   const [expandedMicrocontroller, setExpandedMicrocontroller] = useState<string | null>(null)
   const [showCodingModal, setShowCodingModal] = useState(false)
   const [selectedMicrocontroller, setSelectedMicrocontroller] = useState<Microcontroller | null>(null)
+  const [microcontrollerCode, setMicrocontrollerCode] = useState<Map<string, string>>(new Map())
   const [code, setCode] = useState('// Your code here\nvoid setup() {\n  // Initialize pins\n}\n\nvoid loop() {\n  // Main program loop\n}')
   const [isCompiled, setIsCompiled] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved')
@@ -82,6 +95,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
   const [simulationState, setSimulationState] = useState<SimulationState>({
     isRunning: false,
     currentMicrocontroller: null,
+    runningMicrocontrollers: new Set(),
     gpioStates: new Map(),
     wireStates: new Map(),
     startTime: null
@@ -189,7 +203,10 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
     if (!simulationState.isRunning) return
 
     const updateGPIOStates = () => {
-      const dynamicStates = getDynamicGPIOStates()
+      const multiMCUStates = getAllMultiMicrocontrollerGPIOStates()
+      const singleDynamicStates = getDynamicGPIOStates()
+      const dynamicStates = multiMCUStates.size > 0 ? multiMCUStates : singleDynamicStates
+      
       if (dynamicStates.size > 0) {
         const gpioStates = new Map<number, GPIOState>()
         let hasChanges = false
@@ -200,7 +217,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
           
           if (currentState !== newState) {
             hasChanges = true
-            console.log(`[DYNAMIC_GPIO] Pin ${pin} changed from ${currentState} to ${newState}`)
+            console.log(`[MULTI_MCU_GPIO] Pin ${pin} changed from ${currentState} to ${newState} (MCU: ${state.microcontrollerId || 'single'})`)
           }
           
           gpioStates.set(pin, {
@@ -294,6 +311,9 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
         if (!status.arduinoCliAvailable) {
           console.warn('Arduino CLI not available:', status.error)
         }
+        
+        // Load microcontroller code from CRDT
+        loadMicrocontrollerCodeFromCRDT()
       } catch (error) {
         console.error('Failed to initialize services:', error)
       }
@@ -302,13 +322,39 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
     initializeServices()
   }, [compiler, fileManager])
 
+  // Load microcontroller code from CRDT
+  const loadMicrocontrollerCodeFromCRDT = () => {
+    try {
+      const allMicrocontrollerCode = crdtService.getAllMicrocontrollerCode()
+      const codeMap = new Map<string, string>()
+      
+      allMicrocontrollerCode.forEach((codeData, microcontrollerId) => {
+        if (codeData.code) {
+          codeMap.set(microcontrollerId, codeData.code)
+        }
+      })
+      
+      setMicrocontrollerCode(codeMap)
+      console.log('✅ Loaded microcontroller code from CRDT:', {
+        count: codeMap.size,
+        microcontrollers: Array.from(codeMap.keys())
+      })
+    } catch (error) {
+      console.error('❌ Failed to load microcontroller code from CRDT:', error)
+    }
+  }
+
   // Auto-save functionality
   useEffect(() => {
-    if (showCodingModal && code && currentProject) {
+    if (showCodingModal && code && currentProject && selectedMicrocontroller) {
       const interval = setInterval(async () => {
         setSaveStatus('saving')
         try {
           await saveCurrentProject()
+          
+          // Save code to microcontroller-specific storage
+          setMicrocontrollerCode(prev => new Map(prev.set(selectedMicrocontroller.id, code)))
+          
           setSaveStatus('saved')
           setLastSaved(new Date())
         } catch (error) {
@@ -319,12 +365,25 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
 
       return () => clearInterval(interval)
     }
-  }, [showCodingModal, code, currentProject])
+  }, [showCodingModal, code, currentProject, selectedMicrocontroller])
 
   // Notify parent component when modal state changes
   React.useEffect(() => {
     onModalStateChange?.(showCodingModal)
   }, [showCodingModal, onModalStateChange])
+
+  // Load code for selected microcontroller
+  React.useEffect(() => {
+    if (selectedMicrocontroller) {
+      const savedCode = microcontrollerCode.get(selectedMicrocontroller.id)
+      if (savedCode) {
+        setCode(savedCode)
+      } else {
+        // Set default code for new microcontroller
+        setCode('// Your code here\nvoid setup() {\n  // Initialize pins\n}\n\nvoid loop() {\n  // Main program loop\n}')
+      }
+    }
+  }, [selectedMicrocontroller, microcontrollerCode])
 
   // Enhanced handler functions
   const saveCurrentProject = async () => {
@@ -340,6 +399,32 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
     
     await compiler.saveProject(updatedProject)
     setCurrentProject(updatedProject)
+    
+    // Save code to microcontroller-specific storage
+    setMicrocontrollerCode(prev => new Map(prev.set(selectedMicrocontroller.id, code)))
+    
+    // Save to CRDT
+    saveMicrocontrollerCodeToCRDT(selectedMicrocontroller.id, code, updatedProject, compilationResult)
+  }
+
+  // Save microcontroller code to CRDT
+  const saveMicrocontrollerCodeToCRDT = (microcontrollerId: string, code: string, project?: any, compilationResult?: any) => {
+    try {
+      const operation = crdtService.updateMicrocontrollerCode(microcontrollerId, {
+        code,
+        project,
+        compilationResult,
+        compiledAt: compilationResult ? new Date() : undefined
+      })
+      
+      console.log('✅ Microcontroller code saved to CRDT:', {
+        microcontrollerId,
+        operationId: operation.id,
+        codeLength: code.length
+      })
+    } catch (error) {
+      console.error('❌ Failed to save microcontroller code to CRDT:', error)
+    }
   }
 
   const handleCompile = async () => {
@@ -388,6 +473,13 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
             compiledAt: new Date()
           }
           setCompiledCodes(prev => new Map(prev.set(selectedMicrocontroller.id, compiledCode)))
+          
+          // Save code to microcontroller-specific storage
+          setMicrocontrollerCode(prev => new Map(prev.set(selectedMicrocontroller.id, code)))
+          
+          // Save to CRDT
+          saveMicrocontrollerCodeToCRDT(selectedMicrocontroller.id, code, currentProject, result)
+          
           console.log('Code linked to microcontroller:', selectedMicrocontroller.name, compiledCode)
         }
         
@@ -417,6 +509,12 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
     setSaveStatus('saving')
     try {
       await saveCurrentProject()
+      
+      // Save code to microcontroller-specific storage
+      if (selectedMicrocontroller) {
+        setMicrocontrollerCode(prev => new Map(prev.set(selectedMicrocontroller.id, code)))
+      }
+      
       setSaveStatus('saved')
       setLastSaved(new Date())
     } catch (error) {
@@ -454,14 +552,15 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
       ...prev,
       isRunning: true,
       currentMicrocontroller: microcontroller,
+      runningMicrocontrollers: new Set([...prev.runningMicrocontrollers, microcontroller.id]),
       startTime: new Date()
     }))
     setShowSimulationPanel(true)
 
     try {
-      // Start dynamic GPIO simulation based on the code
-      console.log('[DYNAMIC_GPIO] Starting dynamic simulation for code:', code)
-      startDynamicGPIO(code)
+      // Start multi-microcontroller GPIO simulation for this specific microcontroller
+      console.log(`[MULTI_MCU_GPIO] Starting simulation for ${microcontroller.id} with code:`, code)
+      startMultiMicrocontrollerGPIO(microcontroller.id, code)
 
       // Also start emulation with the compiled firmware for additional data
       const result = await qemuEmulator.startEmulation(
@@ -473,8 +572,10 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
       )
 
       if (result.success) {
-        // Get dynamic GPIO states
-        const dynamicStates = getDynamicGPIOStates()
+        // Get multi-microcontroller GPIO states
+        const multiMCUStates = getAllMultiMicrocontrollerGPIOStates()
+        const singleDynamicStates = getDynamicGPIOStates()
+        const dynamicStates = multiMCUStates.size > 0 ? multiMCUStates : singleDynamicStates
         
         // Update GPIO states from dynamic simulation (preferred) or emulation result
         const gpioStates = new Map<number, GPIOState>()
@@ -529,12 +630,13 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
   }
 
   const stopSimulation = () => {
-    // Stop dynamic GPIO simulation
-    stopDynamicGPIO()
+    // Stop all multi-microcontroller GPIO simulations
+    stopAllMultiMicrocontrollerGPIO()
     
     setSimulationState({
       isRunning: false,
       currentMicrocontroller: null,
+      runningMicrocontrollers: new Set(),
       gpioStates: new Map(),
       wireStates: new Map(),
       startTime: null
@@ -942,6 +1044,16 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                                     : 'bg-red-500'
                                 }`} 
                                 title={isMicrocontrollerPowered ? 'Powered' : 'No Power'} />
+                                {/* Code indicator */}
+                                {microcontrollerCode.has(microcontroller.id) && (
+                                  <div className="w-2 h-2 rounded-full bg-blue-500" 
+                                       title="Has code" />
+                                )}
+                                {/* Running indicator */}
+                                {simulationState.runningMicrocontrollers.has(microcontroller.id) && (
+                                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" 
+                                       title="Currently running" />
+                                )}
                             {/* Debug info */}
                             <button 
                               className="text-xs text-gray-400 hover:text-gray-600"
@@ -999,36 +1111,69 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                           </button>
                           <button
                             className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
-                              simulationState.isRunning
+                              simulationState.runningMicrocontrollers.has(microcontroller.id)
                                 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50'
-                                : isCompiled && hasPowerConnected()
+                                : compiledCodes.has(microcontroller.id) && hasPowerConnected()
                                 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50'
                                 : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
                             }`}
                             onClick={() => {
-                              if (simulationState.isRunning) {
-                                console.log('Stop button clicked - stopping simulation')
-                                stopSimulation()
+                              if (simulationState.runningMicrocontrollers.has(microcontroller.id)) {
+                                console.log(`Stop button clicked - stopping simulation for ${microcontroller.id}`)
+                                stopMultiMicrocontrollerGPIO(microcontroller.id)
+                                setSimulationState(prev => ({
+                                  ...prev,
+                                  runningMicrocontrollers: new Set([...prev.runningMicrocontrollers].filter(id => id !== microcontroller.id))
+                                }))
                               } else {
-                                console.log('Run button clicked - Debug info:', {
-                                  isCompiled,
+                                console.log(`Run button clicked for ${microcontroller.id} - Debug info:`, {
+                                  hasCompiledCode: compiledCodes.has(microcontroller.id),
                                   hasPowerConnected: hasPowerConnected(),
-                                  isRunning: simulationState.isRunning,
-                                  selectedMicrocontroller: selectedMicrocontroller?.name,
-                                  compilationResult: !!compilationResult?.firmware
+                                  isRunning: simulationState.runningMicrocontrollers.has(microcontroller.id),
+                                  selectedMicrocontroller: selectedMicrocontroller?.name
                                 })
-                                handleRun()
+                                
+                                // Get the compiled code for this specific microcontroller
+                                const compiledCode = compiledCodes.get(microcontroller.id)
+                                if (compiledCode) {
+                                  // Set this microcontroller as selected temporarily to run it
+                                  const originalSelected = selectedMicrocontroller
+                                  setSelectedMicrocontroller(microcontroller)
+                                  setCode(compiledCode.code)
+                                  setCompilationResult(compiledCode.compilationResult)
+                                  
+                                  // Start simulation
+                                  startMultiMicrocontrollerGPIO(microcontroller.id, compiledCode.code)
+                                  setSimulationState(prev => ({
+                                    ...prev,
+                                    isRunning: true,
+                                    runningMicrocontrollers: new Set([...prev.runningMicrocontrollers, microcontroller.id])
+                                  }))
+                                  
+                                  // Restore original selection
+                                  setTimeout(() => {
+                                    setSelectedMicrocontroller(originalSelected)
+                                    if (originalSelected) {
+                                      const originalCode = microcontrollerCode.get(originalSelected.id)
+                                      if (originalCode) {
+                                        setCode(originalCode)
+                                      }
+                                    }
+                                  }, 100)
+                                } else {
+                                  alert('Please compile code for this microcontroller first')
+                                }
                               }
                             }}
-                            disabled={!simulationState.isRunning && (!isCompiled || !hasPowerConnected())}
+                            disabled={!simulationState.runningMicrocontrollers.has(microcontroller.id) && (!compiledCodes.has(microcontroller.id) || !hasPowerConnected())}
                             title={
-                              simulationState.isRunning ? 'Stop simulation' :
-                              !isCompiled ? 'Please compile code first' :
+                              simulationState.runningMicrocontrollers.has(microcontroller.id) ? 'Stop this microcontroller' :
+                              !compiledCodes.has(microcontroller.id) ? 'Please compile code first' :
                               !hasPowerConnected() ? 'Power must be connected to run code' : 
                               'Run compiled code'
                             }
                           >
-                            {simulationState.isRunning ? (
+                            {simulationState.runningMicrocontrollers.has(microcontroller.id) ? (
                               <>
                                 <X className="w-3 h-3" />
                                 Stop
@@ -1748,6 +1893,11 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                   onChange={(e) => {
                     setCode(e.target.value)
                     setSaveStatus('unsaved')
+                    
+                    // Save code to microcontroller-specific storage immediately
+                    if (selectedMicrocontroller) {
+                      setMicrocontrollerCode(prev => new Map(prev.set(selectedMicrocontroller.id, e.target.value)))
+                    }
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
                   onMouseMove={(e) => e.stopPropagation()}
