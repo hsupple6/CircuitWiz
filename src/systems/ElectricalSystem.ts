@@ -659,13 +659,29 @@ function analyzeCircuit(
           }
           // Check for GPIO pin HIGH state
           else if (moduleCell.type === 'GPIO' || moduleCell.type === 'ANALOG') {
-            let pinNumber = parseInt(moduleCell.pin?.replace('D', '').replace('A', '') || '0')
-            if (moduleCell.type === 'ANALOG') {
-              pinNumber = pinNumber + 100
+            let pinNumber = 0
+            
+            // Extract pin number based on pin naming scheme
+            if (moduleCell.pin?.startsWith('GPIO')) {
+              // ESP32 GPIO pins (GPIO0, GPIO1, etc.)
+              pinNumber = parseInt(moduleCell.pin.replace('GPIO', '') || '0')
+            } else if (moduleCell.pin?.startsWith('D')) {
+              // Arduino digital pins (D0, D1, etc.)
+              pinNumber = parseInt(moduleCell.pin.replace('D', '') || '0')
+            } else if (moduleCell.pin?.startsWith('A')) {
+              // Arduino analog pins (A0-A5) by using pin numbers 100-105
+              pinNumber = parseInt(moduleCell.pin.replace('A', '') || '0') + 100
+            } else {
+              // Fallback for other pin naming schemes
+              pinNumber = parseInt(moduleCell.pin || '0')
             }
+            
             const gpioState = gpioStates?.get(pinNumber)
+            // Only treat as power source if pin is explicitly HIGH
             if (gpioState && gpioState.state === 'HIGH') {
-              powerSources.push({ x, y, voltage: 5.0, type: 'GPIO' })
+              // Use appropriate voltage based on microcontroller type
+              const voltage = cell.moduleDefinition.module.includes('ESP32') ? 3.3 : 5.0
+              powerSources.push({ x, y, voltage, type: 'GPIO' })
             }
           }
           // Check for ground connections
@@ -921,10 +937,21 @@ export function calculateSystematicVoltageFlow(
           isGrounded: false
         }
         
-        // Set initial voltage for power sources
+        // Set initial voltage for power sources (but not for GPIO pins)
         if (moduleType === 'PowerSupply' || moduleType === 'Battery') {
           const moduleCell = cell.moduleDefinition.grid[cell.cellIndex || 0]
           if (moduleCell?.isPowerable && moduleCell.voltage > 0) {
+            componentState.outputVoltage = moduleCell.voltage
+            componentState.isPowered = true
+            componentState.status = 'active'
+          }
+        }
+        // For microcontrollers, only set initial state for non-GPIO pins (VCC, GND, etc.)
+        else if (moduleType === 'Arduino Uno R3' || moduleType === 'ESP32' || moduleType === 'ArduinoUno' || moduleType === 'ESP32DevKit') {
+          const moduleCell = cell.moduleDefinition.grid[cell.cellIndex || 0]
+          // Only set as powered if it's a power pin (VCC, GND) and not a GPIO/ANALOG pin
+          if (moduleCell?.isPowerable && moduleCell.voltage > 0 && 
+              moduleCell.type !== 'GPIO' && moduleCell.type !== 'ANALOG') {
             componentState.outputVoltage = moduleCell.voltage
             componentState.isPowered = true
             componentState.status = 'active'
@@ -958,29 +985,34 @@ export function calculateSystematicVoltageFlow(
   // Step 3: Systematic voltage flow calculation
   // Find power sources and trace voltage through circuit paths
   const powerSources = Array.from(componentStates.values()).filter(comp => 
-    comp.componentType === 'PowerSupply' && comp.isPowered
+    (comp.componentType === 'PowerSupply' && comp.isPowered) ||
+    // Also include HIGH GPIO pins as power sources
+    ((comp.componentType === 'Arduino Uno R3' || comp.componentType === 'ESP32' || 
+      comp.componentType === 'ArduinoUno' || comp.componentType === 'ESP32DevKit') && 
+     comp.isPowered && comp.outputVoltage > 0)
   )
   
-  // Only process the first power source to avoid multiple pathways
+  // Process all power sources (PowerSupply and HIGH GPIO pins)
   if (powerSources.length > 0) {
-    const powerSource = powerSources[0]
+    logger.electrical(`Found ${powerSources.length} power sources`)
     
-    logger.electrical(`Tracing voltage from power source ${powerSource.componentId}: ${powerSource.outputVoltage}V at (${powerSource.position.x}, ${powerSource.position.y})`)
-    
-    // Find wires connected to this power source
-    const connectedWires = wires.filter(wire => 
-      wire.segments.some(segment => 
-        (segment.from.x === powerSource.position.x && segment.from.y === powerSource.position.y) ||
-        (segment.to.x === powerSource.position.x && segment.to.y === powerSource.position.y)
+    powerSources.forEach(powerSource => {
+      logger.electrical(`Tracing voltage from power source ${powerSource.componentId}: ${powerSource.outputVoltage}V at (${powerSource.position.x}, ${powerSource.position.y})`)
+      
+      // Find wires connected to this power source
+      const connectedWires = wires.filter(wire => 
+        wire.segments.some(segment => 
+          (segment.from.x === powerSource.position.x && segment.from.y === powerSource.position.y) ||
+          (segment.to.x === powerSource.position.x && segment.to.y === powerSource.position.y)
+        )
       )
-    )
-    
-    logger.wires(`Found ${connectedWires.length} wires connected to power source ${powerSource.componentId}`)
-    connectedWires.forEach(wire => {
-      logger.wiresDebug(`Connected wire: ${wire.id}`)
-    })
-    
-    connectedWires.forEach(wire => {
+      
+      logger.wires(`Found ${connectedWires.length} wires connected to power source ${powerSource.componentId}`)
+      connectedWires.forEach(wire => {
+        logger.wiresDebug(`Connected wire: ${wire.id}`)
+      })
+      
+      connectedWires.forEach(wire => {
       logger.wires(`Tracing wire ${wire.id} from power source`)
       logger.wiresDebug(`Wire ${wire.id} segments:`, wire.segments.map(s => `(${s.from.x},${s.from.y}) -> (${s.to.x},${s.to.y})`))
       
@@ -1034,6 +1066,7 @@ export function calculateSystematicVoltageFlow(
         }
       }
     })
+    }) // Close powerSources.forEach loop
   }
   
   // Step 3.5: Post-processing is no longer needed since we handle multi-cell components
@@ -1068,8 +1101,11 @@ export function calculateSystematicVoltageFlow(
       
       const inputVoltage = maxVoltageWire.voltage || 0
  
-      // Only recalculate if this component isn't a power source
-      if (state.componentType !== 'PowerSupply' && state.componentType !== 'Battery') {
+      // Only recalculate if this component isn't a power source or microcontroller
+      // Microcontrollers are handled by MicrocontrollerVoltageFlow and should not be recalculated here
+      if (state.componentType !== 'PowerSupply' && state.componentType !== 'Battery' &&
+          state.componentType !== 'Arduino Uno R3' && state.componentType !== 'ESP32' && 
+          state.componentType !== 'ArduinoUno' && state.componentType !== 'ESP32DevKit') {
         // Recalculate component voltage using the input voltage from wires
         const calculator = componentCalculators[state.componentType.toLowerCase() as keyof typeof componentCalculators]
         if (calculator) {
@@ -1754,8 +1790,15 @@ export function updateGridData(
   componentStates.forEach((state) => {
     const { position } = state
     if (newGrid[position.y]?.[position.x]) {
-      const currentVoltage = newGrid[position.y][position.x].voltage || 0
-      if (Math.abs(currentVoltage - state.outputVoltage) > 0.01) {
+      const currentCell = newGrid[position.y][position.x]
+      const currentVoltage = currentCell.voltage || 0
+      const currentIsPowered = currentCell.isPowered || false
+      
+      // Check if voltage or power state has changed
+      const voltageChanged = Math.abs(currentVoltage - state.outputVoltage) > 0.01
+      const powerStateChanged = currentIsPowered !== state.isPowered
+      
+      if (voltageChanged || powerStateChanged) {
         if (!hasChanges) {
           newGrid[position.y] = [...newGrid[position.y]]
           hasChanges = true

@@ -44,6 +44,7 @@ interface DevicePanelProps {
 export function DevicePanel({ gridData, wires, componentStates, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange, onWiresChange }: DevicePanelProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [activeTab, setActiveTab] = useState<'microcontrollers' | 'wires' | 'simulation'>('microcontrollers')
+  const [expandedMicrocontroller, setExpandedMicrocontroller] = useState<string | null>(null)
   const [showCodingModal, setShowCodingModal] = useState(false)
   const [selectedMicrocontroller, setSelectedMicrocontroller] = useState<Microcontroller | null>(null)
   const [code, setCode] = useState('// Your code here\nvoid setup() {\n  // Initialize pins\n}\n\nvoid loop() {\n  // Main program loop\n}')
@@ -907,6 +908,17 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                             Program
                           </button>
                           <button
+                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
+                            onClick={() => {
+                              setExpandedMicrocontroller(
+                                expandedMicrocontroller === microcontroller.id ? null : microcontroller.id
+                              )
+                            }}
+                          >
+                            <Cpu className="w-3 h-3" />
+                            Pins
+                          </button>
+                          <button
                             className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
                               isCompiled && hasPowerConnected() && !simulationState.isRunning
                                 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50'
@@ -934,6 +946,99 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                             {simulationState.isRunning ? 'Running...' : 'Run'}
                           </button>
                         </div>
+                        
+                        {/* Expanded Pins View */}
+                        {expandedMicrocontroller === microcontroller.id && (
+                          <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between mb-2">
+                              <h5 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">
+                                Pin Status
+                              </h5>
+                              <button
+                                className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                onClick={() => setExpandedMicrocontroller(null)}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                            <div className="space-y-1 max-h-48 overflow-y-auto">
+                              {microcontroller.definition.grid
+                                .filter((pin: any) => pin.pin && (pin.type === 'GPIO' || pin.type === 'ANALOG' || pin.type === 'VCC' || pin.type === 'GND'))
+                                .map((pin: any, index: number) => {
+                                  // Get component state for this pin
+                                  const pinComponentId = `${microcontroller.id}-${index}`
+                                  const pinState = componentStates.get(pinComponentId)
+                                  
+                                  // Determine pin mode and status
+                                  let pinMode = 'INPUT'
+                                  let pinStatus = 'LOW'
+                                  let pinVoltage = 0
+                                  let pinCurrent = 0
+                                  let pinPower = 0
+                                  
+                                  if (pinState) {
+                                    pinVoltage = pinState.outputVoltage || 0
+                                    pinCurrent = pinState.outputCurrent || 0
+                                    pinPower = pinState.power || 0
+                                    
+                                    if (pin.type === 'VCC' || pin.type === 'GND') {
+                                      pinMode = 'POWER'
+                                      pinStatus = pinVoltage > 0 ? 'HIGH' : 'LOW'
+                                    } else if (pin.type === 'GPIO' || pin.type === 'ANALOG') {
+                                      // Check if this pin is set to HIGH in simulation
+                                      const pinNumber = pin.pin?.startsWith('D') ? 
+                                        parseInt(pin.pin.replace('D', '')) :
+                                        pin.pin?.startsWith('A') ? 
+                                        parseInt(pin.pin.replace('A', '')) + 100 :
+                                        parseInt(pin.pin || '0')
+                                      
+                                      const gpioState = simulationState.gpioStates.get(pinNumber)
+                                      if (gpioState) {
+                                        // GPIOState.state can be 'HIGH', 'LOW', 'INPUT', or 'OUTPUT'
+                                        if (gpioState.state === 'INPUT' || gpioState.state === 'OUTPUT') {
+                                          pinMode = gpioState.state
+                                          pinStatus = pinVoltage > 0 ? 'HIGH' : 'LOW'
+                                        } else {
+                                          pinMode = 'OUTPUT'
+                                          pinStatus = gpioState.state
+                                        }
+                                      } else if (pinVoltage > 0) {
+                                        pinMode = 'OUTPUT'
+                                        pinStatus = 'HIGH'
+                                      }
+                                    }
+                                  }
+                                  
+                                  return (
+                                    <div
+                                      key={index}
+                                      className={`flex items-center justify-between p-2 rounded text-xs ${
+                                        pinStatus === 'HIGH' 
+                                          ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' 
+                                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <div className={`w-2 h-2 rounded-full ${
+                                          pinStatus === 'HIGH' ? 'bg-green-500' : 'bg-gray-400'
+                                        }`} />
+                                        <span className="font-mono font-medium">{pin.pin}</span>
+                                        <span className="text-gray-500 dark:text-gray-400">({pin.type})</span>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="font-mono">
+                                          {pinVoltage.toFixed(1)}V {pinCurrent.toFixed(1)}A {pinPower.toFixed(1)}W
+                                        </div>
+                                        <div className="text-gray-500 dark:text-gray-400">
+                                          {pinMode} {pinStatus}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       )
                     })
