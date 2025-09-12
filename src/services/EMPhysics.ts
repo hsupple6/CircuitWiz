@@ -401,7 +401,6 @@ export function checkContinuity(nodes: CircuitNode[], wires: any[]): boolean {
         positions.forEach(pos => {
           const nextKey = `${pos.x},${pos.y}`;
           if (!visited.has(nextKey)) {
-            console.log(`🔍 Adding next position (${pos.x}, ${pos.y}) to queue`);
             queue.push(pos);
           }
         });
@@ -424,7 +423,6 @@ export function checkContinuity(nodes: CircuitNode[], wires: any[]): boolean {
           node.position?.x === pos.x && node.position?.y === pos.y
         );
         if (hasComponent) {
-          console.log(`🔍 Adding adjacent component position (${pos.x}, ${pos.y}) to queue`);
           queue.push(pos);
         }
       }

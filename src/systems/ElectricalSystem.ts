@@ -1059,10 +1059,7 @@ export function calculateSystematicVoltageFlow(
         return fromBaseComponentId === baseComponentId || toBaseComponentId === baseComponentId
       })
     )
-    
-    console.log(`🔍 ${state.componentType} ${componentId} at (${state.position.x}, ${state.position.y}) connected to ${connectedWires.length} wires:`, 
-      connectedWires.map(w => `${w.id}(${w.voltage}V)`))
-    
+
     if (connectedWires.length > 0) {
       // Find the wire with the highest voltage (input voltage)
       const maxVoltageWire = connectedWires.reduce((max, wire) => 

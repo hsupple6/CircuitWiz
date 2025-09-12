@@ -736,15 +736,6 @@ export function ProjectGrid({
       
       // Display circuit information in console for now (will be moved to device manager)
       if (result.circuitInfo) {
-        console.log('📊 Circuit Information:')
-        console.log(`  Total Voltage: ${result.circuitInfo.totalVoltage}V`)
-        console.log(`  Total Current: ${result.circuitInfo.totalCurrent}A`)
-        console.log(`  Total Resistance: ${result.circuitInfo.totalResistance}Ω`)
-        console.log(`  Total Power: ${result.circuitInfo.totalPower}W`)
-        console.log(`  Pathways: ${result.circuitInfo.pathways.length}`)
-        if (result.circuitInfo.errors.length > 0) {
-          console.log('  Errors:', result.circuitInfo.errors)
-        }
         
         // Update debug suite data
         if (onCircuitPathwaysChange) {
@@ -801,9 +792,11 @@ export function ProjectGrid({
   }, [])
 
   const addWireSegment = useCallback((x: number, y: number) => {
+    console.log('🔍 addWireSegment called with:', x, y)
     if (!wiringState.currentConnection) return
     
     const newSegments = [...wiringState.currentConnection.segments, { x, y }]
+    console.log('🔍 Adding segment, new segments:', newSegments)
     setWiringState(prev => ({
       ...prev,
       currentConnection: prev.currentConnection ? {
@@ -999,6 +992,8 @@ export function ProjectGrid({
 
   // Update finishWiring to include cancelWiring in dependencies
   const finishWiringWithValidation = useCallback((x: number, y: number) => {
+    console.log('🚨 FINISH WIRING CALLED!', x, y)
+    console.log('🔍 finishWiringWithValidation called with:', x, y)
     if (!wiringState.currentConnection) return
 
 
@@ -1161,6 +1156,14 @@ export function ProjectGrid({
     
     // Create wire segments
     const wireSegments: WireSegment[] = []
+    // Add the end point to the segments array if it's not already there
+    const segments = [...wiringState.currentConnection.segments]
+    if (segments.length === 0 || segments[segments.length - 1].x !== x || segments[segments.length - 1].y !== y) {
+      segments.push({ x, y })
+    }
+    console.log('🔍 Creating wire segments from:', segments)
+    console.log('🔍 Segments length:', segments.length)
+    console.log('🔍 Current connection:', wiringState.currentConnection)
     for (let i = 0; i < segments.length - 1; i++) {
       const segment = {
         id: `segment-${Date.now()}-${i}`,
@@ -1182,6 +1185,7 @@ export function ProjectGrid({
       wireSegments.push(segment)
       console.log('Created segment:', segment)
     }
+    console.log('🔍 Total wire segments created:', wireSegments.length)
     
     // Check if we're extending an existing wire
     const existingWire = startWire || endWire
@@ -1256,6 +1260,7 @@ export function ProjectGrid({
     }
     
     setWires(prev => {
+      console.log('🔍 Setting wires, previous count:', prev.length)
       if (existingWire) {
         // Update existing wire instead of adding a new one
         const updatedWires = prev.map(wire => 
@@ -1263,10 +1268,12 @@ export function ProjectGrid({
             ? { ...wireConnection, segments: [...existingWire.segments, ...wireSegments] }
             : wire
         )
+        console.log('🔍 Updated existing wire, new count:', updatedWires.length)
         return updatedWires
       } else {
         // Add new wire
         const newWires = [...prev, wireConnection]
+        console.log('🔍 Added new wire, new count:', newWires.length, 'wire:', wireConnection)
         return newWires
       }
     })
@@ -1334,7 +1341,8 @@ export function ProjectGrid({
           // Ctrl/Cmd + click to add segment
           addWireSegment(wireGridX, wireGridY)
         } else {
-          // Regular click to finish wiring
+          // Regular click to finish wiring - add end point to segments first
+          addWireSegment(wireGridX, wireGridY)
           finishWiringWithValidation(wireGridX, wireGridY)
         }
       } else {
@@ -2241,6 +2249,9 @@ const GridCell = React.memo(({
       >
         
         {/* Render existing wires */}
+        {(() => {
+          return null
+        })()}
         {wires.map(wire => {
           return wire.segments.map(segment => {
             return renderWireSegment(segment, wire.id)
