@@ -24,6 +24,7 @@ export class DynamicGPIO {
   private animationId: number | null = null
   private isRunning: boolean = false
   private startTime: number = 0
+  private passiveMode: boolean = false
 
   /**
    * Analyze Arduino code to detect GPIO patterns
@@ -184,6 +185,13 @@ export class DynamicGPIO {
   }
 
   /**
+   * Set passive mode (for use in multi-microcontroller context)
+   */
+  setPassiveMode(passive: boolean): void {
+    this.passiveMode = passive
+  }
+
+  /**
    * Start dynamic GPIO simulation
    */
   startSimulation(animations: GPIOAnimation[]): void {
@@ -198,8 +206,10 @@ export class DynamicGPIO {
     this.isRunning = true
     this.startTime = Date.now()
     
-    // Start animation loop
-    this.animate()
+    // Only start animation loop if not in passive mode
+    if (!this.passiveMode) {
+      this.animate()
+    }
   }
 
   /**
@@ -218,6 +228,26 @@ export class DynamicGPIO {
    */
   getCurrentStates(): Map<number, DynamicGPIOState> {
     return new Map(this.currentStates)
+  }
+
+  /**
+   * Manually update states (for use in passive mode)
+   */
+  updateStates(currentTime: number): void {
+    if (!this.isRunning) return
+    
+    // Update each animated pin
+    this.animations.forEach((animation, pin) => {
+      const state = this.calculatePinState(animation, currentTime)
+      this.currentStates.set(pin, state)
+    })
+  }
+
+  /**
+   * Get start time for this GPIO instance
+   */
+  getStartTime(): number {
+    return this.startTime
   }
 
   /**
@@ -356,6 +386,7 @@ export class MultiMicrocontrollerGPIO {
     let mcuGPIO = this.microcontrollers.get(microcontrollerId)
     if (!mcuGPIO) {
       mcuGPIO = new DynamicGPIO()
+      mcuGPIO.setPassiveMode(true) // Set to passive mode for multi-MCU context
       this.microcontrollers.set(microcontrollerId, mcuGPIO)
     }
     
@@ -489,6 +520,16 @@ export class MultiMicrocontrollerGPIO {
    */
   private globalAnimationLoop(): void {
     if (!this.isRunning) return
+    
+    const currentTime = Date.now()
+    
+    // Manually update each microcontroller's states
+    this.microcontrollers.forEach((mcuGPIO, microcontrollerId) => {
+      // Calculate time since this microcontroller started
+      const mcuStartTime = mcuGPIO.getStartTime()
+      const relativeTime = currentTime - mcuStartTime
+      mcuGPIO.updateStates(relativeTime)
+    })
     
     // Update global states from all microcontrollers
     this.updateGlobalStates()
