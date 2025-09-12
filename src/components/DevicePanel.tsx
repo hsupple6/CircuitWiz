@@ -965,9 +965,21 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                               {microcontroller.definition.grid
                                 .filter((pin: any) => pin.pin && (pin.type === 'GPIO' || pin.type === 'ANALOG' || pin.type === 'VCC' || pin.type === 'GND'))
                                 .map((pin: any, index: number) => {
-                                  // Get component state for this pin
-                                  const pinComponentId = `${microcontroller.id}-${index}`
+                                  // Get the actual cell index from the original grid
+                                  const cellIndex = microcontroller.definition.grid.findIndex((gridPin: any) => gridPin === pin)
+                                  // Get component state for this pin using the correct ID format
+                                  const pinComponentId = `${microcontroller.id}-${cellIndex}`
                                   const pinState = componentStates.get(pinComponentId)
+                                  
+                                  // Debug: Log pin state for D13 specifically
+                                  if (pin.pin === 'D13/SCK') {
+                                    console.log(`🔧 DevicePanel: D13 pin state debug:`, {
+                                      pinComponentId,
+                                      pinState,
+                                      cellIndex,
+                                      allComponentStates: Array.from(componentStates.keys()).filter(id => id.includes(microcontroller.id))
+                                    })
+                                  }
                                   
                                   // Determine pin mode and status
                                   let pinMode = 'INPUT'

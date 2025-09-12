@@ -910,6 +910,16 @@ export function calculateSystematicVoltageFlow(
   logger.electricalDebug(`Grid data: ${gridData.length} rows`)
   logger.electricalDebug(`Wires: ${wires.length} wires`)
   
+  // Debug: Log GPIO states
+  console.log(`[GPIO] ElectricalSystem: GPIO states received:`, gpioStates ? Array.from(gpioStates.entries()) : 'undefined')
+  
+  // Debug: Check if pin 13 is HIGH
+  if (gpioStates && gpioStates.has(13)) {
+    console.log(`[GPIO] Pin 13 GPIO state:`, gpioStates.get(13))
+  } else {
+    console.log(`[GPIO] Pin 13 not found in GPIO states!`)
+  }
+  
   // Step 1: Initialize component states
   const componentStates = new Map<string, ComponentState>()
   
@@ -982,7 +992,122 @@ export function calculateSystematicVoltageFlow(
   }
   
   const circuitCurrent = physicsResult.current || 0
-  // Step 3: Systematic voltage flow calculation
+  
+  // Step 3: Process all microcontroller pin cells first to set GPIO pin states
+  logger.electrical('Processing microcontroller pin cells to set GPIO states...')
+  const microcontrollerPinCells = Array.from(componentStates.values()).filter(comp => 
+    comp.componentType === 'Arduino Uno R3' || comp.componentType === 'ESP32' || 
+    comp.componentType === 'ArduinoUno' || comp.componentType === 'ESP32DevKit'
+  )
+  
+  console.log(`[PIN_PROCESSING] Found ${microcontrollerPinCells.length} microcontroller pin cells to process:`, 
+    microcontrollerPinCells.map(comp => ({ id: comp.componentId, type: comp.componentType, pos: comp.position })))
+  
+  // Debug: Check what's actually in the grid around the microcontroller
+  console.log(`[PIN_PROCESSING] Debug: Checking grid around microcontroller positions...`)
+  microcontrollerPinCells.slice(0, 5).forEach(comp => {
+    const x = comp.position.x
+    const y = comp.position.y
+    console.log(`[PIN_PROCESSING] Grid at (${x}, ${y}):`, gridData[y]?.[x])
+  })
+  
+  // Group pin cells by base component ID to find the actual base position
+  const pinCellsByBase = new Map<string, any[]>()
+  microcontrollerPinCells.forEach(comp => {
+    // Extract base component ID by removing the last part (cell index)
+    // e.g., "Arduino Uno R3-1757665166853-39" -> "Arduino Uno R3-1757665166853"
+    const parts = comp.componentId.split('-')
+    const baseComponentId = parts.slice(0, -1).join('-')
+    console.log(`[PIN_PROCESSING] Extracting base ID: "${comp.componentId}" -> "${baseComponentId}"`)
+    if (!pinCellsByBase.has(baseComponentId)) {
+      pinCellsByBase.set(baseComponentId, [])
+    }
+    pinCellsByBase.get(baseComponentId)!.push(comp)
+  })
+  
+  console.log(`[PIN_PROCESSING] Found ${pinCellsByBase.size} base microcontroller components`)
+  console.log(`[PIN_PROCESSING] Base component IDs:`, Array.from(pinCellsByBase.keys()))
+  
+  // Process each base component
+  pinCellsByBase.forEach((pinCells, baseComponentId) => {
+    console.log(`[PIN_PROCESSING] Processing base component: ${baseComponentId} with ${pinCells.length} pins`)
+    
+    // Find the actual base component position in the grid
+    let baseGridCell = null
+    let basePosition = null
+    
+    // Search the grid for the base component
+    for (let y = 0; y < gridData.length; y++) {
+      for (let x = 0; x < gridData[y].length; x++) {
+        const cell = gridData[y][x]
+        if (cell?.occupied && cell.componentId === baseComponentId) {
+          baseGridCell = cell
+          basePosition = { x, y }
+          break
+        }
+      }
+      if (baseGridCell) break
+    }
+    
+    if (!baseGridCell) {
+      console.log(`[PIN_PROCESSING] No base grid cell found for ${baseComponentId}`)
+      return
+    }
+    
+    console.log(`[PIN_PROCESSING] Found base component at (${basePosition.x}, ${basePosition.y})`)
+    
+    // Process each pin cell for this base component
+    pinCells.forEach(comp => {
+      // Extract cell index from the last part of the component ID
+      // e.g., "Arduino Uno R3-1757665166853-39" -> cellIndex = 39
+      const parts = comp.componentId.split('-')
+      const cellIndex = parseInt(parts[parts.length - 1]) || 0
+      console.log(`[PIN_PROCESSING] Processing pin cell: ${comp.componentId} (cellIndex: ${cellIndex})`)
+      
+      // Get the module cell definition for this specific pin
+      const moduleCell = baseGridCell.moduleDefinition.grid[cellIndex]
+      
+      if (moduleCell) {
+        console.log(`[PIN_PROCESSING] Found moduleCell for ${comp.componentId}, cellIndex: ${cellIndex}, moduleCell:`, moduleCell)
+        
+        // Create a component object for this specific pin cell
+        const pinComponent = {
+          ...baseGridCell,
+          cellIndex: cellIndex,
+          moduleCell: moduleCell
+        }
+        
+        console.log(`[PIN_PROCESSING] Processing pin component:`, pinComponent)
+        
+        // Process this specific pin cell
+        const result = traceVoltageThroughComponent(
+          pinComponent,
+          0, // No input voltage for initial processing
+          circuitCurrent,
+          new Map(),
+          new Set(),
+          wires,
+          gridData,
+          gpioStates
+        )
+        
+        console.log(`[PIN_PROCESSING] Result for ${comp.componentId}:`, result.componentUpdates)
+        
+        // Apply the component updates
+        result.componentUpdates.forEach((update, componentId) => {
+          const existingState = componentStates.get(componentId)
+          if (existingState) {
+            componentStates.set(componentId, { ...existingState, ...update })
+            console.log(`[PIN_PROCESSING] Updated component state for ${componentId}:`, update)
+          }
+        })
+      } else {
+        console.log(`[PIN_PROCESSING] No moduleCell found for ${comp.componentId} at cellIndex ${cellIndex}`)
+      }
+    })
+  })
+  
+  // Step 4: Systematic voltage flow calculation
   // Find power sources and trace voltage through circuit paths
   const powerSources = Array.from(componentStates.values()).filter(comp => 
     (comp.componentType === 'PowerSupply' && comp.isPowered) ||
@@ -1032,12 +1157,26 @@ export function calculateSystematicVoltageFlow(
       
       // Update component states with calculated voltages
       result.componentUpdates.forEach((update, componentId) => {
+        // Debug: Log component updates for D13 specifically
+        if (componentId.includes('D13') || (update.outputVoltage && update.outputVoltage > 0)) {
+          console.log(`[ELECTRICAL] Component update for ${componentId}:`, {
+            update,
+            existingState: componentStates.get(componentId)
+          })
+        }
+        
         const existingState = componentStates.get(componentId)
         if (existingState) {
-          componentStates.set(componentId, {
+          const newState = {
             ...existingState,
             ...update
-          })
+          }
+          componentStates.set(componentId, newState)
+          
+          // Debug: Log state update for D13 specifically
+          if (componentId.includes('D13') || (update.outputVoltage && update.outputVoltage > 0)) {
+            console.log(`[ELECTRICAL] Updated state for ${componentId}:`, newState)
+          }
         } else {
           // If no existing state, create a new one with the update
           // Ensure all required fields are present
