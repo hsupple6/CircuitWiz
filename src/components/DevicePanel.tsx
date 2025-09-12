@@ -6,6 +6,7 @@ import { ArduinoCompilerReal, CompilationResult, CompilationError, ArduinoProjec
 import { FileManagerBrowser, FileNode, ProjectTemplate } from '../services/FileManagerBrowser'
 import { ESP32Flasher, FlashProgress, FlashResult, ESP32Device } from '../services/ESP32Flasher'
 import { QEMUEmulatorReal, EmulationResult, GPIOState } from '../services/QEMUEmulatorReal'
+import { startDynamicGPIO, stopDynamicGPIO, getDynamicGPIOStates } from '../systems/ElectricalSystem'
 
 interface Microcontroller {
   id: string
@@ -182,6 +183,48 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
       onSimulationStateChange(simulationState)
     }
   }, [simulationState, onSimulationStateChange])
+
+  // Real-time GPIO state updates during simulation
+  useEffect(() => {
+    if (!simulationState.isRunning) return
+
+    const updateGPIOStates = () => {
+      const dynamicStates = getDynamicGPIOStates()
+      if (dynamicStates.size > 0) {
+        const gpioStates = new Map<number, GPIOState>()
+        dynamicStates.forEach((state, pin) => {
+          gpioStates.set(pin, {
+            pin,
+            state: state.state === 'PULSING' ? 'HIGH' : state.state, // Convert PULSING to HIGH for compatibility
+            value: state.value,
+            timestamp: state.timestamp
+          })
+        })
+
+        // Update wire states based on GPIO states
+        const wireStates = new Map<string, 'active' | 'inactive'>()
+        if (simulationState.currentMicrocontroller) {
+          gpioStates.forEach((gpioState, pin) => {
+            const connectedWires = findWiresConnectedToPin(simulationState.currentMicrocontroller!, pin)
+            connectedWires.forEach(wireId => {
+              wireStates.set(wireId, gpioState.state === 'HIGH' ? 'active' : 'inactive')
+            })
+          })
+        }
+
+        setSimulationState(prev => ({
+          ...prev,
+          gpioStates,
+          wireStates
+        }))
+      }
+    }
+
+    // Update every 100ms for smooth animation
+    const interval = setInterval(updateGPIOStates, 100)
+    
+    return () => clearInterval(interval)
+  }, [simulationState.isRunning, simulationState.currentMicrocontroller])
 
   // Find all microcontrollers in the grid
   const findMicrocontrollers = useCallback((): Microcontroller[] => {
@@ -403,7 +446,11 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
     setShowSimulationPanel(true)
 
     try {
-      // Start emulation with the compiled firmware
+      // Start dynamic GPIO simulation based on the code
+      console.log('[DYNAMIC_GPIO] Starting dynamic simulation for code:', code)
+      startDynamicGPIO(code)
+
+      // Also start emulation with the compiled firmware for additional data
       const result = await qemuEmulator.startEmulation(
         compilationResult.firmware!,
         getBoardForMicrocontroller(microcontroller.name),
@@ -413,11 +460,27 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
       )
 
       if (result.success) {
-        // Update GPIO states from emulation result
+        // Get dynamic GPIO states
+        const dynamicStates = getDynamicGPIOStates()
+        
+        // Update GPIO states from dynamic simulation (preferred) or emulation result
         const gpioStates = new Map<number, GPIOState>()
-        result.gpioStates.forEach(state => {
-          gpioStates.set(state.pin, state)
+        if (dynamicStates.size > 0) {
+        // Use dynamic states
+        dynamicStates.forEach((state, pin) => {
+          gpioStates.set(pin, {
+            pin,
+            state: state.state === 'PULSING' ? 'HIGH' : state.state, // Convert PULSING to HIGH for compatibility
+            value: state.value,
+            timestamp: state.timestamp
+          })
         })
+        } else {
+          // Fall back to emulation result
+          result.gpioStates.forEach(state => {
+            gpioStates.set(state.pin, state)
+          })
+        }
 
         // Update wire states based on GPIO states
         const wireStates = new Map<string, 'active' | 'inactive'>()
@@ -453,6 +516,9 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
   }
 
   const stopSimulation = () => {
+    // Stop dynamic GPIO simulation
+    stopDynamicGPIO()
+    
     setSimulationState({
       isRunning: false,
       currentMicrocontroller: null,
@@ -1033,7 +1099,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                                       <div className="flex items-center gap-2">
                                         <div className={`w-2 h-2 rounded-full ${
                                           pinStatus === 'HIGH' ? 'bg-green-500' : 'bg-gray-400'
-                                        }`} />
+                                        } ${pinStatus === 'HIGH' && pinMode === 'OUTPUT' ? 'animate-pulse' : ''}`} />
                                         <span className="font-mono font-medium">{pin.pin}</span>
                                         <span className="text-gray-500 dark:text-gray-400">({pin.type})</span>
                                       </div>

@@ -17,6 +17,7 @@ import { extractOccupiedComponents } from '../utils/gridUtils'
 import { LEDVoltageFlow } from '../modules/definitions/Functions/LED'
 import { ResistorVoltageFlow } from '../modules/definitions/Functions/Resistor'
 import { MicrocontrollerVoltageFlow } from '../modules/definitions/Functions/Microcontroller'
+import { dynamicGPIO, DynamicGPIOState } from '../services/DynamicGPIO'
 
 export interface ComponentState {
   componentId: string
@@ -898,6 +899,35 @@ function findCircuitPath(
  * 2. Wires inherit voltage from component output voltages
  * 3. Voltage flows systematically through the circuit path
  */
+/**
+ * Start dynamic GPIO simulation based on Arduino code
+ */
+export function startDynamicGPIO(code: string): void {
+  console.log('[DYNAMIC_GPIO] Starting dynamic GPIO simulation...')
+  
+  // Analyze code for GPIO patterns
+  const animations = dynamicGPIO.analyzeCode(code)
+  console.log('[DYNAMIC_GPIO] Detected patterns:', animations)
+  
+  // Start simulation
+  dynamicGPIO.startSimulation(animations)
+}
+
+/**
+ * Stop dynamic GPIO simulation
+ */
+export function stopDynamicGPIO(): void {
+  console.log('[DYNAMIC_GPIO] Stopping dynamic GPIO simulation...')
+  dynamicGPIO.stopSimulation()
+}
+
+/**
+ * Get current dynamic GPIO states
+ */
+export function getDynamicGPIOStates(): Map<number, DynamicGPIOState> {
+  return dynamicGPIO.getCurrentStates()
+}
+
 export function calculateSystematicVoltageFlow(
   gridData: GridCell[][],
   wires: WireConnection[],
@@ -910,12 +940,17 @@ export function calculateSystematicVoltageFlow(
   logger.electricalDebug(`Grid data: ${gridData.length} rows`)
   logger.electricalDebug(`Wires: ${wires.length} wires`)
   
+  // Check for dynamic GPIO states first, then fall back to static states
+  const dynamicStates = getDynamicGPIOStates()
+  const effectiveGPIOStates = dynamicStates.size > 0 ? dynamicStates : gpioStates
+  
   // Debug: Log GPIO states
-  console.log(`[GPIO] ElectricalSystem: GPIO states received:`, gpioStates ? Array.from(gpioStates.entries()) : 'undefined')
+  console.log(`[GPIO] ElectricalSystem: GPIO states received:`, effectiveGPIOStates ? Array.from(effectiveGPIOStates.entries()) : 'undefined')
+  console.log(`[GPIO] Using ${dynamicStates.size > 0 ? 'dynamic' : 'static'} GPIO states`)
   
   // Debug: Check if pin 13 is HIGH
-  if (gpioStates && gpioStates.has(13)) {
-    console.log(`[GPIO] Pin 13 GPIO state:`, gpioStates.get(13))
+  if (effectiveGPIOStates && effectiveGPIOStates.has(13)) {
+    console.log(`[GPIO] Pin 13 GPIO state:`, effectiveGPIOStates.get(13))
   } else {
     console.log(`[GPIO] Pin 13 not found in GPIO states!`)
   }
@@ -1054,7 +1089,7 @@ export function calculateSystematicVoltageFlow(
       return
     }
     
-    console.log(`[PIN_PROCESSING] Found base component at (${basePosition.x}, ${basePosition.y})`)
+    console.log(`[PIN_PROCESSING] Found base component at (${basePosition?.x}, ${basePosition?.y})`)
     
     // Process each pin cell for this base component
     pinCells.forEach(comp => {
