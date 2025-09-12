@@ -192,36 +192,49 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
       const dynamicStates = getDynamicGPIOStates()
       if (dynamicStates.size > 0) {
         const gpioStates = new Map<number, GPIOState>()
+        let hasChanges = false
+        
         dynamicStates.forEach((state, pin) => {
+          const newState = state.state === 'PULSING' ? 'HIGH' : state.state
+          const currentState = simulationState.gpioStates.get(pin)?.state
+          
+          if (currentState !== newState) {
+            hasChanges = true
+            console.log(`[DYNAMIC_GPIO] Pin ${pin} changed from ${currentState} to ${newState}`)
+          }
+          
           gpioStates.set(pin, {
             pin,
-            state: state.state === 'PULSING' ? 'HIGH' : state.state, // Convert PULSING to HIGH for compatibility
+            state: newState,
             value: state.value,
             timestamp: state.timestamp
           })
         })
 
-        // Update wire states based on GPIO states
-        const wireStates = new Map<string, 'active' | 'inactive'>()
-        if (simulationState.currentMicrocontroller) {
-          gpioStates.forEach((gpioState, pin) => {
-            const connectedWires = findWiresConnectedToPin(simulationState.currentMicrocontroller!, pin)
-            connectedWires.forEach(wireId => {
-              wireStates.set(wireId, gpioState.state === 'HIGH' ? 'active' : 'inactive')
+        // Only update if there are actual changes
+        if (hasChanges) {
+          // Update wire states based on GPIO states
+          const wireStates = new Map<string, 'active' | 'inactive'>()
+          if (simulationState.currentMicrocontroller) {
+            gpioStates.forEach((gpioState, pin) => {
+              const connectedWires = findWiresConnectedToPin(simulationState.currentMicrocontroller!, pin)
+              connectedWires.forEach(wireId => {
+                wireStates.set(wireId, gpioState.state === 'HIGH' ? 'active' : 'inactive')
+              })
             })
-          })
-        }
+          }
 
-        setSimulationState(prev => ({
-          ...prev,
-          gpioStates,
-          wireStates
-        }))
+          setSimulationState(prev => ({
+            ...prev,
+            gpioStates,
+            wireStates
+          }))
+        }
       }
     }
 
-    // Update every 100ms for smooth animation
-    const interval = setInterval(updateGPIOStates, 100)
+    // Update every 16ms for 60 FPS smooth animation
+    const interval = setInterval(updateGPIOStates, 16)
     
     return () => clearInterval(interval)
   }, [simulationState.isRunning, simulationState.currentMicrocontroller])

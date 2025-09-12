@@ -725,6 +725,7 @@ export function ProjectGrid({
     setIsCalculating(true)
 
     try {
+      console.log(`[ELECTRICAL] Performing electrical calculation with ${simulationState.gpioStates.size} GPIO states`)
       // Use the new electrical system
       const result = calculateElectricalFlow(gridData, wires, simulationState.gpioStates)
 
@@ -765,6 +766,10 @@ export function ProjectGrid({
 
   // Calculate electrical flow whenever grid or wires change (with debouncing)
   useEffect(() => {
+    // Use shorter debounce for GPIO state changes (16ms for 60 FPS)
+    // Use longer debounce for grid/wire changes (100ms to prevent excessive calculations)
+    const debounceTime = simulationState.gpioStates.size > 0 ? 16 : 100
+    
     const timeoutId = setTimeout(() => {
       // Only calculate if we have components and wires
       const hasComponents = gridData.some(row => row.some(cell => cell.occupied))
@@ -773,7 +778,7 @@ export function ProjectGrid({
       if (hasComponents || hasWires) {
         performElectricalCalculation()
       } 
-    }, 100) // 100ms debounce to prevent excessive calculations
+    }, debounceTime)
 
     return () => clearTimeout(timeoutId)
   }, [gridData, wires, simulationState.gpioStates, performElectricalCalculation])
