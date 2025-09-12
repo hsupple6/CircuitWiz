@@ -766,21 +766,35 @@ export function ProjectGrid({
 
   // Calculate electrical flow whenever grid or wires change (with debouncing)
   useEffect(() => {
-    // Use shorter debounce for GPIO state changes (16ms for 60 FPS)
-    // Use longer debounce for grid/wire changes (100ms to prevent excessive calculations)
-    const debounceTime = simulationState.gpioStates.size > 0 ? 16 : 100
-    
-    const timeoutId = setTimeout(() => {
-      // Only calculate if we have components and wires
-      const hasComponents = gridData.some(row => row.some(cell => cell.occupied))
-      const hasWires = wires.length > 0
+    // For GPIO state changes, use requestAnimationFrame for immediate response
+    // For grid/wire changes, use debounce to prevent excessive calculations
+    if (simulationState.gpioStates.size > 0) {
+      // Immediate update for GPIO changes using requestAnimationFrame
+      const frameId = requestAnimationFrame(() => {
+        // Only calculate if we have components and wires
+        const hasComponents = gridData.some(row => row.some(cell => cell.occupied))
+        const hasWires = wires.length > 0
+        
+        if (hasComponents || hasWires) {
+          performElectricalCalculation()
+        }
+      })
       
-      if (hasComponents || hasWires) {
-        performElectricalCalculation()
-      } 
-    }, debounceTime)
+      return () => cancelAnimationFrame(frameId)
+    } else {
+      // Debounced update for grid/wire changes
+      const timeoutId = setTimeout(() => {
+        // Only calculate if we have components and wires
+        const hasComponents = gridData.some(row => row.some(cell => cell.occupied))
+        const hasWires = wires.length > 0
+        
+        if (hasComponents || hasWires) {
+          performElectricalCalculation()
+        } 
+      }, 100)
 
-    return () => clearTimeout(timeoutId)
+      return () => clearTimeout(timeoutId)
+    }
   }, [gridData, wires, simulationState.gpioStates, performElectricalCalculation])
 
   // Wire system functions

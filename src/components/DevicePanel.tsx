@@ -234,7 +234,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
     }
 
     // Update every 16ms for 60 FPS smooth animation
-    const interval = setInterval(updateGPIOStates, 16)
+    const interval = setInterval(updateGPIOStates, 0)
     
     return () => clearInterval(interval)
   }, [simulationState.isRunning, simulationState.currentMicrocontroller])
@@ -999,30 +999,46 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                           </button>
                           <button
                             className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
-                              isCompiled && hasPowerConnected() && !simulationState.isRunning
+                              simulationState.isRunning
+                                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50'
+                                : isCompiled && hasPowerConnected()
                                 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50'
                                 : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
                             }`}
                             onClick={() => {
-                              console.log('Run button clicked - Debug info:', {
-                                isCompiled,
-                                hasPowerConnected: hasPowerConnected(),
-                                isRunning: simulationState.isRunning,
-                                selectedMicrocontroller: selectedMicrocontroller?.name,
-                                compilationResult: !!compilationResult?.firmware
-                              })
-                              handleRun()
+                              if (simulationState.isRunning) {
+                                console.log('Stop button clicked - stopping simulation')
+                                stopSimulation()
+                              } else {
+                                console.log('Run button clicked - Debug info:', {
+                                  isCompiled,
+                                  hasPowerConnected: hasPowerConnected(),
+                                  isRunning: simulationState.isRunning,
+                                  selectedMicrocontroller: selectedMicrocontroller?.name,
+                                  compilationResult: !!compilationResult?.firmware
+                                })
+                                handleRun()
+                              }
                             }}
-                            disabled={!isCompiled || !hasPowerConnected() || simulationState.isRunning}
+                            disabled={!simulationState.isRunning && (!isCompiled || !hasPowerConnected())}
                             title={
+                              simulationState.isRunning ? 'Stop simulation' :
                               !isCompiled ? 'Please compile code first' :
                               !hasPowerConnected() ? 'Power must be connected to run code' : 
-                              simulationState.isRunning ? 'Simulation is already running' :
                               'Run compiled code'
                             }
                           >
-                            <Play className="w-3 h-3" />
-                            {simulationState.isRunning ? 'Running...' : 'Run'}
+                            {simulationState.isRunning ? (
+                              <>
+                                <X className="w-3 h-3" />
+                                Stop
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-3 h-3" />
+                                Run
+                              </>
+                            )}
                           </button>
                         </div>
                         
