@@ -217,7 +217,6 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
           
           if (currentState !== newState) {
             hasChanges = true
-            console.log(`[MULTI_MCU_GPIO] Pin ${pin} changed from ${currentState} to ${newState} (MCU: ${state.microcontrollerId || 'single'})`)
           }
           
           gpioStates.set(pin, {
@@ -920,22 +919,108 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
 
         {isExpanded && (
           <div className="border-t border-gray-200 dark:border-dark-border">
-            {/* Global MCU Stats */}
-            {selectedMicrocontroller && (
-              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border-b border-gray-200 dark:border-dark-border">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                    <span className="text-sm font-medium text-blue-900 dark:text-blue-100">Active MCU</span>
+            {/* Global MCU Stats and Run All Button */}
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border-b border-gray-200 dark:border-dark-border">
+              {/* Run All Button - Show when multiple MCUs have compiled code */}
+              {(() => {
+                const mcusWithCode = microcontrollers.filter(mcu => compiledCodes.has(mcu.id))
+                const runningCount = simulationState.runningMicrocontrollers.size
+                const canRunAll = mcusWithCode.length > 1 && hasPowerConnected()
+                const allRunning = mcusWithCode.length > 0 && mcusWithCode.every(mcu => simulationState.runningMicrocontrollers.has(mcu.id))
+                
+                if (mcusWithCode.length > 1) {
+                  return (
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                            Multiple MCUs ({mcusWithCode.length} with code)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-blue-600 dark:text-blue-300">
+                            {runningCount} running
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (allRunning) {
+                            // Stop all running microcontrollers
+                            console.log('Stop All button clicked - stopping all microcontrollers')
+                            stopAllMultiMicrocontrollerGPIO()
+                            setSimulationState(prev => ({
+                              ...prev,
+                              isRunning: false,
+                              runningMicrocontrollers: new Set(),
+                              gpioStates: new Map(),
+                              wireStates: new Map()
+                            }))
+                          } else {
+                            // Start all microcontrollers with compiled code
+                            console.log('Run All button clicked - starting all microcontrollers')
+                            mcusWithCode.forEach(mcu => {
+                              const compiledCode = compiledCodes.get(mcu.id)
+                              if (compiledCode) {
+                                startMultiMicrocontrollerGPIO(mcu.id, compiledCode.code)
+                              }
+                            })
+                            setSimulationState(prev => ({
+                              ...prev,
+                              isRunning: true,
+                              runningMicrocontrollers: new Set(mcusWithCode.map(mcu => mcu.id))
+                            }))
+                          }
+                        }}
+                        disabled={!canRunAll && !allRunning}
+                        className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded transition-colors ${
+                          allRunning
+                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50'
+                            : canRunAll
+                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                        }`}
+                        title={
+                          allRunning ? 'Stop all running microcontrollers' :
+                          !hasPowerConnected() ? 'Power must be connected to run code' :
+                          'Run all microcontrollers with compiled code'
+                        }
+                      >
+                        {allRunning ? (
+                          <>
+                            <X className="w-4 h-4" />
+                            Stop All ({runningCount})
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4" />
+                            Run All ({mcusWithCode.length})
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )
+                }
+                return null
+              })()}
+              
+              {/* Selected MCU Info */}
+              {selectedMicrocontroller && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <span className="text-sm font-medium text-blue-900 dark:text-blue-100">Active MCU</span>
+                    </div>
+                    <button
+                      onClick={() => setSelectedMicrocontroller(null)}
+                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 transition-colors"
+                      title="Clear selection"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => setSelectedMicrocontroller(null)}
-                    className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 transition-colors"
-                    title="Clear selection"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
                 <div className="text-sm text-blue-800 dark:text-blue-200">
                   <div className="font-medium">{selectedMicrocontroller.name}</div>
                   <div className="text-xs text-blue-600 dark:text-blue-300 mt-1">
@@ -961,6 +1046,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                 </div>
               </div>
             )}
+            </div>
             
             {/* Tab Navigation */}
             <div className="flex border-b border-gray-200 dark:border-dark-border">

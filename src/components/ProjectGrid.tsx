@@ -592,9 +592,9 @@ export function ProjectGrid({
     const transformedY = (mouseY - translateY) / zoom
     
     // Convert to grid coordinates
-    // Add half cell size offset to match component placement
-    const rawX = (transformedX - baseCellSize / 2) / baseCellSize
-    const rawY = (transformedY - baseCellSize / 2) / baseCellSize
+    // Remove the half cell size offset to match the fixed click calculation
+    const rawX = transformedX / baseCellSize
+    const rawY = transformedY / baseCellSize
     
     // Snap to grid if enabled
     const { x, y } = snapToGridCoords(rawX, rawY)
@@ -1327,9 +1327,9 @@ export function ProjectGrid({
     const transformedY = (mouseY - translateY) / zoom
     
     // Convert to grid coordinates
-    // Add half cell size offset to account for cell positioning
-    const rawX = (transformedX - baseCellSize / 2) / baseCellSize
-    const rawY = (transformedY - baseCellSize / 2) / baseCellSize
+    // Remove the half cell size offset that was causing the drift
+    const rawX = transformedX / baseCellSize
+    const rawY = transformedY / baseCellSize
     
     // Snap to grid if enabled
     const { x, y } = snapToGridCoords(rawX, rawY)
@@ -1990,7 +1990,7 @@ const GridCell = React.memo(({
     <div
       key={`${x}-${y}`}
       className={`
-        relative
+        absolute
         ${occupied 
           ? 'bg-transparent' 
           : isHighlighted
@@ -2002,6 +2002,8 @@ const GridCell = React.memo(({
         transition-colors duration-150
       `}
       style={{
+        left: `${x * 2.5}vw`,
+        top: `${y * 2.5}vw`,
         width: `${2.5 * zoom}vw`,
         height: `${2.5 * zoom}vw`,
         minWidth: '10px',
@@ -2367,39 +2369,35 @@ const GridCell = React.memo(({
       >
         {Array.from({ length: visibleBounds.endY - visibleBounds.startY }, (_, rowIndex) => {
           const y = visibleBounds.startY + rowIndex
-          return (
-            <div key={y} className="flex">
-              {Array.from({ length: visibleBounds.endX - visibleBounds.startX }, (_, colIndex) => {
-                const x = visibleBounds.startX + colIndex
-                const cell = gridData[y]?.[x]
-                const isHighlighted = isCellHighlighted(x, y)
-                const hasCollision = isCollisionPreview
-                
-                return (
-                  <GridCell
-                    key={`${x}-${y}`}
-                    x={x}
-                    y={y}
-                    cell={cell}
-                    isHighlighted={isHighlighted}
-                    hasCollision={hasCollision}
-                    isCellOccupied={isCellOccupied}
-                    onComponentClick={handleComponentClick}
-                    findModuleOrigin={findModuleOrigin}
-                    getCellBackground={getCellBackground}
-                    getCellCSS={getCellCSS}
-                    getCellPin={getCellPin}
-                    getResistorColorBands={getResistorColorBands}
-                    componentStates={componentStates}
-                    zoom={zoom}
-                    highlightedMicrocontroller={highlightedMicrocontroller}
-                    deleteMode={deleteMode}
-                    hoveredForDeletion={hoveredForDeletion}
-                  />
-                )
-              })}
-            </div>
-          )
+          return Array.from({ length: visibleBounds.endX - visibleBounds.startX }, (_, colIndex) => {
+            const x = visibleBounds.startX + colIndex
+            const cell = gridData[y]?.[x]
+            const isHighlighted = isCellHighlighted(x, y)
+            const hasCollision = isCollisionPreview
+            
+            return (
+              <GridCell
+                key={`${x}-${y}`}
+                x={x}
+                y={y}
+                cell={cell}
+                isHighlighted={isHighlighted}
+                hasCollision={hasCollision}
+                isCellOccupied={isCellOccupied}
+                onComponentClick={handleComponentClick}
+                findModuleOrigin={findModuleOrigin}
+                getCellBackground={getCellBackground}
+                getCellCSS={getCellCSS}
+                getCellPin={getCellPin}
+                getResistorColorBands={getResistorColorBands}
+                componentStates={componentStates}
+                zoom={zoom}
+                highlightedMicrocontroller={highlightedMicrocontroller}
+                deleteMode={deleteMode}
+                hoveredForDeletion={hoveredForDeletion}
+              />
+            )
+          })
         })}
       </div>
 

@@ -1247,14 +1247,7 @@ export function calculateSystematicVoltageFlow(
       
       // Update component states with calculated voltages
       result.componentUpdates.forEach((update, componentId) => {
-        // Debug: Log component updates for D13 specifically
-        if (componentId.includes('D13') || (update.outputVoltage && update.outputVoltage > 0)) {
-          console.log(`[ELECTRICAL] Component update for ${componentId}:`, {
-            update,
-            existingState: componentStates.get(componentId)
-          })
-        }
-        
+
         const existingState = componentStates.get(componentId)
         if (existingState) {
           const newState = {
@@ -1262,11 +1255,7 @@ export function calculateSystematicVoltageFlow(
             ...update
           }
           componentStates.set(componentId, newState)
-          
-          // Debug: Log state update for D13 specifically
-          if (componentId.includes('D13') || (update.outputVoltage && update.outputVoltage > 0)) {
-            console.log(`[ELECTRICAL] Updated state for ${componentId}:`, newState)
-          }
+
         } else {
           // If no existing state, create a new one with the update
           // Ensure all required fields are present
