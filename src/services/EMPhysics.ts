@@ -55,7 +55,7 @@ export interface CircuitNode {
   cellIndex?: number; // Add cellIndex for terminal tracking
 }
 
-export function CalculateCircuit(nodes: CircuitNode[], wires: any[] = [], hasContinuity: boolean = false) {
+export function CalculateCircuit(nodes: CircuitNode[], _wires: any[] = [], hasContinuity: boolean = false) {
     let batteryVoltage = 0;
     let totalResistance = 0;
     let totalLEDVoltage = 0;
@@ -434,6 +434,76 @@ export function checkContinuity(nodes: CircuitNode[], wires: any[]): boolean {
 }
 
 /**
+ * Detect and combine parallel resistors before pathway analysis
+ */
+function detectAndCombineParallelResistors(occupiedComponents: any[], _wires: any[]): {
+  processedComponents: any[];
+  parallelBranches: any[];
+} {
+  // For now, implement a simplified parallel detection based on component grouping
+  // This will be enhanced to use the full wire-based detection from ElectricalSystem
+  
+  const processedComponents: any[] = [];
+  const parallelBranches: any[] = [];
+  
+  // Group components by type
+  const resistors = occupiedComponents.filter(comp => 
+    comp.moduleDefinition?.module === 'Resistor'
+  );
+  
+  const nonResistors = occupiedComponents.filter(comp => 
+    comp.moduleDefinition?.module !== 'Resistor'
+  );
+  
+  // Add non-resistor components to processed list
+  processedComponents.push(...nonResistors);
+  
+  // Group resistors by their base component ID (same component, different cells)
+  const resistorGroups = new Map<string, any[]>();
+  
+  resistors.forEach(resistor => {
+    const baseId = resistor.componentId.split('_')[0]; // Remove cell suffix
+    if (!resistorGroups.has(baseId)) {
+      resistorGroups.set(baseId, []);
+    }
+    resistorGroups.get(baseId)!.push(resistor);
+  });
+  
+  // Process each resistor group
+  resistorGroups.forEach((group, baseId) => {
+    if (group.length > 1) {
+      // Multiple cells of same resistor - treat as one component
+      const combinedResistor = {
+        ...group[0],
+        componentId: baseId, // Use base ID without cell suffix
+        moduleDefinition: {
+          ...group[0].moduleDefinition,
+          properties: {
+            ...group[0].moduleDefinition.properties,
+            // Keep original resistance - this is the same resistor
+          }
+        }
+      };
+      
+      processedComponents.push(combinedResistor);
+      parallelBranches.push({
+        resistors: group,
+        totalResistance: group[0].moduleDefinition?.properties?.resistance || 1000,
+        combinedComponent: combinedResistor
+      });
+    } else {
+      // Single cell resistor - add as is
+      processedComponents.push(group[0]);
+    }
+  });
+  
+  console.log(`🔍 [PARALLEL_PATHWAY] Processed ${processedComponents.length} components from ${occupiedComponents.length} original`);
+  console.log(`🔍 [PARALLEL_PATHWAY] Found ${parallelBranches.length} parallel groups`);
+  
+  return { processedComponents, parallelBranches };
+}
+
+/**
  * Find circuit pathways from voltage sources to grounding sources
  */
 export function findCircuitPathways(occupiedComponents: any[], wires: any[]): {
@@ -445,9 +515,14 @@ export function findCircuitPathways(occupiedComponents: any[], wires: any[]): {
   const errors: string[] = [];
   const warnings: string[] = [];
   
+  // Step 0: Detect and combine parallel resistors before pathway analysis
+  const { processedComponents, parallelBranches } = detectAndCombineParallelResistors(occupiedComponents, wires);
+  console.log(`🔍 [PATHWAY_DEBUG] After parallel detection: ${processedComponents.length} components (was ${occupiedComponents.length})`);
+  console.log(`🔍 [PATHWAY_DEBUG] Found ${parallelBranches.length} parallel branches`);
+  
   // Step 1: Find all voltage sources and ground sources with their exact coordinates
-  const voltageSources = findVoltageSources(occupiedComponents);
-  const groundSources = findGroundSources(occupiedComponents);
+  const voltageSources = findVoltageSources(processedComponents);
+  const groundSources = findGroundSources(processedComponents);
   
   // Debug: Check for duplicate voltage sources
   const voltageSourcePositions = voltageSources.map(v => `${v.position.x},${v.position.y}`);
@@ -465,11 +540,11 @@ export function findCircuitPathways(occupiedComponents: any[], wires: any[]): {
     errors.push('❌ No ground sources found - circuit needs at least one ground connection');
   }
   
-  if (wires.length === 0 && occupiedComponents.length > 1) {
+  if (wires.length === 0 && processedComponents.length > 1) {
     warnings.push('⚠️ No wires found - components may not be properly connected');
   }
   
-  if (occupiedComponents.length === 0) {
+  if (processedComponents.length === 0) {
     warnings.push('⚠️ No components placed on the circuit board');
   }
   
@@ -484,8 +559,8 @@ export function findCircuitPathways(occupiedComponents: any[], wires: any[]): {
     }
     
     // Step 3: For each wire, trace a separate circuit path
-    connectedWires.forEach((wire, wireIndex) => {
-      const result = traceCircuitFromWire(wire, voltageSource, groundSources, occupiedComponents, wires);
+    connectedWires.forEach((wire, _wireIndex) => {
+      const result = traceCircuitFromWire(wire, voltageSource, groundSources, processedComponents, wires);
       
       if (result.pathway.length > 0) {
         pathways.push(result.pathway);
@@ -507,7 +582,7 @@ export function findCircuitPathways(occupiedComponents: any[], wires: any[]): {
     });
   });
   
-  const isolatedComponents = occupiedComponents.filter(comp => 
+  const isolatedComponents = processedComponents.filter(comp => 
     !connectedComponents.has(comp.componentId)
   );
   

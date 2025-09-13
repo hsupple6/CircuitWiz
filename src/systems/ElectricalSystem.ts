@@ -240,42 +240,48 @@ export function findCircuitNodes(
 }
 
 /**
- * Simple parallel resistor detection - find resistors connected to the same junction points
+ * Enhanced parallel resistor detection - find resistors that share the same power and ground wire segments
+ * This implements the approach: FIRSTLY, find all resistors that share the same wire segments for POWER and GROUND
+ * We then combine those as ONE resistor using the parallel resistance law
  */
 export function findParallelResistors(
   gridData: GridCell[][],
-  connections: Map<string, Set<string>>
+  _connections: Map<string, Set<string>>,
+  wires: WireConnection[]
 ): ParallelBranch[] {
   const parallelBranches: ParallelBranch[] = []
   const processedResistors = new Set<string>()
   
   // Find all resistors in the grid
-  const resistors: Array<{id: string, position: {x: number, y: number}, resistance: number}> = []
+  const resistors: Array<{id: string, position: {x: number, y: number}, resistance: number, terminals: Array<{x: number, y: number}>}> = []
   
   gridData.forEach((row, y) => {
     if (!row || !Array.isArray(row)) return
     row.forEach((cell, x) => {
       if (cell?.occupied && cell.componentId && cell.componentType === 'Resistor') {
+        // Find all terminal positions for this resistor
+        const terminals = findResistorTerminals(cell, gridData)
         resistors.push({
           id: cell.componentId,
           position: { x, y },
-          resistance: cell.resistance || 1000
+          resistance: cell.resistance || 1000,
+          terminals
         })
       }
     })
   })
   
   logger.debug(`Found ${resistors.length} resistors in grid`)
+  console.log(`🔍 [PARALLEL_DEBUG] Found ${resistors.length} resistors:`, resistors.map(r => ({ id: r.id, position: r.position, terminals: r.terminals })))
   
-  // Group resistors that share connection points (indicating parallel connection)
+  // Group resistors that share the same power and ground wire segments
   for (let i = 0; i < resistors.length; i++) {
     if (processedResistors.has(resistors[i].id)) continue
     
     const resistor1 = resistors[i]
-    const resistor1Pos = `${resistor1.position.x},${resistor1.position.y}`
-    const resistor1Connections = connections.get(resistor1Pos) || new Set()
+    const resistor1WireSegments = findResistorWireSegments(resistor1, wires)
     
-    // Find other resistors that share connection points with this one
+    // Find other resistors that share the same power and ground wire segments
     const parallelGroup = [resistor1]
     processedResistors.add(resistor1.id)
     
@@ -283,22 +289,28 @@ export function findParallelResistors(
       if (processedResistors.has(resistors[j].id)) continue
       
       const resistor2 = resistors[j]
-      const resistor2Pos = `${resistor2.position.x},${resistor2.position.y}`
-      const resistor2Connections = connections.get(resistor2Pos) || new Set()
+      const resistor2WireSegments = findResistorWireSegments(resistor2, wires)
       
-      // Check if these resistors share any connection points
-      const sharedConnections = new Set([...resistor1Connections].filter(pos => resistor2Connections.has(pos)))
+      // Check if these resistors share the same power and ground wire segments
+      console.log(`🔍 [PARALLEL_DEBUG] Checking ${resistor1.id} vs ${resistor2.id}`)
+      console.log(`🔍 [PARALLEL_DEBUG] Resistor1 wire segments:`, resistor1WireSegments)
+      console.log(`🔍 [PARALLEL_DEBUG] Resistor2 wire segments:`, resistor2WireSegments)
       
-      if (sharedConnections.size >= 2) {
+      if (sharePowerAndGroundSegments(resistor1WireSegments, resistor2WireSegments)) {
         // These resistors are connected in parallel
         parallelGroup.push(resistor2)
         processedResistors.add(resistor2.id)
-        logger.debug(`Found parallel resistors: ${resistor1.id} and ${resistor2.id} share ${sharedConnections.size} connection points`)
+        logger.debug(`Found parallel resistors: ${resistor1.id} and ${resistor2.id} share power and ground wire segments`)
+        console.log(`✅ [PARALLEL_DEBUG] FOUND PARALLEL: ${resistor1.id} and ${resistor2.id}`)
+      } else {
+        console.log(`❌ [PARALLEL_DEBUG] NOT PARALLEL: ${resistor1.id} and ${resistor2.id}`)
       }
     }
     
     // If we found multiple resistors in parallel, create a parallel branch
     if (parallelGroup.length > 1) {
+      const combinedResistance = calculateParallelResistance(parallelGroup.map(r => r.resistance))
+      
       const branch: ParallelBranch = {
         id: `parallel-${parallelGroup.map(r => r.id).join('-')}`,
         components: parallelGroup.map(resistor => ({
@@ -311,17 +323,122 @@ export function findParallelResistors(
             current: 0
           }
         })),
-        totalResistance: 0,
+        totalResistance: combinedResistance,
         current: 0,
         voltage: 0
       }
       
       parallelBranches.push(branch)
-      logger.circuit(`Parallel resistors: ${parallelGroup.length} resistors, total resistance: ${calculateParallelResistance(parallelGroup.map(r => r.resistance))}Ω`)
+      logger.circuit(`Parallel resistors: ${parallelGroup.length} resistors, combined resistance: ${combinedResistance}Ω`)
+      console.log(`✅ [PARALLEL_DEBUG] Created parallel branch with ${parallelGroup.length} resistors, combined resistance: ${combinedResistance}Ω`)
     }
   }
   
   return parallelBranches
+}
+
+/**
+ * Find the terminal positions of a resistor component
+ */
+function findResistorTerminals(resistorCell: GridCell, _gridData: GridCell[][]): Array<{x: number, y: number}> {
+  const terminals: Array<{x: number, y: number}> = []
+  
+  if (!resistorCell.moduleDefinition) return terminals
+  
+  // Find all LEAD type cells in the resistor's grid definition
+  resistorCell.moduleDefinition.grid.forEach((cell: any, _index: number) => {
+    if (cell.type === 'LEAD' && cell.isConnectable) {
+      const terminalX = resistorCell.x! + cell.x
+      const terminalY = resistorCell.y! + cell.y
+      terminals.push({ x: terminalX, y: terminalY })
+    }
+  })
+  
+  return terminals
+}
+
+/**
+ * Find wire segments connected to a resistor's terminals
+ */
+function findResistorWireSegments(
+  resistor: {id: string, position: {x: number, y: number}, resistance: number, terminals: Array<{x: number, y: number}>},
+  wires: WireConnection[]
+): Array<{wireId: string, segment: any, terminal: {x: number, y: number}}> {
+  const wireSegments: Array<{wireId: string, segment: any, terminal: {x: number, y: number}}> = []
+  
+  wires.forEach(wire => {
+    wire.segments.forEach(segment => {
+      // Check if this segment connects to any of the resistor's terminals
+      resistor.terminals.forEach(terminal => {
+        if ((segment.from.x === terminal.x && segment.from.y === terminal.y) ||
+            (segment.to.x === terminal.x && segment.to.y === terminal.y)) {
+          wireSegments.push({
+            wireId: wire.id,
+            segment,
+            terminal
+          })
+        }
+      })
+    })
+  })
+  
+  return wireSegments
+}
+
+/**
+ * Check if two resistors share the same power and ground wire segments
+ * This is the core logic for detecting parallel resistors
+ */
+function sharePowerAndGroundSegments(
+  segments1: Array<{wireId: string, segment: any, terminal: {x: number, y: number}}>,
+  segments2: Array<{wireId: string, segment: any, terminal: {x: number, y: number}}>
+): boolean {
+  // Group segments by wire ID to identify power and ground connections
+  const wireGroups1 = groupSegmentsByWire(segments1)
+  const wireGroups2 = groupSegmentsByWire(segments2)
+  
+  // Check if both resistors are connected to the same power wire and the same ground wire
+  const powerWires1 = new Set(wireGroups1.keys())
+  const powerWires2 = new Set(wireGroups2.keys())
+  
+  // Find intersection of wire IDs (resistors connected to same wires)
+  const sharedWires = new Set([...powerWires1].filter(wireId => powerWires2.has(wireId)))
+  
+  // For parallel connection, resistors should share at least 2 wires (power and ground)
+  // or be connected to the same wire at different points
+  if (sharedWires.size >= 2) {
+    return true
+  }
+  
+  // Alternative: Check if resistors are connected to the same wire but at different terminals
+  // This handles cases where multiple resistors are connected in parallel to the same wire
+  for (const wireId of sharedWires) {
+    const segments1ForWire = wireGroups1.get(wireId) || []
+    const segments2ForWire = wireGroups2.get(wireId) || []
+    
+    // If both resistors have multiple connections to the same wire, they're likely in parallel
+    if (segments1ForWire.length >= 1 && segments2ForWire.length >= 1) {
+      return true
+    }
+  }
+  
+  return false
+}
+
+/**
+ * Group wire segments by wire ID
+ */
+function groupSegmentsByWire(segments: Array<{wireId: string, segment: any, terminal: {x: number, y: number}}>): Map<string, Array<{wireId: string, segment: any, terminal: {x: number, y: number}}>> {
+  const groups = new Map<string, Array<{wireId: string, segment: any, terminal: {x: number, y: number}}>>()
+  
+  segments.forEach(segment => {
+    if (!groups.has(segment.wireId)) {
+      groups.set(segment.wireId, [])
+    }
+    groups.get(segment.wireId)!.push(segment)
+  })
+  
+  return groups
 }
 
 /**
@@ -983,7 +1100,8 @@ export function isMicrocontrollerRunning(microcontrollerId: string): boolean {
 export function calculateSystematicVoltageFlow(
   gridData: GridCell[][],
   wires: WireConnection[],
-  gpioStates?: Map<number, any>
+  gpioStates?: Map<number, any>,
+  parallelBranches: ParallelBranch[] = []
 ): {
   componentStates: Map<string, ComponentState>
   updatedWires: WireConnection[]
@@ -1072,6 +1190,15 @@ export function calculateSystematicVoltageFlow(
     }
   })
   
+  // Log parallel resistor information
+  if (parallelBranches.length > 0) {
+    logger.electrical(`Processing ${parallelBranches.length} parallel resistor groups`)
+    parallelBranches.forEach((branch, index) => {
+      logger.electrical(`Parallel group ${index + 1}: ${branch.components.length} resistors, combined resistance: ${branch.totalResistance}Ω`)
+    })
+  }
+  
+  
   const nodes = convertGridToNodes(gridData, wires)
   const hasContinuity = checkContinuity(nodes, wires)
   const physicsResult = CalculateCircuit(nodes, wires, hasContinuity)
@@ -1082,6 +1209,67 @@ export function calculateSystematicVoltageFlow(
   }
   
   const circuitCurrent = physicsResult.current || 0
+  
+  // Step 2.5: Process parallel resistor groups to calculate their individual currents
+  console.log(`🔍 [PARALLEL_DEBUG] About to calculate parallel branch currents for ${parallelBranches.length} branches`)
+  console.log(`🔍 [PARALLEL_DEBUG] Battery voltage: ${physicsResult.batteryVoltage || 5}V`)
+  
+  const updatedParallelBranches = calculateParallelBranchCurrents(parallelBranches, physicsResult.batteryVoltage || 5)
+  
+  // Log parallel branch current distribution
+  if (updatedParallelBranches.length > 0) {
+    logger.electrical(`Parallel branch current distribution:`)
+    console.log(`⚡ [PARALLEL_DEBUG] Parallel branch current distribution:`)
+    updatedParallelBranches.forEach((branch, index) => {
+      const currentPerResistor = branch.current / (branch.resistors?.length || 1)
+      logger.electrical(`Branch ${index + 1}: ${branch.current.toFixed(3)}A total, ${currentPerResistor.toFixed(3)}A per resistor through ${branch.totalResistance}Ω`)
+      console.log(`⚡ [PARALLEL_DEBUG] Branch ${index + 1}: ${branch.current.toFixed(3)}A total, ${currentPerResistor.toFixed(3)}A per resistor through ${branch.totalResistance}Ω`)
+    })
+  } else {
+    console.log(`❌ [PARALLEL_DEBUG] No parallel branches to process for current calculation`)
+  }
+  
+  // Step 3.5: Process parallel resistor groups with calculated currents
+  if (updatedParallelBranches.length > 0) {
+    logger.electrical(`Processing ${updatedParallelBranches.length} parallel resistor groups...`)
+    console.log(`🔍 [PARALLEL_DEBUG] Processing ${updatedParallelBranches.length} parallel resistor groups...`)
+    
+    updatedParallelBranches.forEach((branch, branchIndex) => {
+      logger.electrical(`Processing parallel branch ${branchIndex + 1} with ${branch.resistors?.length || 0} resistors`)
+      console.log(`🔍 [PARALLEL_DEBUG] Processing parallel branch ${branchIndex + 1} with ${branch.resistors?.length || 0} resistors`)
+      
+      if (branch.resistors && branch.resistors.length > 0) {
+        branch.resistors.forEach((resistor, resistorIndex) => {
+          const currentPerResistor = branch.current / branch.resistors.length
+          logger.electrical(`Resistor ${resistorIndex + 1}: ${currentPerResistor.toFixed(3)}A through ${resistor.moduleDefinition?.properties?.resistance || 1000}Ω`)
+          console.log(`🔍 [PARALLEL_DEBUG] Resistor ${resistorIndex + 1}: ${currentPerResistor.toFixed(3)}A through ${resistor.moduleDefinition?.properties?.resistance || 1000}Ω`)
+          
+          // Calculate voltage drop for this resistor
+          const voltageDrop = currentPerResistor * (resistor.moduleDefinition?.properties?.resistance || 1000)
+          logger.electrical(`Voltage drop: ${voltageDrop.toFixed(3)}V`)
+          console.log(`🔍 [PARALLEL_DEBUG] Voltage drop: ${voltageDrop.toFixed(3)}V`)
+          
+          // Update component state for this resistor
+          const resistorState = componentStates.get(resistor.componentId)
+          if (resistorState) {
+            resistorState.current = currentPerResistor
+            resistorState.voltage = voltageDrop
+            resistorState.power = currentPerResistor * voltageDrop
+            componentStates.set(resistor.componentId, resistorState)
+            
+            logger.electrical(`Updated resistor ${resistor.componentId}: ${currentPerResistor.toFixed(3)}A, ${voltageDrop.toFixed(3)}V, ${(currentPerResistor * voltageDrop).toFixed(3)}W`)
+            console.log(`✅ [PARALLEL_DEBUG] Updated resistor ${resistor.componentId}: ${currentPerResistor.toFixed(3)}A, ${voltageDrop.toFixed(3)}V, ${(currentPerResistor * voltageDrop).toFixed(3)}W`)
+          } else {
+            console.log(`❌ [PARALLEL_DEBUG] No component state found for resistor ${resistor.componentId}`)
+          }
+        })
+      } else {
+        console.log(`❌ [PARALLEL_DEBUG] Branch ${branchIndex + 1} has no resistors array`)
+      }
+    })
+  } else {
+    console.log(`❌ [PARALLEL_DEBUG] No parallel branches to process`)
+  }
   
   // Step 3: Process all microcontroller pin cells first to set GPIO pin states
   logger.electrical('Processing microcontroller pin cells to set GPIO states...')
@@ -1197,6 +1385,61 @@ export function calculateSystematicVoltageFlow(
     })
   })
   
+  // Step 3.5: Process parallel resistor components with their calculated currents
+  if (updatedParallelBranches.length > 0) {
+    logger.electrical('Processing parallel resistor components...')
+    
+    updatedParallelBranches.forEach((branch, branchIndex) => {
+      logger.electrical(`Processing parallel branch ${branchIndex + 1} with ${branch.components.length} resistors`)
+      
+      branch.components.forEach((comp) => {
+        // Find the component in the grid and update its state
+        const baseComponentId = comp.id
+        const allResistorCells: Array<{id: string, position: {x: number, y: number}, cellIndex: number}> = []
+        
+        // Search the grid for all cells belonging to this resistor
+        for (let y = 0; y < gridData.length; y++) {
+          for (let x = 0; x < gridData[y].length; x++) {
+            const cell = gridData[y][x]
+            if (cell?.occupied && cell.componentId === baseComponentId) {
+              const cellId = `${baseComponentId}-${cell.cellIndex || 0}`
+              allResistorCells.push({
+                id: cellId,
+                position: { x, y },
+                cellIndex: cell.cellIndex || 0
+              })
+            }
+          }
+        }
+        
+        // Calculate voltage drop across this individual resistor
+        const individualResistance = comp.properties.resistance
+        const individualCurrent = branch.current
+        const voltageDrop = individualCurrent * individualResistance
+        const outputVoltage = Math.max(0, branch.voltage - voltageDrop)
+        
+        logger.electrical(`Resistor ${comp.id}: ${individualResistance}Ω, ${individualCurrent.toFixed(3)}A, ${voltageDrop.toFixed(2)}V drop`)
+        
+        // Update ALL cells of this resistor with the calculated values
+        allResistorCells.forEach(cell => {
+          const existingState = componentStates.get(cell.id)
+          if (existingState) {
+            componentStates.set(cell.id, {
+              ...existingState,
+              outputVoltage: outputVoltage,
+              outputCurrent: individualCurrent,
+              power: voltageDrop * individualCurrent,
+              voltageDrop: voltageDrop,
+              status: 'active',
+              isPowered: outputVoltage > 0,
+              isGrounded: false
+            })
+          }
+        })
+      })
+    })
+  }
+  
   // Step 4: Systematic voltage flow calculation
   // Find power sources and trace voltage through circuit paths
   const powerSources = Array.from(componentStates.values()).filter(comp => 
@@ -1305,9 +1548,9 @@ export function calculateSystematicVoltageFlow(
         // Check if this component is connected to this wire (check base component ID)
         const fromBaseComponentId = fromCell?.occupied ? fromCell.componentId : null
         const toBaseComponentId = toCell?.occupied ? toCell.componentId : null
-        const baseComponentId = componentId.replace(/-\d+$/, '') // Remove cell index
+        const _baseComponentId = componentId.replace(/-\d+$/, '') // Remove cell index
         
-        return fromBaseComponentId === baseComponentId || toBaseComponentId === baseComponentId
+        return fromBaseComponentId === _baseComponentId || toBaseComponentId === _baseComponentId
       })
     )
 
@@ -1342,7 +1585,7 @@ export function calculateSystematicVoltageFlow(
             
             
             // For LEDs, we need to process ALL cells of the component (like resistors)
-            const baseComponentId = componentId.replace(/-\d+$/, '')
+            const _baseComponentId = componentId.replace(/-\d+$/, '')
             
             // Find all cells of this LED component
             const allLedCells: Array<{id: string, position: {x: number, y: number}, cellIndex: number}> = []
@@ -1351,8 +1594,8 @@ export function calculateSystematicVoltageFlow(
             for (let y = 0; y < gridData.length; y++) {
               for (let x = 0; x < gridData[y].length; x++) {
                 const gridCell = gridData[y][x]
-                if (gridCell?.occupied && gridCell.componentId === baseComponentId) {
-                  const cellId = `${baseComponentId}-${gridCell.cellIndex || 0}`
+                if (gridCell?.occupied && gridCell.componentId === _baseComponentId) {
+                  const cellId = `${_baseComponentId}-${gridCell.cellIndex || 0}`
                   allLedCells.push({
                     id: cellId,
                     position: { x, y },
@@ -1406,22 +1649,22 @@ export function calculateSystematicVoltageFlow(
   // Group resistor and LED cells by base component ID
   updatedComponentStates.forEach((state, componentId) => {
     if (state.componentType === 'Resistor') {
-      const baseComponentId = componentId.replace(/-\d+$/, '')
-      if (!resistorGroups.has(baseComponentId)) {
-        resistorGroups.set(baseComponentId, [])
+      const _baseComponentId = componentId.replace(/-\d+$/, '')
+      if (!resistorGroups.has(_baseComponentId)) {
+        resistorGroups.set(_baseComponentId, [])
       }
-      resistorGroups.get(baseComponentId)!.push({ id: componentId, state })
+      resistorGroups.get(_baseComponentId)!.push({ id: componentId, state })
     } else if (state.componentType === 'LED') {
-      const baseComponentId = componentId.replace(/-\d+$/, '')
-      if (!ledGroups.has(baseComponentId)) {
-        ledGroups.set(baseComponentId, [])
+      const _baseComponentId = componentId.replace(/-\d+$/, '')
+      if (!ledGroups.has(_baseComponentId)) {
+        ledGroups.set(_baseComponentId, [])
       }
-      ledGroups.get(baseComponentId)!.push({ id: componentId, state })
+      ledGroups.get(_baseComponentId)!.push({ id: componentId, state })
     }
   })
   
   // For each resistor group, ensure all cells have the same voltage as cell -0
-  resistorGroups.forEach((resistorCells, baseComponentId) => {
+  resistorGroups.forEach((resistorCells, _baseComponentId) => {
     const cell0 = resistorCells.find(cell => cell.id.endsWith('-0'))
     if (cell0 && cell0.state.outputVoltage > 0) {
       const targetVoltage = cell0.state.outputVoltage
@@ -1440,7 +1683,7 @@ export function calculateSystematicVoltageFlow(
   })
   
   // For each LED group, ensure all cells have the same status and isPowered as cell -0
-  ledGroups.forEach((ledCells, baseComponentId) => {
+  ledGroups.forEach((ledCells, _baseComponentId) => {
     const cell0 = ledCells.find(cell => cell.id.endsWith('-0'))
     if (cell0) {
       const targetStatus = cell0.state.status
@@ -1726,7 +1969,7 @@ function traceVoltageThroughComponent(
       if (nextDestination) {
         const nextComponent = findComponentAtPosition(nextDestination, gridData)
         // Find the wire connected to the next component
-        const connectedWire = wires.find(wire => 
+        const _connectedWire = wires.find(wire => 
           wire.segments.some(segment => 
             (segment.from.x === nextComponent.x && segment.from.y === nextComponent.y) ||
             (segment.to.x === nextComponent.x && segment.to.y === nextComponent.y)
@@ -1863,7 +2106,7 @@ function findOtherTerminal(component: any, gridData: GridCell[][]): { x: number;
 /**
  * Get the destination position of a wire
  */
-function getWireDestination(wire: WireConnection, startPosition: { x: number; y: number }): { x: number; y: number } {
+function _getWireDestination(wire: WireConnection, startPosition: { x: number; y: number }): { x: number; y: number } {
   const segment = wire.segments.find(seg => 
     seg.from.x === startPosition.x && seg.from.y === startPosition.y
   )
@@ -1893,7 +2136,7 @@ export function updateWiresFromEMPhysics(
   wires: WireConnection[],
   componentStates: Map<string, ComponentState>,
   physicsResult: any,
-  gridData: GridCell[][]
+  _gridData: GridCell[][]
 ): WireConnection[] {
   
   return wires.map(wire => {
@@ -1908,8 +2151,8 @@ export function updateWiresFromEMPhysics(
     
     wire.segments.forEach(segment => {
       // Check both from and to positions for connected components
-      const fromCell = gridData[segment.from.y]?.[segment.from.x]
-      const toCell = gridData[segment.to.y]?.[segment.to.x]
+      const fromCell = _gridData[segment.from.y]?.[segment.from.x]
+      const toCell = _gridData[segment.to.y]?.[segment.to.x]
       
       // Find component state for from position
       if (fromCell?.occupied && fromCell.componentId) {
@@ -2076,9 +2319,9 @@ export function calculateElectricalFlow(
   
   // Debug: Check grid data content
   let occupiedCells = 0;
-  gridData.forEach((row, y) => {
+  gridData.forEach((row, _y) => {
     if (!row) return;
-    row.forEach((cell, x) => {
+    row.forEach((cell, _x) => {
       if (cell?.occupied && cell.componentId && cell.moduleDefinition) {
         occupiedCells++;
       }
@@ -2087,14 +2330,46 @@ export function calculateElectricalFlow(
   
   // Step 1: Extract occupied components and find circuit pathways
   const occupiedComponents = extractOccupiedComponents(gridData)
+  console.log(`🔍 [PATHWAY_DEBUG] Found ${occupiedComponents.length} occupied components`)
+  console.log(`🔍 [PATHWAY_DEBUG] Components:`, occupiedComponents.map(c => ({ 
+    id: c.componentId, 
+    type: c.moduleDefinition?.module,
+    position: c.position,
+    grid: c.moduleDefinition?.grid?.length || 0
+  })))
+  
   const circuitAnalysis = findCircuitPathways(occupiedComponents, wires)
   const pathways = circuitAnalysis.pathways
+  
+  console.log(`🔍 [PATHWAY_DEBUG] Found ${pathways.length} circuit pathways`)
+  console.log(`🔍 [PATHWAY_DEBUG] Warnings:`, circuitAnalysis.warnings)
+  
+  // Step 1.5: Detect parallel resistors before circuit calculation
+  const connections = buildConnectionMap(wires)
+  const parallelBranches = findParallelResistors(gridData, connections, wires)
+  
+  console.log(`🔍 [PATHWAY_DEBUG] Parallel branches detected:`, parallelBranches.map(branch => ({
+    resistorCount: branch.resistors?.length || 0,
+    combinedResistance: branch.totalResistance,
+    resistorIds: branch.resistors?.map(r => r.componentId) || []
+  })))
+  
+  if (parallelBranches.length > 0) {
+    logger.info(`Detected ${parallelBranches.length} parallel resistor groups`)
+    console.log(`🎉 [PARALLEL_DEBUG] DETECTED ${parallelBranches.length} PARALLEL GROUPS!`)
+    parallelBranches.forEach((branch, index) => {
+      logger.circuit(`Parallel group: ${branch.components.length} resistors, combined resistance: ${branch.totalResistance}Ω`)
+      console.log(`🎉 [PARALLEL_DEBUG] Group ${index + 1}: ${branch.components.length} resistors, combined resistance: ${branch.totalResistance}Ω`)
+    })
+  } else {
+    console.log(`❌ [PARALLEL_DEBUG] NO PARALLEL GROUPS DETECTED`)
+  }
   
   // Step 2: Convert grid components to circuit nodes for EMPhysics
   const circuitNodes = convertGridToNodes(gridData, wires)
   
   // Step 3: Check continuity before calculating circuit
-  const hasContinuity = checkContinuity(circuitNodes, wires)
+  const _hasContinuity = checkContinuity(circuitNodes, wires)
   
   // TEMPORARY: Disable continuity check to debug the node creation issue
   const hasContinuityOverride = circuitNodes.length > 0 // Allow if we have any nodes
@@ -2105,10 +2380,10 @@ export function calculateElectricalFlow(
   
   if (physicsResult.works) {
     // Step 4: Use systematic voltage calculation approach
-    const systematicResult = calculateSystematicVoltageFlow(gridData, wires, gpioStates)
+    const systematicResult = calculateSystematicVoltageFlow(gridData, wires, gpioStates, parallelBranches)
 
     const componentStates = systematicResult.componentStates
-    componentStates.forEach((state, id) => {
+    componentStates.forEach((_state, _id) => {
     })
     
     // Step 5: Use systematic wire updates
@@ -2146,11 +2421,11 @@ export function calculateElectricalFlow(
     }
   } else {    
     // Create empty component states for failed circuits
-    const componentStates = new Map<string, ComponentState>()
+    const _componentStates = new Map<string, ComponentState>()
     
     // Still try to update wires with basic information
-    const updatedWires = updateWiresFromEMPhysics(wires, componentStates, physicsResult, gridData)
-    const updatedGridData = updateGridData(gridData, componentStates)
+    const updatedWires = updateWiresFromEMPhysics(wires, _componentStates, physicsResult, gridData)
+    const updatedGridData = updateGridData(gridData, _componentStates)
     
     // Debug: Check if grid data is being preserved in failed case
     let occupiedCellsAfterFailed = 0;
@@ -2164,7 +2439,7 @@ export function calculateElectricalFlow(
     });
     
     return {
-      componentStates,
+      componentStates: _componentStates,
       updatedWires,
       updatedGridData,
       circuitInfo: {

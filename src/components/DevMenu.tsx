@@ -4,6 +4,7 @@ import { ComponentState } from '../systems/ElectricalSystem'
 import { extractOccupiedComponents } from '../utils/gridUtils'
 import { findCircuitPathways } from '../services/EMPhysics'
 import { logger, LoggingConfig } from '../services/Logger'
+import { formatCurrent, formatPower, formatVoltage } from '../utils/electricalFormatting'
 
 interface LogEntry {
   id?: string
@@ -209,7 +210,6 @@ export function DevMenu({ isOpen, onClose, componentStates, circuitPathways = []
 
   const runCircuitAnalysis = async () => {
     if (!gridData || gridData.length === 0) {
-      console.log('❌ No grid data available for analysis')
       setAnalysisResults({ 
         pathways: [], 
         errors: ['No grid data available - please ensure a project is loaded'], 
@@ -218,30 +218,17 @@ export function DevMenu({ isOpen, onClose, componentStates, circuitPathways = []
       return
     }
 
-    if (!wires || wires.length === 0) {
-      console.log('⚠️ No wires found - analyzing components only')
-    }
-
     setIsAnalyzing(true)
-    console.log('🔍 Running circuit pathway analysis...')
-    console.log(`📊 Grid data: ${gridData.length} rows, ${gridData[0]?.length || 0} columns`)
-    console.log(`📊 Wires: ${wires?.length || 0}`)
     
     try {
       // Extract occupied components
       const occupiedComponents = extractOccupiedComponents(gridData)
-      console.log(`📊 Analyzing ${occupiedComponents.length} components and ${wires?.length || 0} wires`)
       
       // Run the circuit pathway analysis
       const result = findCircuitPathways(occupiedComponents, wires)
       
-      console.log(`✅ Analysis complete: Found ${result.pathways.length} circuit pathways, ${result.errors.length} errors, ${result.warnings.length} warnings`)
       setAnalysisResults(result)
-      
-      // Log detailed results
-      result.pathways.forEach((pathway, index) => {
-        console.log(`🔗 Circuit ${index + 1}:`, pathway.map(node => `${node.type}(${node.id})`).join(' → '))
-      })
+    
       
       // Log errors and warnings
       result.errors.forEach(error => console.error(error))
@@ -663,11 +650,11 @@ export function DevMenu({ isOpen, onClose, componentStates, circuitPathways = []
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
                         <div>
                           <div className="text-xs text-gray-500 dark:text-dark-text-muted">Voltage</div>
-                          <div className="font-mono text-sm">{(pathway.voltage || 0).toFixed(2)}V</div>
+                          <div className="font-mono text-sm">{formatVoltage(pathway.voltage || 0)}</div>
                         </div>
                         <div>
                           <div className="text-xs text-gray-500 dark:text-dark-text-muted">Current</div>
-                          <div className="font-mono text-sm">{((pathway.current || 0) * 1000).toFixed(1)}mA</div>
+                          <div className="font-mono text-sm">{formatCurrent(pathway.current || 0)}</div>
                         </div>
                         <div>
                           <div className="text-xs text-gray-500 dark:text-dark-text-muted">Resistance</div>
@@ -725,15 +712,15 @@ export function DevMenu({ isOpen, onClose, componentStates, circuitPathways = []
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
                         <div>
                           <div className="text-xs text-gray-500 dark:text-dark-text-muted">Voltage</div>
-                          <div className="font-mono text-sm">{state.outputVoltage.toFixed(2)}V</div>
+                          <div className="font-mono text-sm">{formatVoltage(state.outputVoltage)}</div>
                         </div>
                         <div>
                           <div className="text-xs text-gray-500 dark:text-dark-text-muted">Current</div>
-                          <div className="font-mono text-sm">{(state.outputCurrent * 1000).toFixed(1)}mA</div>
+                          <div className="font-mono text-sm">{formatCurrent(state.outputCurrent)}</div>
                         </div>
                         <div>
                           <div className="text-xs text-gray-500 dark:text-dark-text-muted">Power</div>
-                          <div className="font-mono text-sm">{state.power.toFixed(3)}W</div>
+                          <div className="font-mono text-sm">{formatPower(state.power)}</div>
                         </div>
                         <div>
                           <div className="text-xs text-gray-500 dark:text-dark-text-muted">Status</div>
@@ -1137,11 +1124,11 @@ export function DevMenu({ isOpen, onClose, componentStates, circuitPathways = []
                                 </div>
                                 <div>
                                   <span className="text-gray-500 dark:text-dark-text-muted">Voltage:</span>
-                                  <span className="ml-1 font-mono">{component.voltage?.toFixed(2) || '0.00'}V</span>
+                                  <span className="ml-1 font-mono">{formatVoltage(component.voltage || 0)}</span>
                                 </div>
                                 <div>
                                   <span className="text-gray-500 dark:text-dark-text-muted">Current:</span>
-                                  <span className="ml-1 font-mono">{((component.current || 0) * 1000).toFixed(1)}mA</span>
+                                  <span className="ml-1 font-mono">{formatCurrent(component.current || 0)}</span>
                                 </div>
                                 <div>
                                   <span className="text-gray-500 dark:text-dark-text-muted">Status:</span>

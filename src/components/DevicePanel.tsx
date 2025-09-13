@@ -18,6 +18,7 @@ import {
   isMicrocontrollerRunning
 } from '../systems/ElectricalSystem'
 import { crdtService } from '../services/CRDTService'
+import { formatCurrent, formatPower, formatVoltage } from '../utils/electricalFormatting'
 
 interface Microcontroller {
   id: string
@@ -1365,7 +1366,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                                       </div>
                                       <div className="text-right">
                                         <div className="font-mono">
-                                          {pinVoltage.toFixed(1)}V {pinCurrent.toFixed(1)}A {pinPower.toFixed(1)}W
+                                          {formatVoltage(pinVoltage)} {formatCurrent(pinCurrent)} {formatPower(pinPower)}
                                         </div>
                                         <div className="text-gray-500 dark:text-gray-400">
                                           {pinMode} {pinStatus}
@@ -1427,12 +1428,12 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                             </div>
                             <div className="text-right text-xs">
                               <div className={isOverCurrent ? 'text-red-600 font-bold' : ''}>
-                                {wire.current.toFixed(3)}A / {wire.maxCurrent}A
+                                {formatCurrent(wire.current)} / {formatCurrent(wire.maxCurrent)}
                               </div>
                               <div className={isOverPower ? 'text-red-600 font-bold' : ''}>
-                                {wire.power.toFixed(3)}W / {wire.maxPower}W
+                                {formatPower(wire.power)} / {formatPower(wire.maxPower)}
                               </div>
-                              <div>{wire.voltage.toFixed(3)}V</div>
+                              <div>{formatVoltage(wire.voltage)}</div>
                             </div>
                           </div>
                           
