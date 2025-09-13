@@ -1,0 +1,218 @@
+{
+  "module": "Motor",
+  "gridX": 4,
+  "gridY": 3,
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "isConnectable": true,
+      "type": "VCC",
+      "pin": "VCC",
+      "isPowered": false,
+      "isPowerable": true,
+      "voltage": 12.0,
+      "current": 2000
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "isConnectable": true,
+      "type": "GND",
+      "pin": "GND",
+      "isPowered": false,
+      "isGroundable": true,
+      "voltage": 0.0,
+      "current": 2000
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "isConnectable": true,
+      "type": "PWM",
+      "pin": "PWM",
+      "isPowered": false,
+      "voltage": 5.0,
+      "current": 20
+    },
+    {
+      "x": 3,
+      "y": 0,
+      "isConnectable": true,
+      "type": "GPIO",
+      "pin": "DIR",
+      "isPowered": false,
+      "voltage": 3.3,
+      "current": 20
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "isConnectable": false,
+      "type": "BODY",
+      "background": "#2D3748"
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "isConnectable": false,
+      "type": "BODY",
+      "background": "#2D3748"
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "isConnectable": false,
+      "type": "BODY",
+      "background": "#2D3748"
+    },
+    {
+      "x": 3,
+      "y": 1,
+      "isConnectable": false,
+      "type": "BODY",
+      "background": "#2D3748"
+    },
+    {
+      "x": 0,
+      "y": 2,
+      "isConnectable": false,
+      "type": "SHAFT",
+      "background": "#4A5568"
+    },
+    {
+      "x": 1,
+      "y": 2,
+      "isConnectable": false,
+      "type": "SHAFT",
+      "background": "#4A5568"
+    },
+    {
+      "x": 2,
+      "y": 2,
+      "isConnectable": false,
+      "type": "SHAFT",
+      "background": "#4A5568"
+    },
+    {
+      "x": 3,
+      "y": 2,
+      "isConnectable": false,
+      "type": "SHAFT",
+      "background": "#4A5568"
+    }
+  ],
+  "background": "#1A202C",
+  "css": "border: 2px solid #4A5568; border-radius: 4px;",
+  "category": "output",
+  "description": "6384 Brushless DC Motor - High performance motor for drones and robotics",
+  "manufacturer": "Generic",
+  "datasheet": "",
+  "properties": {
+    "inputVoltage": {
+      "default": 12.0,
+      "min": 3.0,
+      "max": 24.0,
+      "unit": "V",
+      "description": "Operating voltage"
+    },
+    "outputVoltage": {
+      "default": 0.0,
+      "min": 0.0,
+      "max": 24.0,
+      "unit": "V",
+      "description": "Back EMF voltage"
+    },
+    "current": {
+      "default": 2000,
+      "min": 100,
+      "max": 50000,
+      "unit": "mA",
+      "description": "Stall current"
+    },
+    "power": {
+      "default": 200.0,
+      "min": 1.0,
+      "max": 1000.0,
+      "unit": "W",
+      "description": "Power rating"
+    },
+    "kv": {
+      "default": 1000,
+      "min": 100,
+      "max": 10000,
+      "unit": "RPM/V",
+      "description": "Motor kV rating"
+    },
+    "width": {
+      "default": 63,
+      "min": 10,
+      "max": 200,
+      "unit": "mm",
+      "description": "Motor stator width"
+    },
+    "height": {
+      "default": 84,
+      "min": 10,
+      "max": 200,
+      "unit": "mm",
+      "description": "Motor stator height"
+    },
+    "poles": {
+      "default": 14,
+      "min": 2,
+      "max": 50,
+      "unit": "poles",
+      "description": "Number of magnetic poles"
+    },
+    "resistance": {
+      "default": 0.1,
+      "min": 0.01,
+      "max": 10.0,
+      "unit": "Ω",
+      "description": "Phase resistance"
+    },
+    "maxRPM": {
+      "default": 20000,
+      "min": 1000,
+      "max": 100000,
+      "unit": "RPM",
+      "description": "Maximum safe RPM"
+    },
+    "weight": {
+      "default": 150,
+      "min": 10,
+      "max": 2000,
+      "unit": "g",
+      "description": "Motor weight"
+    },
+    "shaftDiameter": {
+      "default": 5.0,
+      "min": 1.0,
+      "max": 20.0,
+      "unit": "mm",
+      "description": "Shaft diameter"
+    },
+    "mountingHoles": {
+      "default": 4,
+      "min": 2,
+      "max": 8,
+      "unit": "holes",
+      "description": "Number of mounting holes"
+    },
+    "efficiency": {
+      "default": 85.0,
+      "min": 50.0,
+      "max": 95.0,
+      "unit": "%",
+      "description": "Motor efficiency"
+    },
+    "operatingTemp": {
+      "default": 80.0,
+      "min": -20.0,
+      "max": 150.0,
+      "unit": "°C",
+      "description": "Maximum operating temperature"
+    }
+  }
+}

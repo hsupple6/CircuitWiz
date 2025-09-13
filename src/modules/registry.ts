@@ -1,4 +1,11 @@
-import { ModuleDefinition } from './types'
+import { ModuleDefinition, ModuleType } from './types'
+
+// Import type definitions
+import { MicrocontrollerType } from './types/Microcontroller'
+import { OutputType, MotorType } from './types/Output'
+import { PowerType } from './types/Power'
+import { SensorType } from './types/Sensor'
+// import { ConnectorType } from './types/Connector' // Not used yet
 
 // Import all module definitions
 import ESP32 from './definitions/ESP32.json'
@@ -9,37 +16,101 @@ import TemperatureSensor from './definitions/TemperatureSensor.json'
 import Switch from './definitions/Switch.json'
 import PowerSupply from './definitions/PowerSupply.json'
 import Resistor from './definitions/Resistor.json'
+import Motor from './definitions/Motor.json'
 
-// Module registry - automatically loads all JSON definitions
-export const moduleRegistry: Record<string, ModuleDefinition> = {
-  'ESP32': ESP32 as ModuleDefinition,
-  'Arduino Uno': ArduinoUno as ModuleDefinition,
-  'Battery': Battery as ModuleDefinition,
-  'LED': LED as ModuleDefinition,
-  'Temperature Sensor': TemperatureSensor as ModuleDefinition,
-  'Switch': Switch as ModuleDefinition,
-  'PowerSupply': PowerSupply as ModuleDefinition,
-  'Resistor': Resistor as ModuleDefinition
+// Enhanced registry with both JSON and Type definitions
+export interface ModuleRegistryEntry {
+  definition: ModuleDefinition  // JSON definition (visual/placement)
+  type?: ModuleType            // Type definition (parameters/validation)
+  category: string
 }
 
-// Helper function to get module by name
+export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
+  'ESP32': {
+    definition: ESP32 as ModuleDefinition,
+    type: MicrocontrollerType,
+    category: 'microcontrollers'
+  },
+  'Arduino Uno': {
+    definition: ArduinoUno as ModuleDefinition,
+    type: MicrocontrollerType,
+    category: 'microcontrollers'
+  },
+  'Battery': {
+    definition: Battery as ModuleDefinition,
+    type: PowerType,
+    category: 'power'
+  },
+  'LED': {
+    definition: LED as ModuleDefinition,
+    type: OutputType,
+    category: 'output'
+  },
+  'Temperature Sensor': {
+    definition: TemperatureSensor as ModuleDefinition,
+    type: SensorType,
+    category: 'sensors'
+  },
+  'Switch': {
+    definition: Switch as ModuleDefinition,
+    category: 'connectors'
+  },
+  'PowerSupply': {
+    definition: PowerSupply as ModuleDefinition,
+    type: PowerType,
+    category: 'power'
+  },
+  'Resistor': {
+    definition: Resistor as ModuleDefinition,
+    category: 'passive'
+  },
+  'Motor': {
+    definition: Motor as ModuleDefinition,
+    type: MotorType,
+    category: 'output'
+  }
+}
+
+// Helper function to get module by name (backward compatibility)
 export const getModule = (name: string): ModuleDefinition | undefined => {
+  return moduleRegistry[name]?.definition
+}
+
+// Helper function to get module with both definition and type
+export const getModuleWithType = (name: string): ModuleRegistryEntry | undefined => {
   return moduleRegistry[name]
 }
 
-// Helper function to get all modules
+// Helper function to get just the type definition
+export const getModuleType = (name: string): ModuleType | undefined => {
+  return moduleRegistry[name]?.type
+}
+
+// Helper function to get all modules (backward compatibility)
 export const getAllModules = (): ModuleDefinition[] => {
+  return Object.values(moduleRegistry).map(entry => entry.definition)
+}
+
+// Helper function to get all modules with types
+export const getAllModulesWithTypes = (): ModuleRegistryEntry[] => {
   return Object.values(moduleRegistry)
 }
 
-// Helper function to get modules by category
+// Helper function to get modules by category (backward compatibility)
 export const getModulesByCategory = (category: string): ModuleDefinition[] => {
-  return Object.values(moduleRegistry).filter(module => module.category === category)
+  return Object.values(moduleRegistry)
+    .filter(entry => entry.category === category)
+    .map(entry => entry.definition)
+}
+
+// Helper function to get modules with types by category
+export const getModulesWithTypesByCategory = (category: string): ModuleRegistryEntry[] => {
+  return Object.values(moduleRegistry).filter(entry => entry.category === category)
 }
 
 // Helper function to get all categories
 export const getCategories = (): string[] => {
-  const categories = new Set(Object.values(moduleRegistry).map(module => module.category))
+  const categories = new Set(Object.values(moduleRegistry).map(entry => entry.category))
   return Array.from(categories).sort()
 }
 

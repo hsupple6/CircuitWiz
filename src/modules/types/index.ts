@@ -161,3 +161,10 @@ export interface WiringState {
     segments: Array<{ x: number; y: number }>
   } | null
 }
+
+// Export all component types
+export * from './Power'
+export * from './Sensor'
+export * from './Microcontroller'
+export * from './Connector'
+export * from './Output'

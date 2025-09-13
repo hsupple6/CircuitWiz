@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
-import { getCategories, getModulesByCategory } from '../modules/registry'
+import { ChevronDown, ChevronRight, Settings } from 'lucide-react'
+import { getCategories, getModulesWithTypesByCategory } from '../modules/registry'
 import { DynamicModule } from './DynamicModule'
 import { ModuleDefinition } from '../modules/types'
 
@@ -56,7 +56,8 @@ export function ComponentPalette({ selectedModule, onModuleSelect }: ComponentPa
       <div className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
           {categories.map((category) => {
-            const modules = getModulesByCategory(category)
+            const moduleEntries = getModulesWithTypesByCategory(category)
+            const modules = moduleEntries.map(entry => entry.definition)
             const isExpanded = expandedCategories.has(category)
             
             return (
@@ -80,16 +81,20 @@ export function ComponentPalette({ selectedModule, onModuleSelect }: ComponentPa
                 {/* Category Modules */}
                 {isExpanded && (
                   <div className="p-2 space-y-1">
-                    {modules.map((module) => (
-                      <div
-                        key={module.module}
-                        onClick={() => handleModuleClick(module)}
-                        className={`group cursor-pointer transition-all duration-200 ${
-                          selectedModule?.module === module.module
-                            ? 'ring-2 ring-primary-500 ring-offset-1 dark:ring-offset-dark-bg'
-                            : 'hover:shadow-md'
-                        }`}
-                      >
+                    {modules.map((module, index) => {
+                      const moduleEntry = moduleEntries[index]
+                      const hasTypeDefinition = !!moduleEntry.type
+                      
+                      return (
+                        <div
+                          key={module.module}
+                          onClick={() => handleModuleClick(module)}
+                          className={`group cursor-pointer transition-all duration-200 ${
+                            selectedModule?.module === module.module
+                              ? 'ring-2 ring-primary-500 ring-offset-1 dark:ring-offset-dark-bg'
+                              : 'hover:shadow-md'
+                          }`}
+                        >
                         <div className="bg-white dark:bg-dark-card border border-gray-200 dark:border-dark-border rounded-lg overflow-hidden hover:shadow-sm transition-shadow flex flex-col">
                           {/* Module Preview - Top section */}
                           <div className="h-24 flex items-center justify-center bg-gray-50 dark:bg-dark-bg overflow-hidden" data-module-preview>
@@ -104,9 +109,16 @@ export function ComponentPalette({ selectedModule, onModuleSelect }: ComponentPa
 
                           {/* Module Info - Bottom section (auto height) */}
                           <div className="p-2 select-none" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
-                            <h3 className="font-medium text-gray-900 dark:text-dark-text-primary text-xs truncate">
-                              {module.module}
-                            </h3>
+                            <div className="flex items-center justify-between">
+                              <h3 className="font-medium text-gray-900 dark:text-dark-text-primary text-xs truncate">
+                                {module.module}
+                              </h3>
+                              {hasTypeDefinition && (
+                                <div title="Configurable component">
+                                  <Settings className="w-3 h-3 text-blue-500" />
+                                </div>
+                              )}
+                            </div>
                             <p className="text-xs text-gray-500 dark:text-dark-text-muted">
                               {module.gridX} × {module.gridY} grid
                             </p>
@@ -118,7 +130,8 @@ export function ComponentPalette({ selectedModule, onModuleSelect }: ComponentPa
                           </div>
                         </div>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>
