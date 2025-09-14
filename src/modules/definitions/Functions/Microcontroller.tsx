@@ -39,18 +39,29 @@ export function MicrocontrollerVoltageFlow(
       }
       
       
-      // Check GPIO state - only generate voltage if pin is HIGH
+      // Check GPIO state - handle HIGH, LOW, and PWM (PULSING) states
       // If no GPIO states are provided (no program running), default to LOW
       const gpioState = gpioStates?.get(pinNumber)
-      const pinIsHigh = gpioState && gpioState.state === 'HIGH'
+      const pinState = gpioState?.state || 'LOW'
       
-      if (pinIsHigh) {
-        // Pin is HIGH - generate voltage (don't transfer input voltage)
+      if (pinState === 'HIGH') {
+        // Pin is HIGH - generate full voltage (don't transfer input voltage)
         // Use appropriate voltage based on microcontroller type
         const moduleType = component.moduleDefinition.module
         outputVoltage = moduleType.includes('ESP32') ? 3.3 : 5.0
         isPowered = true
         status = 'active'
+      } else if (pinState === 'PULSING') {
+        // Pin is PWM - output full voltage but with PWM throttle percentage
+        const moduleType = component.moduleDefinition.module
+        outputVoltage = moduleType.includes('ESP32') ? 3.3 : 5.0
+        isPowered = true
+        status = 'pwm'
+        
+        // Debug: Log PWM signal generation
+        const dutyCycle = gpioState?.value || 0.5 // Default to 50% duty cycle
+        const throttlePercent = dutyCycle * 100
+        console.log(`🔧 [MICROCONTROLLER] Pin ${pinNumber} PWM: ${outputVoltage}V (${throttlePercent.toFixed(1)}% throttle)`)
       } else {
         // Pin is LOW - no voltage output, regardless of input
         outputVoltage = 0
@@ -64,7 +75,8 @@ export function MicrocontrollerVoltageFlow(
         power: outputVoltage * circuitCurrent,
         status,
         isPowered,
-        isGrounded: false
+        isGrounded: false,
+        ...(pinState === 'PULSING' && { pwm: (gpioState?.value || 0.5) * 100 }) // Add PWM throttle percentage
       }
       
       componentUpdates.set(cellComponentId, componentUpdate)

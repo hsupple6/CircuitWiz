@@ -1434,6 +1434,11 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                                 {formatPower(wire.power)} / {formatPower(wire.maxPower)}
                               </div>
                               <div>{formatVoltage(wire.voltage)}</div>
+                              {wire.pwm !== undefined && (
+                                <div className="text-purple-600 font-medium">
+                                  PWM: {wire.pwm.toFixed(1)}%
+                                </div>
+                              )}
                             </div>
                           </div>
                           

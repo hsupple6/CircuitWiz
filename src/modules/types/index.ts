@@ -132,6 +132,7 @@ export interface WireSegment {
   gauge: number
   maxCurrent: number
   maxPower: number
+  pwm?: number // PWM throttle percentage (0-100)
 }
 
 export interface WireConnection {
@@ -149,6 +150,7 @@ export interface WireConnection {
   gauge: number
   maxCurrent: number
   maxPower: number
+  pwm?: number // PWM throttle percentage (0-100)
   parentId?: string // ID of the parent wire if this is a child wire
   childIds?: string[] // Array of child wire IDs
 }

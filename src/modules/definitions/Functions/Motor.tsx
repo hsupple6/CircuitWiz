@@ -188,32 +188,28 @@ export const calculateMotorElectricalProperties = (
     maxRPM: number
     efficiency: number
     poles: number
-  }
+  },
+  pwmThrottle?: number // PWM throttle percentage (0-100)
 ) => {
-  const { kv, resistance, maxRPM, efficiency } = motorProperties
+  const { maxRPM } = motorProperties
   
-  // Calculate instantaneous RPM
-  const theoreticalRPM = inputVoltage * kv
-  const actualRPM = Math.min(theoreticalRPM, maxRPM)
+  // BINARY PWM-to-RPM calculation: PWM% × Max RPM
+  let actualRPM = 0
+  let instantaneousTorque = 0
   
-  // Calculate back EMF (instantaneous)
-  const backEMF = actualRPM / kv
+  if (pwmThrottle !== undefined && pwmThrottle > 0) {
+    // DEAD SIMPLE: PWM% × Max RPM
+    actualRPM = (pwmThrottle / 100) * maxRPM
+    // Simple torque: scales with RPM
+    instantaneousTorque = (actualRPM / maxRPM) * 0.1 // 0.1 N⋅m at max RPM
+    
+    console.log(`[MOTOR] BINARY: ${pwmThrottle.toFixed(1)}% PWM → ${actualRPM.toFixed(0)} RPM`)
+  }
   
-  // Calculate instantaneous current draw
-  const voltageDrop = inputVoltage - backEMF
-  const motorCurrent = Math.max(0, voltageDrop / resistance)
-  
-  // Calculate instantaneous power
-  const inputPower = inputVoltage * motorCurrent
-  const outputPower = inputPower * (efficiency / 100)
-  
-  // Calculate instantaneous torque
-  const powerBasedTorque = actualRPM > 0 ? (outputPower * 60) / (2 * Math.PI * actualRPM) : 0
-  const torqueConstant = 9.549 / kv // N⋅m/A
-  const currentBasedTorque = motorCurrent * torqueConstant
-  const instantaneousTorque = Math.max(powerBasedTorque, currentBasedTorque)
-  
-  // Calculate additional characteristics
+  // Minimal calculations for display
+  const backEMF = actualRPM / 1000 // Simple back EMF
+  const motorCurrent = actualRPM > 0 ? 0.1 : 0 // Simple current
+  const inputPower = actualRPM > 0 ? 1.0 : 0 // Simple power
   const angularVelocity = (actualRPM * 2 * Math.PI) / 60 // rad/s
   const mechanicalPower = instantaneousTorque * angularVelocity // W
   
@@ -224,15 +220,15 @@ export const calculateMotorElectricalProperties = (
     actualRPM,
     instantaneousRPM: actualRPM,
     instantaneousTorque,
-    powerBasedTorque,
-    currentBasedTorque,
+    powerBasedTorque: instantaneousTorque,
+    currentBasedTorque: instantaneousTorque,
     angularVelocity,
     mechanicalPower,
     backEMF,
-    voltageDrop,
-    efficiency: efficiency,
-    speedConstant: kv,
-    torqueConstant: torqueConstant
+    voltageDrop: 0,
+    efficiency: 85,
+    speedConstant: 1000,
+    torqueConstant: 0.1
   }
 }
 

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { ModuleDefinition, WireConnection, WireSegment, WiringState } from '../modules/types'
 import { GPIOState } from '../services/QEMUEmulatorReal'
+import { DynamicGPIOState } from '../services/DynamicGPIO'
 import { useTheme } from '../contexts/ThemeContext'
 import { calculateElectricalFlow, ComponentState } from '../systems/ElectricalSystem'
 import { ElectricalValidator } from './ElectricalValidator'
@@ -11,6 +12,231 @@ import { logger } from '../services/Logger'
 import { crdtService } from '../services/CRDTService'
 import { getCRDTSaveService } from '../services/CRDTSaveService'
 import { Eraser } from 'lucide-react'
+
+// Debug Panel Component for Motor PWM Diagnostics
+interface MotorPWMDebugPanelProps {
+  gridData: GridCell[][]
+  wires: WireConnection[]
+  componentStates: Map<string, ComponentState>
+}
+
+function MotorPWMDebugPanel({ gridData, wires, componentStates }: MotorPWMDebugPanelProps) {
+  // Find all motor components - check for various possible motor types
+  const motors = []
+  const possibleMotorTypes = ['Motor', 'motor', 'Brushless Motor', 'brushless motor', 'BLDC', 'bldc', 'DC Motor', 'dc motor', 'Output']
+  
+  for (let y = 0; y < gridData.length; y++) {
+    for (let x = 0; x < gridData[y].length; x++) {
+      const cell = gridData[y][x]
+      if (cell?.occupied && cell.componentType && possibleMotorTypes.includes(cell.componentType)) {
+        // For "Output" type, check if it's actually a motor by looking at the module definition
+        if (cell.componentType === 'Output') {
+          const moduleDef = cell.moduleDefinition
+          if (moduleDef && (moduleDef.module === 'Motor' || moduleDef.module === 'motor' || 
+                           moduleDef.module?.toLowerCase().includes('motor') ||
+                           moduleDef.module?.toLowerCase().includes('bldc'))) {
+            motors.push({
+              id: cell.componentId,
+              position: { x, y },
+              cell
+            })
+          }
+        } else {
+          motors.push({
+            id: cell.componentId,
+            position: { x, y },
+            cell
+          })
+        }
+      }
+    }
+  }
+
+  // Find all PWM wires (wires with PWM data)
+  const pwmWires = wires.filter(wire => wire.pwm !== undefined)
+
+  // Find Arduino components
+  const arduinos = []
+  for (let y = 0; y < gridData.length; y++) {
+    for (let x = 0; x < gridData[y].length; x++) {
+      const cell = gridData[y][x]
+      if (cell?.occupied && cell.componentType === 'Microcontroller') {
+        arduinos.push({
+          id: cell.componentId,
+          position: { x, y },
+          cell
+        })
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* PWM Connection Status */}
+      <div>
+        <h4 className="font-semibold text-orange-400 mb-2">🔗 PWM Connection Status</h4>
+        <div className="bg-gray-800 p-2 rounded text-xs">
+          {pwmWires.length > 0 ? (
+            <div className="text-green-300">
+              ✅ PWM signals detected: {pwmWires.length} wire(s)
+              {pwmWires.map((wire, index) => (
+                <div key={index} className="ml-2">
+                  Wire {wire.id}: {wire.pwm?.toFixed(1)}% PWM
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-red-300">❌ No PWM signals detected</div>
+          )}
+        </div>
+      </div>
+
+      {/* Motors Section */}
+      <div>
+        <h4 className="font-semibold text-yellow-400 mb-2">🔌 Motors Found: {motors.length}</h4>
+        {motors.length === 0 ? (
+          <div className="bg-gray-800 p-2 rounded text-xs text-red-300">
+            ❌ No motors found. Checking for: {possibleMotorTypes.join(', ')}
+          </div>
+        ) : (
+          motors.map((motor, index) => {
+            const pwmPinPosition = { x: motor.position.x + 2, y: motor.position.y + 0 }
+            const vccPinPosition = { x: motor.position.x + 0, y: motor.position.y + 0 }
+            
+            const connectedWires = wires.filter(wire => 
+              wire.segments.some(segment => 
+                (segment.from.x === pwmPinPosition.x && segment.from.y === pwmPinPosition.y) ||
+                (segment.to.x === pwmPinPosition.x && segment.to.y === pwmPinPosition.y)
+              )
+            )
+            
+            const vccWires = wires.filter(wire => 
+              wire.segments.some(segment => 
+                (segment.from.x === vccPinPosition.x && segment.from.y === vccPinPosition.y) ||
+                (segment.to.x === vccPinPosition.x && segment.to.y === vccPinPosition.y)
+              )
+            )
+            
+            // Use the same key construction logic as the electrical system
+            const cellComponentId = `${motor.id}-${motor.cell.cellIndex || 0}`
+            const motorState = componentStates.get(cellComponentId)
+            const hasPWMConnection = connectedWires.some(wire => wire.pwm !== undefined && wire.pwm > 0)
+            const hasVCCConnection = vccWires.some(wire => wire.voltage > 0)
+            
+            // Debug: Show VCC wire details and motor state
+            console.log(`[DEBUG] Motor ${motor.id} VCC wires:`, vccWires.map(w => ({ id: w.id, voltage: w.voltage })))
+            console.log(`[DEBUG] Motor ${motor.id} state key: ${cellComponentId}`)
+            console.log(`[DEBUG] Motor ${motor.id} state:`, motorState)
+            console.log(`[DEBUG] Motor ${motor.id} componentStates keys:`, Array.from(componentStates.keys()).filter(k => k.includes(motor.id || '')))
+            
+            return (
+              <div key={index} className="bg-gray-800 p-2 rounded text-xs">
+                <div className="font-mono text-blue-300">Motor {index + 1}</div>
+                <div>ID: {motor.id}</div>
+                <div>State Key: {cellComponentId}</div>
+                <div>Type: {motor.cell.componentType}</div>
+                <div>Position: ({motor.position.x}, {motor.position.y})</div>
+                <div>VCC Pin: ({vccPinPosition.x}, {vccPinPosition.y})</div>
+                <div>PWM Pin: ({pwmPinPosition.x}, {pwmPinPosition.y})</div>
+                <div>Connected Wires: {connectedWires.length}</div>
+                <div className={hasVCCConnection ? "text-green-300" : "text-red-300"}>
+                  VCC Connection: {hasVCCConnection ? "✅ Connected" : "❌ No VCC"}
+                </div>
+                <div className={hasPWMConnection ? "text-green-300" : "text-red-300"}>
+                  PWM Connection: {hasPWMConnection ? "✅ Connected" : "❌ No PWM"}
+                </div>
+                <div className={hasVCCConnection && hasPWMConnection ? "text-green-300" : "text-red-300"}>
+                  Motor Powered: {hasVCCConnection && hasPWMConnection ? "✅ Yes" : "❌ No"}
+                </div>
+                {connectedWires.map((wire, wireIndex) => (
+                  <div key={wireIndex} className="ml-2 text-green-300">
+                    PWM Wire {wire.id}: PWM {wire.pwm?.toFixed(1)}%, Voltage {wire.voltage?.toFixed(1)}V
+                  </div>
+                ))}
+                {vccWires.map((wire, wireIndex) => (
+                  <div key={`vcc-${wireIndex}`} className="ml-2 text-blue-300">
+                    VCC Wire {wire.id}: Voltage {wire.voltage?.toFixed(1)}V
+                  </div>
+                ))}
+                {motorState && (
+                  <div className="mt-1">
+                    <div className="text-yellow-300">RPM: {motorState.motorRPM?.toFixed(0) || 0}</div>
+                    <div className="text-yellow-300">Torque: {motorState.motorTorque?.toFixed(3) || 0} N⋅m</div>
+                    <div className="text-gray-400">Status: {motorState.status}</div>
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      {/* PWM Wires Section */}
+      <div>
+        <h4 className="font-semibold text-green-400 mb-2">⚡ PWM Wires: {pwmWires.length}</h4>
+        {pwmWires.map((wire, index) => (
+          <div key={index} className="bg-gray-800 p-2 rounded text-xs">
+            <div className="font-mono text-green-300">Wire {wire.id}</div>
+            <div>PWM: {wire.pwm?.toFixed(1)}%</div>
+            <div>Voltage: {wire.voltage?.toFixed(1)}V</div>
+            <div>Segments: {wire.segments.length}</div>
+            {wire.segments.map((segment, segIndex) => (
+              <div key={segIndex} className="ml-2 text-gray-400">
+                {segIndex}: ({segment.from.x},{segment.from.y}) → ({segment.to.x},{segment.to.y})
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* Arduino Section */}
+      <div>
+        <h4 className="font-semibold text-blue-400 mb-2">🤖 Arduino: {arduinos.length}</h4>
+        {arduinos.map((arduino, index) => (
+          <div key={index} className="bg-gray-800 p-2 rounded text-xs">
+            <div className="font-mono text-blue-300">Arduino {index + 1}</div>
+            <div>ID: {arduino.id}</div>
+            <div>Position: ({arduino.position.x}, {arduino.position.y})</div>
+          </div>
+        ))}
+      </div>
+
+      {/* All Components Found */}
+      <div>
+        <h4 className="font-semibold text-cyan-400 mb-2">🔍 All Components Found</h4>
+        <div className="bg-gray-800 p-2 rounded text-xs">
+          {(() => {
+            const componentTypes = new Map<string, number>()
+            for (let y = 0; y < gridData.length; y++) {
+              for (let x = 0; x < gridData[y].length; x++) {
+                const cell = gridData[y][x]
+                if (cell?.occupied && cell.componentType) {
+                  const type = cell.componentType
+                  componentTypes.set(type, (componentTypes.get(type) || 0) + 1)
+                }
+              }
+            }
+            return Array.from(componentTypes.entries()).map(([type, count]) => (
+              <div key={type} className="text-cyan-300">
+                {type}: {count} found
+              </div>
+            ))
+          })()}
+        </div>
+      </div>
+
+      {/* System Info */}
+      <div>
+        <h4 className="font-semibold text-purple-400 mb-2">📊 System Info</h4>
+        <div className="bg-gray-800 p-2 rounded text-xs">
+          <div>Total Wires: {wires.length}</div>
+          <div>Total Components: {componentStates.size}</div>
+          <div>Grid Size: {gridData.length} × {gridData[0]?.length || 0}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 interface Project {
   id: number
@@ -23,7 +249,7 @@ interface Project {
 interface SimulationState {
   isRunning: boolean
   currentMicrocontroller: any | null
-  gpioStates: Map<number, GPIOState>
+  gpioStates: Map<number, GPIOState | DynamicGPIOState>
   wireStates: Map<string, 'active' | 'inactive'>
   startTime: Date | null
 }
@@ -50,6 +276,9 @@ interface ProjectGridProps {
   onCircuitPathwaysChange?: (pathways: any[]) => void
   onWiresChange?: (wires: any[]) => void
   onCircuitInfoChange?: (info: any) => void
+  // Zoom controls
+  zoom?: number
+  onZoomChange?: (zoom: number) => void
 }
 
 interface GridCell {
@@ -82,13 +311,27 @@ export function ProjectGrid({
   onProjectDataChange,
   onCircuitPathwaysChange,
   onWiresChange,
-  onCircuitInfoChange
+  onCircuitInfoChange,
+  zoom: externalZoom,
+  onZoomChange
 }: ProjectGridProps) {
   const { isDark } = useTheme()
   const gridRef = useRef<HTMLDivElement>(null)
   const dragComponentRef = useRef<any>(null)
   const [gridSize, setGridSize] = useState({ width: 50, height: 50 }) // Much smaller initial grid
-  const [zoom, setZoom] = useState(1)
+  const [internalZoom, setInternalZoom] = useState(1)
+  
+  // Use external zoom if provided, otherwise use internal zoom
+  const zoom = externalZoom !== undefined ? externalZoom : internalZoom
+  
+  // Update zoom function that handles both internal and external zoom
+  const updateZoom = useCallback((newZoom: number) => {
+    if (onZoomChange) {
+      onZoomChange(newZoom)
+    } else {
+      setInternalZoom(newZoom)
+    }
+  }, [onZoomChange])
   const [gridData, setGridData] = useState<GridCell[][]>(() => {
     // Use initial data if provided, otherwise create empty grid
     if (initialGridData && initialGridData.length > 0) {
@@ -139,6 +382,8 @@ export function ProjectGrid({
   const [snapToGrid] = useState(true) // Keep for internal logic but don't expose UI
   const [electricalValidations, setElectricalValidations] = useState<any[]>([])
   const [showTutorial, setShowTutorial] = useState(false)
+  const [showDebugPanel, setShowDebugPanel] = useState(false)
+  const [hoveredTile, setHoveredTile] = useState<{ x: number; y: number; cell: GridCell | null } | null>(null)
   const [componentStates, setComponentStates] = useState<Map<string, ComponentState>>(() => {
     if (initialComponentStates) {
       return new Map(Object.entries(initialComponentStates))
@@ -194,9 +439,9 @@ export function ProjectGrid({
     if (!gridRef.current) return { startX: 0, endX: 50, startY: 0, endY: 50 }
     
     const rect = gridRef.current.getBoundingClientRect()
-    // Use actual cell size with zoom since grid cells are sized with 2.5 * zoom vw
-    // Grid cells are sized with 2.5vw, so we need to convert this to pixels
-    const baseCellSize = (window.innerWidth * 2.5) / 100
+    // Get actual cell size from DOM for accurate calculations
+    const firstCell = gridRef.current.querySelector('[data-grid-cell]') as HTMLElement
+    const actualCellSize = firstCell ? firstCell.offsetWidth : (window.innerWidth * 2.5) / 100
     
     // Calculate visible area with buffer, accounting for the transform
     const buffer = 5 // Extra cells to render for smooth scrolling
@@ -209,11 +454,11 @@ export function ProjectGrid({
     const visibleRight = (rect.width - translateX) / zoom
     const visibleBottom = (rect.height - translateY) / zoom
     
-    // Convert to grid coordinates
-    const startX = Math.max(0, Math.floor(visibleLeft / baseCellSize) - buffer)
-    const endX = Math.min(gridSize.width, Math.ceil(visibleRight / baseCellSize) + buffer)
-    const startY = Math.max(0, Math.floor(visibleTop / baseCellSize) - buffer)
-    const endY = Math.min(gridSize.height, Math.ceil(visibleBottom / baseCellSize) + buffer)
+    // Convert to grid coordinates using actual cell size
+    const startX = Math.max(0, Math.floor(visibleLeft / actualCellSize) - buffer)
+    const endX = Math.min(gridSize.width, Math.ceil(visibleRight / actualCellSize) + buffer)
+    const startY = Math.max(0, Math.floor(visibleTop / actualCellSize) - buffer)
+    const endY = Math.min(gridSize.height, Math.ceil(visibleBottom / actualCellSize) + buffer)
     
     return { startX, endX, startY, endY }
   }, [gridOffset, zoom, gridSize.width, gridSize.height])
@@ -394,28 +639,35 @@ export function ProjectGrid({
     return () => document.removeEventListener('dragstart', handleDragStart)
   }, [])
 
-  // Handle wheel zoom - DISABLED (too buggy)
-  // const handleWheel = useCallback((e: WheelEvent) => {
-  //   e.preventDefault()
-  //   
-  //   // Check if mouse is over the grid
-  //   if (gridRef.current && gridRef.current.contains(e.target as Node)) {
-  //     const delta = e.deltaY
-  //     const zoomStep = 0.1
-  //     
-  //     if (delta < 0) {
-  //       // Zoom in
-  //       const newZoom = Math.min(zoom + zoomStep, 3)
-  //       setZoom(newZoom)
-  //       expandGrid(newZoom)
-  //     } else {
-  //       // Zoom out
-  //       const newZoom = Math.max(zoom - zoomStep, 0.25)
-  //       setZoom(newZoom)
-  //       expandGrid(newZoom)
-  //     }
-  //   }
-  // }, [zoom, expandGrid])
+  // Handle wheel zoom
+  const handleWheel = useCallback((e: WheelEvent) => {
+    // Check if mouse is over the debug panel or other UI elements
+    const target = e.target as Element
+    if (target.closest('[data-debug-panel]') || target.closest('[data-control-buttons]') || target.closest('[data-hover-tile]')) {
+      // Don't prevent default or handle zoom when over UI elements
+      return
+    }
+    
+    e.preventDefault()
+    
+    // Check if mouse is over the grid
+    if (gridRef.current && gridRef.current.contains(e.target as Node)) {
+      const delta = e.deltaY
+      const zoomStep = 0.1
+      
+      if (delta < 0) {
+        // Zoom in
+        const newZoom = Math.min(zoom + zoomStep, 3)
+        updateZoom(newZoom)
+        expandGrid(newZoom)
+      } else {
+        // Zoom out
+        const newZoom = Math.max(zoom - zoomStep, 0.25)
+        updateZoom(newZoom)
+        expandGrid(newZoom)
+      }
+    }
+  }, [zoom, expandGrid, updateZoom])
 
   // Handle touch/pinch zoom
   const handleTouchStart = useCallback((e: TouchEvent) => {
@@ -453,7 +705,7 @@ export function ProjectGrid({
         
         if (Math.abs(zoomStep) > 0.05) { // Only zoom if significant change
           const newZoom = Math.max(0.25, Math.min(3, zoom + zoomStep))
-          setZoom(newZoom)
+          updateZoom(newZoom)
           expandGrid(newZoom)
           
           // Update initial distance for continuous pinch
@@ -469,17 +721,17 @@ export function ProjectGrid({
   useEffect(() => {
     const gridElement = gridRef.current
     if (gridElement) {
-      // gridElement.addEventListener('wheel', handleWheel, { passive: false }) // DISABLED - too buggy
+      gridElement.addEventListener('wheel', handleWheel, { passive: false })
       gridElement.addEventListener('touchstart', handleTouchStart, { passive: true })
       gridElement.addEventListener('touchmove', handleTouchMove, { passive: false })
       
       return () => {
-        // gridElement.removeEventListener('wheel', handleWheel) // DISABLED - too buggy
+        gridElement.removeEventListener('wheel', handleWheel)
         gridElement.removeEventListener('touchstart', handleTouchStart)
         gridElement.removeEventListener('touchmove', handleTouchMove)
       }
     }
-  }, [handleTouchStart, handleTouchMove]) // Removed handleWheel from dependencies
+  }, [handleWheel, handleTouchStart, handleTouchMove])
 
   // Handle mouse pan
   const handleMouseDown = useCallback((e: MouseEvent) => {
@@ -599,6 +851,14 @@ export function ProjectGrid({
     // Snap to grid if enabled
     const { x, y } = snapToGridCoords(rawX, rawY)
     
+    // Update hovered tile display
+    if (x >= 0 && x < gridSize.width && y >= 0 && y < gridSize.height) {
+      const cell = gridData[y]?.[x]
+      setHoveredTile({ x, y, cell: cell || null })
+    } else {
+      setHoveredTile(null)
+    }
+    
     // Handle delete mode hover
     if (deleteMode) {
       const cell = gridData[y]?.[x]
@@ -629,7 +889,7 @@ export function ProjectGrid({
       const currentSegments = [...wiringState.currentConnection.segments, { x: wireGridX, y: wireGridY }]
       setWirePreview(currentSegments)
     }
-  }, [selectedModule, zoom, gridOffset, wiringState, snapToGridCoords, deleteMode, gridData])
+  }, [selectedModule, zoom, gridOffset, wiringState, snapToGridCoords, deleteMode, gridData, gridSize.width, gridSize.height])
 
   // Handle clicking on placed components
   const handleComponentClick = useCallback((e: React.MouseEvent, componentId: string, cellIndex: number) => {
@@ -762,7 +1022,7 @@ export function ProjectGrid({
     } finally {
       setIsCalculating(false)
     }
-  }, [gridData, wires, isCalculating])
+  }, [gridData, wires, simulationState.gpioStates, isCalculating])
 
   // Calculate electrical flow whenever grid or wires change (with debouncing)
   useEffect(() => {
@@ -799,7 +1059,6 @@ export function ProjectGrid({
 
   // Wire system functions
   const startWiring = useCallback((x: number, y: number) => {
-    logger.debug(`Starting wiring at: (${x}, ${y})`)
     setWiringState({
       isWiring: true,
       currentConnection: {
@@ -844,6 +1103,113 @@ export function ProjectGrid({
       onModuleSelect(null)
     }
   }, [wiringState.isWiring, cancelWiring, selectedModule, onModuleSelect])
+
+  // PWM Test function
+  const handlePWMTest = useCallback(() => {
+    console.log('🔧 PWM Test: Sending PWM signal from Arduino UNO pin D13')
+    console.log('🔧 Grid data length:', gridData.length, 'x', gridData[0]?.length)
+    
+    // Find Arduino UNO microcontroller in the grid
+    let arduinoUno = null
+    let foundComponents = []
+    let allOccupiedCells = []
+    
+    for (let y = 0; y < gridData.length; y++) {
+      for (let x = 0; x < gridData[y].length; x++) {
+        const cell = gridData[y][x]
+        if (cell?.occupied) {
+          allOccupiedCells.push({
+            position: { x, y },
+            componentType: cell.componentType,
+            module: cell.moduleDefinition?.module,
+            cellIndex: cell.cellIndex,
+            componentId: cell.componentId,
+            moduleDefinition: cell.moduleDefinition
+          })
+          
+          if (cell.componentType === 'Microcontroller') {
+            foundComponents.push({
+              module: cell.moduleDefinition?.module,
+              componentType: cell.componentType,
+              position: { x, y },
+              cellIndex: cell.cellIndex,
+              componentId: cell.componentId
+            })
+            
+            console.log('🔧 Found microcontroller at', { x, y }, ':', {
+              module: cell.moduleDefinition?.module,
+              componentType: cell.componentType,
+              cellIndex: cell.cellIndex
+            })
+            
+            // Check if this is an Arduino UNO (either by module name or component type)
+            if (cell.moduleDefinition?.module?.toLowerCase().includes('arduino') || 
+                cell.moduleDefinition?.module?.toLowerCase().includes('uno')) {
+              arduinoUno = cell
+              console.log('🔧 Arduino UNO found at', { x, y }, 'module:', cell.moduleDefinition?.module)
+              break
+            }
+          }
+        }
+      }
+      if (arduinoUno) break
+    }
+    
+    console.log('🔧 All occupied cells:', allOccupiedCells)
+    console.log('🔧 Found microcontrollers:', foundComponents)
+    
+    // Additional debugging for Arduino detection
+    if (foundComponents.length === 0) {
+      console.log('🔧 No microcontrollers found. Checking all occupied cells...')
+      allOccupiedCells.forEach(cell => {
+        console.log('🔧 Cell at', cell.position, ':', {
+          componentType: cell.componentType,
+          module: cell.module,
+          category: cell.moduleDefinition?.category
+        })
+      })
+    }
+    
+    if (!arduinoUno) {
+      alert(`Please place an Arduino UNO microcontroller on the grid first!\n\nFound microcontrollers: ${foundComponents.map(c => c.module || 'Unknown').join(', ') || 'None'}`)
+      return
+    }
+    
+    // Create a PWM signal for pin D13 (pin 13)
+    const pwmSignal: DynamicGPIOState = {
+      pin: 13,
+      state: 'PULSING',
+      value: 0.75, // 75% duty cycle
+      timestamp: Date.now(),
+      pattern: 'STATIC',
+      frequency: 1000, // 1kHz
+      dutyCycle: 0.75
+    }
+    
+    // Update the simulation state with PWM signal
+    setSimulationState(prev => {
+      const newGPIOStates = new Map(prev.gpioStates)
+      newGPIOStates.set(13, pwmSignal)
+      
+      console.log('🔧 PWM Test: Setting GPIO states:', Array.from(newGPIOStates.entries()))
+      
+      // Trigger electrical calculation immediately after state update
+      setTimeout(() => {
+        console.log('🔧 PWM Test: Triggering electrical calculation...')
+        console.log('🔧 PWM Test: Current GPIO states:', Array.from(newGPIOStates.entries()))
+        performElectricalCalculation()
+      }, 50) // Reduced timeout for faster response
+      
+      return {
+        ...prev,
+        gpioStates: newGPIOStates,
+        isRunning: true
+      }
+    })
+    
+    console.log('🔧 PWM Test: PWM signal sent to pin D13 with 75% duty cycle')
+    console.log('🔧 PWM Test: Check motor RPM - should show PWM activity!')
+  }, [gridData, performElectricalCalculation, simulationState])
 
   const deleteComponent = useCallback((componentId: string) => {
     setGridData(prev => {
@@ -1003,7 +1369,8 @@ export function ProjectGrid({
       voltage: moduleCell?.voltage || 0,
       current: moduleCell?.current || 0,
       isPowered: moduleCell?.isPowered || false,
-      componentType: cell.componentType
+      componentType: cell.componentType,
+      pinType: moduleCell?.type || 'UNKNOWN'
     }
     
     return props
@@ -1025,15 +1392,19 @@ export function ProjectGrid({
       
       // Check if trying to connect powerable to groundable
       // Exception: Resistors can connect to both powerable and groundable components
+      // Exception: GND to GND connections are always allowed
       const startIsResistor = startProps.componentType === 'Resistor'
       const endIsResistor = endProps.componentType === 'Resistor'
+      const startIsGND = startProps.pinType === 'GND'
+      const endIsGND = endProps.pinType === 'GND'
+      const isGNDToGND = (startIsGND && endIsGND) || (startProps.isGroundable && endProps.isGroundable)
       
-      if (startProps.isPowerable && endProps.isGroundable && !startIsResistor && !endIsResistor) {
+      if (startProps.isPowerable && endProps.isGroundable && !startIsResistor && !endIsResistor && !isGNDToGND) {
         alert('❌ Cannot connect powerable terminal to groundable terminal!')
         cancelWiring()
         return
       }
-      if (startProps.isGroundable && endProps.isPowerable && !startIsResistor && !endIsResistor) {
+      if (startProps.isGroundable && endProps.isPowerable && !startIsResistor && !endIsResistor && !isGNDToGND) {
         alert('❌ Cannot connect groundable terminal to powerable terminal!')
         cancelWiring()
         return
@@ -1045,12 +1416,15 @@ export function ProjectGrid({
       
       if (startWire) {
         // Wire to wire connection - check for conflicts
-        if (startWire.isPowerable && endWire.isGroundable) {
+        // Exception: GND to GND wire connections are always allowed
+        const isGNDToGNDWire = (startWire.isGroundable && endWire.isGroundable)
+        
+        if (startWire.isPowerable && endWire.isGroundable && !isGNDToGNDWire) {
           alert('❌ Cannot connect powerable wire to groundable wire!')
           cancelWiring()
           return
         }
-        if (startWire.isGroundable && endWire.isPowerable) {
+        if (startWire.isGroundable && endWire.isPowerable && !isGNDToGNDWire) {
           alert('❌ Cannot connect groundable wire to powerable wire!')
           cancelWiring()
           return
@@ -1058,14 +1432,16 @@ export function ProjectGrid({
       } else if (startProps) {
         
         // Exception: Resistors can connect to both powerable and groundable wires
+        // Exception: GND to GND connections are always allowed
         const startIsResistor = startProps.componentType === 'Resistor'
+        const isGNDToGNDWire = (startProps.isGroundable && endWire.isGroundable) || (startProps.pinType === 'GND' && endWire.isGroundable)
         
-        if (startProps.isPowerable && endWire.isGroundable && !startIsResistor) {
+        if (startProps.isPowerable && endWire.isGroundable && !startIsResistor && !isGNDToGNDWire) {
           alert('❌ Cannot connect powerable component to groundable wire!')
           cancelWiring()
           return
         }
-        if (startProps.isGroundable && endWire.isPowerable && !startIsResistor) {
+        if (startProps.isGroundable && endWire.isPowerable && !startIsResistor && !isGNDToGNDWire) {
           alert('❌ Cannot connect groundable component to powerable wire!')
           cancelWiring()
           return
@@ -1308,9 +1684,10 @@ export function ProjectGrid({
     const rect = gridRef.current?.getBoundingClientRect()
     if (!rect) return
     
-    // Use actual cell size with zoom since grid cells are sized with 2.5 * zoom vw
-    // Grid cells are sized with 2.5vw, so we need to convert this to pixels
-    const baseCellSize = (window.innerWidth * 2.5) / 100
+    // Get the actual rendered cell size from the DOM instead of calculating from vw
+    // This ensures perfect alignment between CSS and JavaScript
+    const firstCell = gridRef.current?.querySelector('[data-grid-cell]') as HTMLElement
+    const actualCellSize = firstCell ? firstCell.offsetWidth : (window.innerWidth * 2.5) / 100
     
     // Calculate coordinates relative to the grid container
     // The grid is transformed with: scale(${zoom}) translate(${gridOffset.x + 4 / zoom}px, ${gridOffset.y + 4 / zoom}px)
@@ -1326,10 +1703,9 @@ export function ProjectGrid({
     const transformedX = (mouseX - translateX) / zoom
     const transformedY = (mouseY - translateY) / zoom
     
-    // Convert to grid coordinates
-    // Remove the half cell size offset that was causing the drift
-    const rawX = transformedX / baseCellSize
-    const rawY = transformedY / baseCellSize
+    // Convert to grid coordinates using actual cell size
+    const rawX = transformedX / actualCellSize
+    const rawY = transformedY / actualCellSize
     
     // Snap to grid if enabled
     const { x, y } = snapToGridCoords(rawX, rawY)
@@ -1350,8 +1726,8 @@ export function ProjectGrid({
     // Handle wiring mode
     if (wiringState.isWiring) {
       // For wires, use offset coordinates to account for cell positioning
-      const wireX = (transformedX - baseCellSize / 2) / baseCellSize
-      const wireY = (transformedY - baseCellSize / 2) / baseCellSize
+      const wireX = (transformedX - actualCellSize / 2) / actualCellSize
+      const wireY = (transformedY - actualCellSize / 2) / actualCellSize
       const { x: wireGridX, y: wireGridY } = snapToGridCoords(wireX, wireY)
       
       if (wiringState.currentConnection) {
@@ -1452,11 +1828,22 @@ export function ProjectGrid({
                 // Only update if the cell is actually changing
                 if (!newGrid[cellY][cellX].occupied) {
                   newGrid[cellY] = [...newGrid[cellY]] // Shallow copy of row
+                  // Determine component type based on category
+                  const getComponentType = (module: any) => {
+                    if (module.category === 'microcontrollers') return 'Microcontroller'
+                    if (module.category === 'power') return 'PowerSupply'
+                    if (module.category === 'output') return 'Output'
+                    if (module.category === 'sensors') return 'Sensor'
+                    if (module.category === 'connectors') return 'Connector'
+                    if (module.category === 'passive') return 'Resistor'
+                    return module.module // fallback to module name
+                  }
+                  
                   newGrid[cellY][cellX] = {
                     ...newGrid[cellY][cellX],
                     occupied: true,
                     componentId: componentId,
-                    componentType: selectedModule.module,
+                    componentType: getComponentType(selectedModule),
                     moduleDefinition: selectedModule,
                     isPowered: moduleCell?.isPowered || false,
                     cellIndex: cellIndex,
@@ -1485,7 +1872,9 @@ export function ProjectGrid({
   const handleMouseLeave = useCallback(() => {
     setHoverState(null)
     setWirePreview(null)
+    setHoveredTile(null)
   }, [])
+
 
   // Handle ESC key to cancel wiring and close color picker
   useEffect(() => {
@@ -1989,6 +2378,7 @@ const GridCell = React.memo(({
   return (
     <div
       key={`${x}-${y}`}
+      data-grid-cell
       className={`
         absolute
         ${occupied 
@@ -2122,6 +2512,53 @@ const GridCell = React.memo(({
               )
             })()}
             
+            {/* Show Motor RPM indicator and values */}
+            {cell.moduleDefinition.module === 'Motor' && relativeX === 3 && relativeY === 2 && (() => {
+              console.log('🔧 Motor display triggered for cell:', {
+                componentId: cell.componentId,
+                cellIndex: cell.cellIndex,
+                relativeX,
+                relativeY,
+                calculatedCellId: `${cell.componentId}-${cell.cellIndex || 0}`
+              })
+              // Get motor state from component states using the correct cell-specific key
+              const cellComponentId = `${cell.componentId}-1`
+              const motorState = componentStates.get(cellComponentId)
+              const rpm = motorState?.instantaneousRPM || motorState?.motorRPM || 0
+              const torque = motorState?.instantaneousTorque || motorState?.motorTorque || 0
+              const isActive = motorState?.isPowered || false
+              
+              return (
+                <div className="absolute inset-0 flex flex-col items-center justify-end pb-1">
+                  {/* RPM and Torque values - aligned to bottom */}
+                  <div className="text-center">
+                    <div className="text-white text-xs font-bold bg-black bg-opacity-70 px-1 rounded mb-0.5">
+                      {rpm.toFixed(0)} RPM
+                    </div>
+                    <div className="text-white text-xs font-bold bg-black bg-opacity-70 px-1 rounded">
+                      {torque.toFixed(2)} N⋅m
+                    </div>
+                  </div>
+                  
+                  {/* Active indicator */}
+                  {isActive && (
+                    <div className="absolute top-0 right-0 w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  )}
+                  
+                  {/* Motor tooltip */}
+                  <div className="absolute -top-16 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-90 text-white text-xs p-2 rounded shadow-lg opacity-0 hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                    <div className="font-bold mb-1">Motor Status</div>
+                    <div>RPM: {rpm.toFixed(0)}</div>
+                    <div>Torque: {torque.toFixed(3)} N⋅m</div>
+                    <div>Power: {(motorState?.power || 0).toFixed(2)}W</div>
+                    <div>Current: {((motorState?.outputCurrent || 0) * 1000).toFixed(1)}mA</div>
+                    <div>Back EMF: {(motorState?.backEMF || 0).toFixed(2)}V</div>
+                    <div>Status: {isActive ? 'Active' : 'Inactive'}</div>
+                  </div>
+                </div>
+              )
+            })()}
+            
             {/* Show LED state indicator */}
             {cell.moduleDefinition.module === 'LED' && relativeX === 1 && relativeY === 0 && (() => {
               // Get LED state from component states using the correct cell-specific key
@@ -2130,6 +2567,7 @@ const GridCell = React.memo(({
               const isOn = ledState?.isOn || false
               const forwardVoltage = ledState?.forwardVoltage || cell.moduleDefinition.properties?.forwardVoltage?.default || 2.0
               const ledColor = cell.moduleDefinition.properties?.color?.default || 'Red'
+              const isPWM = ledState?.status === 'pwm'
               
               // Calculate LED brightness based on LED state
               const getLEDColor = (color: string, isOn: boolean) => {
@@ -2155,13 +2593,14 @@ const GridCell = React.memo(({
               const ledClass = getLEDColor(ledColor, isOn)
               const brightnessClass = getLEDBrightness(isOn)
               const shouldGlow = isOn
+              const isPWMSignal = isPWM
               
               return (
                 <div className="absolute inset-0 flex items-center justify-center">
                   
                   {/* Main LED */}
                   <div className={`w-6 h-6 rounded-full border-3 ${ledClass} ${brightnessClass} ${
-                    shouldGlow ? 'animate-pulse shadow-lg' : ''
+                    shouldGlow ? (isPWMSignal ? 'animate-ping shadow-lg' : 'animate-pulse shadow-lg') : ''
                   }`} 
                     style={{
                       boxShadow: shouldGlow ? `0 0 15px ${ledColor.toLowerCase()}, 0 0 30px ${ledColor.toLowerCase()}, 0 0 45px ${ledColor.toLowerCase()}` : 'none',
@@ -2169,11 +2608,20 @@ const GridCell = React.memo(({
                     }}
                   />
                   
+                  {/* PWM indicator */}
+                  {isPWMSignal && (
+                    <div className="absolute -top-2 -right-2 w-3 h-3 bg-purple-500 rounded-full animate-pulse border border-white">
+                      <div className="absolute inset-0 bg-purple-400 rounded-full animate-ping"></div>
+                    </div>
+                  )}
+                  
                   {/* Voltage and Current indicators */}
                   {isOn && (
                     <>
-                      <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs text-green-600 font-mono bg-green-100 dark:bg-green-900 px-1 rounded">
-                        {forwardVoltage.toFixed(1)}V
+                      <div className={`absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs font-mono px-1 rounded ${
+                        isPWMSignal ? 'text-purple-600 bg-purple-100 dark:bg-purple-900' : 'text-green-600 bg-green-100 dark:bg-green-900'
+                      }`}>
+                        {isPWMSignal ? 'PWM ' : ''}{forwardVoltage.toFixed(1)}V
                       </div>
                       <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 text-xs text-blue-600 font-mono bg-blue-100 dark:bg-blue-900 px-1 rounded">
                         {ledState?.outputCurrent ? `${(ledState.outputCurrent * 1000).toFixed(0)}mA` : '0mA'}
@@ -2255,6 +2703,28 @@ const GridCell = React.memo(({
       {/* Tutorial Modal */}
       {showTutorial && (
         <CircuitTutorial onClose={() => setShowTutorial(false)} />
+      )}
+      
+      {/* Debug Panel - Overlay below tutorial button */}
+      {showDebugPanel && (
+        <div className="absolute top-16 right-4 w-96 max-h-96 bg-gray-900 text-white rounded-lg shadow-2xl border border-gray-700 z-[100] overflow-hidden" data-debug-panel>
+          <div className="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+            <h3 className="font-bold text-sm">🔧 Motor PWM Debug</h3>
+            <button
+              onClick={() => setShowDebugPanel(false)}
+              className="text-gray-400 hover:text-white text-lg"
+            >
+              ×
+            </button>
+          </div>
+          <div className="p-4 text-xs overflow-y-auto max-h-80">
+            <MotorPWMDebugPanel 
+              gridData={gridData}
+              wires={wires}
+              componentStates={componentStates}
+            />
+          </div>
+        </div>
       )}
       
       {/* Wire Layer */}
@@ -2416,8 +2886,39 @@ const GridCell = React.memo(({
       />
 
 
+      {/* Hover Tile Display */}
+      <div className="absolute top-4 left-4 bg-gray-900 text-white px-3 py-2 rounded-lg shadow-lg border border-gray-700 z-[100] text-sm" data-hover-tile>
+        {hoveredTile ? (
+          <div className="font-mono">
+            <div>Tile: ({hoveredTile.x}, {hoveredTile.y})</div>
+            {hoveredTile.cell?.occupied ? (
+              <div>
+                <div>Component: {hoveredTile.cell.componentType}</div>
+                <div>ID: {hoveredTile.cell.componentId}</div>
+                {hoveredTile.cell.cellIndex !== undefined && (
+                  <div>Cell Index: {hoveredTile.cell.cellIndex}</div>
+                )}
+              </div>
+            ) : (
+              <div className="text-gray-400">Empty</div>
+            )}
+          </div>
+        ) : (
+          <div className="text-gray-400">Hover over a tile</div>
+        )}
+      </div>
+
       {/* Control Buttons */}
-      <div className="absolute top-4 right-4 flex gap-2 z-50">
+      <div className="absolute top-4 right-4 flex gap-2 z-[100]" data-control-buttons>
+        {/* PWM Debug Button */}
+        <button
+          onClick={handlePWMTest}
+          className="px-3 py-2 bg-purple-500 text-white rounded-lg shadow-lg hover:bg-purple-600 transition-colors text-sm flex items-center gap-2"
+          title="Send PWM test signal from Arduino UNO pin D13"
+        >
+          🔧 PWM Test
+        </button>
+        
         {/* Delete Mode Button */}
         <button
           onClick={toggleDeleteMode}
@@ -2438,6 +2939,14 @@ const GridCell = React.memo(({
           className="px-3 py-2 bg-green-500 text-white rounded-lg shadow-lg hover:bg-green-600 transition-colors text-sm"
         >
           📚 Tutorial
+        </button>
+        
+        {/* Debug Panel Button */}
+        <button
+          onClick={() => setShowDebugPanel(!showDebugPanel)}
+          className="px-3 py-2 bg-purple-500 text-white rounded-lg shadow-lg hover:bg-purple-600 transition-colors text-sm"
+        >
+          🔧 Debug
         </button>
       </div>
 

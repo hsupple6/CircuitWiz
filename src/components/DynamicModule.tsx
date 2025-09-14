@@ -60,6 +60,15 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
             {cell.isConnectable && (
               <div className="absolute top-0 right-0 w-2 h-2 bg-white rounded-full opacity-60" />
             )}
+            
+            {/* Motor label (for preview) */}
+            {definition.module === 'Motor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 1 && (
+              <div className="absolute inset-0 flex items-end justify-center pb-1">
+                <div className="text-white text-xs font-bold bg-black bg-opacity-70 px-1 rounded">
+                  Motor
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>

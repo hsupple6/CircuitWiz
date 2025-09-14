@@ -31,7 +31,7 @@ export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
     type: MicrocontrollerType,
     category: 'microcontrollers'
   },
-  'Arduino Uno': {
+  'Arduino Uno R3': {
     definition: ArduinoUno as ModuleDefinition,
     type: MicrocontrollerType,
     category: 'microcontrollers'

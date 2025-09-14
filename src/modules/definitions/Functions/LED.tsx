@@ -70,7 +70,6 @@ export function LEDVoltageFlow(
           isGrounded: inputVoltage > 0
         }
         componentUpdates.set(cell.id, updateData)
-        logger.componentsDebug(`[LED SYNC] Updated cell ${cell.id} at (${cell.position.x}, ${cell.position.y}) to ${outputVoltage}V`)
 
       })
 

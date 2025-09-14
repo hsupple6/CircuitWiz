@@ -9,17 +9,13 @@ export function ResistorVoltageFlow(
   gridData: any[][],
   componentId: string
 ): { outputVoltage: number, isPowered: boolean, status: string } {
-    console.log(`🔍 [BRANCH] Taking Resistor branch for ${componentId}`)
     const resistance = component.moduleDefinition.grid[component.cellIndex || 0]?.resistance || 
                       component.moduleDefinition.properties?.resistance || 1000
     const voltageDrop = circuitCurrent * resistance
     const outputVoltage = Math.max(0, inputVoltage - voltageDrop)
     const isPowered = outputVoltage > 0
     const status = isPowered ? 'active' : 'unpowered'
-    
-    console.log(`[RESISTOR CALC] ${componentId}: ${inputVoltage}V input → ${outputVoltage}V output (${voltageDrop}V drop, ${resistance}Ω, ${circuitCurrent}A)`)
-    logger.componentsDebug(`[RESISTOR TRACKING] ${componentId}: ${voltageDrop}V drop, input: ${inputVoltage}V, output: ${outputVoltage}V`)
-    
+        
     // For resistors, we need to process ALL cells of the component
     // Find all cells of this resistor component in the grid
     const baseComponentId = componentId.replace(/-\d+$/, '')
@@ -42,7 +38,6 @@ export function ResistorVoltageFlow(
       }
     }
     
-    console.log(`🔧 Found ${allResistorCells.length} cells for resistor ${baseComponentId}:`, allResistorCells.map(c => c.id))
     
     // Update ALL cells of this resistor with the same voltage
     allResistorCells.forEach(cell => {
@@ -55,7 +50,6 @@ export function ResistorVoltageFlow(
         isPowered,
         isGrounded: false
       })
-      logger.componentsDebug(`[RESISTOR SYNC] Updated cell ${cell.id} at (${cell.position.x}, ${cell.position.y}) to ${outputVoltage}V`)
     })
     
     // Return the calculated values

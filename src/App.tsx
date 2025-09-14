@@ -175,7 +175,21 @@ function AppContent() {
   const [circuitPathways, setCircuitPathways] = useState<any[]>([])
   const [wires, setWires] = useState<any[]>([])
   const [circuitInfo, setCircuitInfo] = useState<any>(null)
+  const [zoom, setZoom] = useState(1)
   const [gridData, setGridData] = useState<any[][]>([])
+  
+  // Zoom control functions
+  const handleZoomIn = useCallback(() => {
+    setZoom(prevZoom => Math.min(prevZoom + 0.1, 3))
+  }, [])
+  
+  const handleZoomOut = useCallback(() => {
+    setZoom(prevZoom => Math.max(prevZoom - 0.1, 0.25))
+  }, [])
+  
+  const handleZoomReset = useCallback(() => {
+    setZoom(1)
+  }, [])
   const [userProjects, setUserProjects] = useState<UserProject[]>([])
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [deleteModal, setDeleteModal] = useState<{
@@ -844,14 +858,28 @@ void loop() {
           
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <button className="p-2 text-gray-400 hover:text-gray-600 dark:text-dark-text-muted dark:hover:text-dark-text-secondary">
+              <button 
+                onClick={handleZoomOut}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:text-dark-text-muted dark:hover:text-dark-text-secondary transition-colors"
+                title="Zoom Out"
+              >
                 <ZoomOut className="h-5 w-5" />
               </button>
-              <span className="text-sm text-gray-500 dark:text-dark-text-muted">100%</span>
-              <button className="p-2 text-gray-400 hover:text-gray-600 dark:text-dark-text-muted dark:hover:text-dark-text-secondary">
+              <span className="text-sm text-gray-500 dark:text-dark-text-muted min-w-[3rem] text-center">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button 
+                onClick={handleZoomIn}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:text-dark-text-muted dark:hover:text-dark-text-secondary transition-colors"
+                title="Zoom In"
+              >
                 <ZoomIn className="h-5 w-5" />
               </button>
-              <button className="p-2 text-gray-400 hover:text-gray-600 dark:text-dark-text-muted dark:hover:text-dark-text-secondary">
+              <button 
+                onClick={handleZoomReset}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:text-dark-text-muted dark:hover:text-dark-text-secondary transition-colors"
+                title="Reset Zoom"
+              >
                 <Maximize2 className="h-5 w-5" />
               </button>
             </div>
@@ -925,6 +953,9 @@ void loop() {
               onCircuitPathwaysChange={setCircuitPathways}
               onWiresChange={setWires}
               onCircuitInfoChange={setCircuitInfo}
+              // Zoom controls
+              zoom={zoom}
+              onZoomChange={setZoom}
             />
           </div>
         </div>

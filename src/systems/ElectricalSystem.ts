@@ -17,6 +17,7 @@ import { extractOccupiedComponents } from '../utils/gridUtils'
 import { LEDVoltageFlow } from '../modules/definitions/Functions/LED'
 import { ResistorVoltageFlow } from '../modules/definitions/Functions/Resistor'
 import { MicrocontrollerVoltageFlow } from '../modules/definitions/Functions/Microcontroller'
+import { calculateMotorElectricalProperties } from '../modules/definitions/Functions/Motor'
 import { dynamicGPIO, DynamicGPIOState, multiMCUGPIO } from '../services/DynamicGPIO'
 
 export interface ComponentState {
@@ -29,6 +30,7 @@ export interface ComponentState {
   status: string
   isPowered: boolean
   isGrounded: boolean
+  pwm?: number // PWM throttle percentage (0-100)
   [key: string]: any // Additional properties like voltageDrop, isOn, etc.
 }
 
@@ -112,11 +114,7 @@ export const componentCalculators = {
     // LED power is forward voltage × current (this is the power the LED consumes)
     const ledPower = forwardVoltage * inputCurrent
     
-    // Log LED state changes
-    if (isOn) {
-      logger.components(`LED ${component.id || 'unknown'}: ${inputVoltage}V input, ${inputCurrent}A current, on`)
-    }
-    
+
     return {
       outputVoltage,
       outputCurrent: inputCurrent,
@@ -271,7 +269,6 @@ export function findParallelResistors(
     })
   })
   
-  logger.debug(`Found ${resistors.length} resistors in grid`)
   console.log(`🔍 [PARALLEL_DEBUG] Found ${resistors.length} resistors:`, resistors.map(r => ({ id: r.id, position: r.position, terminals: r.terminals })))
   
   // Group resistors that share the same power and ground wire segments
@@ -300,7 +297,6 @@ export function findParallelResistors(
         // These resistors are connected in parallel
         parallelGroup.push(resistor2)
         processedResistors.add(resistor2.id)
-        logger.debug(`Found parallel resistors: ${resistor1.id} and ${resistor2.id} share power and ground wire segments`)
         console.log(`✅ [PARALLEL_DEBUG] FOUND PARALLEL: ${resistor1.id} and ${resistor2.id}`)
       } else {
         console.log(`❌ [PARALLEL_DEBUG] NOT PARALLEL: ${resistor1.id} and ${resistor2.id}`)
@@ -329,7 +325,6 @@ export function findParallelResistors(
       }
       
       parallelBranches.push(branch)
-      logger.circuit(`Parallel resistors: ${parallelGroup.length} resistors, combined resistance: ${combinedResistance}Ω`)
       console.log(`✅ [PARALLEL_DEBUG] Created parallel branch with ${parallelGroup.length} resistors, combined resistance: ${combinedResistance}Ω`)
     }
   }
@@ -678,15 +673,11 @@ export function processCircuitPathway(
   // Use the smaller of: LED requirement, resistor limit, or power source limit
   const circuitCurrent = Math.min(ledCurrentRequirement, resistorCurrent, maxCurrent)
   
-  logger.circuit(`Circuit analysis: ${effectiveVoltage}V effective, ${circuitCurrent}A current, ${totalResistance}Ω resistance`)
   
   // Calculate parallel branch currents
   const updatedParallelBranches = calculateParallelBranchCurrents(parallelBranches, effectiveVoltage)
   
-  // Log parallel branch information
-  if (updatedParallelBranches.length > 0) {
-    logger.info(`Parallel branches detected: ${updatedParallelBranches.length} branches`)
-  }
+
   
   // Process each component in the pathway
   let currentVoltage = sourceVoltage
@@ -706,9 +697,7 @@ export function processCircuitPathway(
         isPowered: result.outputVoltage > 0,
         isGrounded: false // Will be updated by wire connections
       })
-      
-      logger.components(`${comp.type} ${comp.id}: ${currentVoltage}V input, ${result.status}`)
-      
+            
       // Update for next component
       currentVoltage = result.outputVoltage
       currentCurrent = result.outputCurrent
@@ -733,7 +722,6 @@ export function processCircuitPathway(
           isGrounded: false // Will be updated by wire connections
         })
         
-        logger.components(`${comp.type} ${comp.id}: ${branch.voltage}V input, ${result.status}`)
       }
     })
   })
@@ -1106,10 +1094,7 @@ export function calculateSystematicVoltageFlow(
   componentStates: Map<string, ComponentState>
   updatedWires: WireConnection[]
 } {
-  logger.electrical('Starting systematic voltage calculation...')
-  logger.electricalDebug(`Grid data: ${gridData.length} rows`)
-  logger.electricalDebug(`Wires: ${wires.length} wires`)
-  
+
   // Check for multi-microcontroller GPIO states first, then single dynamic, then static
   const multiMCUStates = getAllMultiMicrocontrollerGPIOStates()
   const singleDynamicStates = getDynamicGPIOStates()
@@ -1192,9 +1177,7 @@ export function calculateSystematicVoltageFlow(
   
   // Log parallel resistor information
   if (parallelBranches.length > 0) {
-    logger.electrical(`Processing ${parallelBranches.length} parallel resistor groups`)
     parallelBranches.forEach((branch, index) => {
-      logger.electrical(`Parallel group ${index + 1}: ${branch.components.length} resistors, combined resistance: ${branch.totalResistance}Ω`)
     })
   }
   
@@ -1218,11 +1201,9 @@ export function calculateSystematicVoltageFlow(
   
   // Log parallel branch current distribution
   if (updatedParallelBranches.length > 0) {
-    logger.electrical(`Parallel branch current distribution:`)
     console.log(`⚡ [PARALLEL_DEBUG] Parallel branch current distribution:`)
     updatedParallelBranches.forEach((branch, index) => {
       const currentPerResistor = branch.current / (branch.resistors?.length || 1)
-      logger.electrical(`Branch ${index + 1}: ${branch.current.toFixed(3)}A total, ${currentPerResistor.toFixed(3)}A per resistor through ${branch.totalResistance}Ω`)
       console.log(`⚡ [PARALLEL_DEBUG] Branch ${index + 1}: ${branch.current.toFixed(3)}A total, ${currentPerResistor.toFixed(3)}A per resistor through ${branch.totalResistance}Ω`)
     })
   } else {
@@ -1231,22 +1212,18 @@ export function calculateSystematicVoltageFlow(
   
   // Step 3.5: Process parallel resistor groups with calculated currents
   if (updatedParallelBranches.length > 0) {
-    logger.electrical(`Processing ${updatedParallelBranches.length} parallel resistor groups...`)
     console.log(`🔍 [PARALLEL_DEBUG] Processing ${updatedParallelBranches.length} parallel resistor groups...`)
     
     updatedParallelBranches.forEach((branch, branchIndex) => {
-      logger.electrical(`Processing parallel branch ${branchIndex + 1} with ${branch.resistors?.length || 0} resistors`)
       console.log(`🔍 [PARALLEL_DEBUG] Processing parallel branch ${branchIndex + 1} with ${branch.resistors?.length || 0} resistors`)
       
       if (branch.resistors && branch.resistors.length > 0) {
         branch.resistors.forEach((resistor, resistorIndex) => {
           const currentPerResistor = branch.current / branch.resistors.length
-          logger.electrical(`Resistor ${resistorIndex + 1}: ${currentPerResistor.toFixed(3)}A through ${resistor.moduleDefinition?.properties?.resistance || 1000}Ω`)
           console.log(`🔍 [PARALLEL_DEBUG] Resistor ${resistorIndex + 1}: ${currentPerResistor.toFixed(3)}A through ${resistor.moduleDefinition?.properties?.resistance || 1000}Ω`)
           
           // Calculate voltage drop for this resistor
           const voltageDrop = currentPerResistor * (resistor.moduleDefinition?.properties?.resistance || 1000)
-          logger.electrical(`Voltage drop: ${voltageDrop.toFixed(3)}V`)
           console.log(`🔍 [PARALLEL_DEBUG] Voltage drop: ${voltageDrop.toFixed(3)}V`)
           
           // Update component state for this resistor
@@ -1257,7 +1234,6 @@ export function calculateSystematicVoltageFlow(
             resistorState.power = currentPerResistor * voltageDrop
             componentStates.set(resistor.componentId, resistorState)
             
-            logger.electrical(`Updated resistor ${resistor.componentId}: ${currentPerResistor.toFixed(3)}A, ${voltageDrop.toFixed(3)}V, ${(currentPerResistor * voltageDrop).toFixed(3)}W`)
             console.log(`✅ [PARALLEL_DEBUG] Updated resistor ${resistor.componentId}: ${currentPerResistor.toFixed(3)}A, ${voltageDrop.toFixed(3)}V, ${(currentPerResistor * voltageDrop).toFixed(3)}W`)
           } else {
             console.log(`❌ [PARALLEL_DEBUG] No component state found for resistor ${resistor.componentId}`)
@@ -1272,7 +1248,6 @@ export function calculateSystematicVoltageFlow(
   }
   
   // Step 3: Process all microcontroller pin cells first to set GPIO pin states
-  logger.electrical('Processing microcontroller pin cells to set GPIO states...')
   const microcontrollerPinCells = Array.from(componentStates.values()).filter(comp => 
     comp.componentType === 'Arduino Uno R3' || comp.componentType === 'ESP32' || 
     comp.componentType === 'ArduinoUno' || comp.componentType === 'ESP32DevKit'
@@ -1342,6 +1317,11 @@ export function calculateSystematicVoltageFlow(
       const cellIndex = parseInt(parts[parts.length - 1]) || 0
       console.log(`[PIN_PROCESSING] Processing pin cell: ${comp.componentId} (cellIndex: ${cellIndex})`)
       
+      // Debug: Check if this is pin 13 (D13)
+      if (cellIndex === 39) {
+        console.log(`[PIN_PROCESSING] *** PROCESSING PIN 13 (D13) ***`)
+      }
+      
       // Get the module cell definition for this specific pin
       const moduleCell = baseGridCell.moduleDefinition.grid[cellIndex]
       
@@ -1387,10 +1367,8 @@ export function calculateSystematicVoltageFlow(
   
   // Step 3.5: Process parallel resistor components with their calculated currents
   if (updatedParallelBranches.length > 0) {
-    logger.electrical('Processing parallel resistor components...')
     
     updatedParallelBranches.forEach((branch, branchIndex) => {
-      logger.electrical(`Processing parallel branch ${branchIndex + 1} with ${branch.components.length} resistors`)
       
       branch.components.forEach((comp) => {
         // Find the component in the grid and update its state
@@ -1418,8 +1396,7 @@ export function calculateSystematicVoltageFlow(
         const voltageDrop = individualCurrent * individualResistance
         const outputVoltage = Math.max(0, branch.voltage - voltageDrop)
         
-        logger.electrical(`Resistor ${comp.id}: ${individualResistance}Ω, ${individualCurrent.toFixed(3)}A, ${voltageDrop.toFixed(2)}V drop`)
-        
+
         // Update ALL cells of this resistor with the calculated values
         allResistorCells.forEach(cell => {
           const existingState = componentStates.get(cell.id)
@@ -1452,10 +1429,8 @@ export function calculateSystematicVoltageFlow(
   
   // Process all power sources (PowerSupply and HIGH GPIO pins)
   if (powerSources.length > 0) {
-    logger.electrical(`Found ${powerSources.length} power sources`)
     
     powerSources.forEach(powerSource => {
-      logger.electrical(`Tracing voltage from power source ${powerSource.componentId}: ${powerSource.outputVoltage}V at (${powerSource.position.x}, ${powerSource.position.y})`)
       
       // Find wires connected to this power source
       const connectedWires = wires.filter(wire => 
@@ -1465,15 +1440,10 @@ export function calculateSystematicVoltageFlow(
         )
       )
       
-      logger.wires(`Found ${connectedWires.length} wires connected to power source ${powerSource.componentId}`)
-      connectedWires.forEach(wire => {
-        logger.wiresDebug(`Connected wire: ${wire.id}`)
-      })
+
       
       connectedWires.forEach(wire => {
-      logger.wires(`Tracing wire ${wire.id} from power source`)
-      logger.wiresDebug(`Wire ${wire.id} segments:`, wire.segments.map(s => `(${s.from.x},${s.from.y}) -> (${s.to.x},${s.to.y})`))
-      
+
       // Set initial wire voltage from power source
       let currentVoltage = powerSource.outputVoltage
       
@@ -1737,7 +1707,9 @@ export function calculateSystematicVoltageFlow(
       }
     })
     
-    // Wire inherits voltage from component with highest output voltage
+    // Wire inherits voltage and PWM from component with highest output voltage
+    let wirePWM: number | undefined = undefined
+    
     if (connectedComponents.length > 0) {
       const maxVoltageComponent = connectedComponents.reduce((max, comp) => 
         (comp.outputVoltage || 0) > (max.outputVoltage || 0) ? comp : max
@@ -1747,6 +1719,22 @@ export function calculateSystematicVoltageFlow(
       isPowered = maxVoltageComponent.isPowered || false
       isGrounded = connectedComponents.some(comp => comp.isGrounded)
       
+      // Handle PWM signals - propagate PWM throttle percentage
+      if (maxVoltageComponent.status === 'pwm' && maxVoltageComponent.pwm !== undefined) {
+        wirePWM = maxVoltageComponent.pwm
+        console.log(`🔧 [PWM_WIRE] Transmitting PWM: ${wireVoltage}V with ${wirePWM.toFixed(1)}% throttle`)
+      }
+      
+      // Also check for PWM from any connected component (including microcontrollers)
+      if (wirePWM === undefined) {
+        const pwmComponent = connectedComponents.find(comp => 
+          comp.status === 'pwm' && comp.pwm !== undefined
+        )
+        if (pwmComponent) {
+          wirePWM = pwmComponent.pwm
+          console.log(`🔧 [PWM_WIRE] Found PWM from ${pwmComponent.componentType}: ${wireVoltage}V with ${wirePWM.toFixed(1)}% throttle`)
+        }
+      }
     } 
     
     return {
@@ -1758,12 +1746,14 @@ export function calculateSystematicVoltageFlow(
       isGrounded,
       isPowerable: isPowered,
       isGroundable: isGrounded,
+      pwm: wirePWM, // Include PWM throttle percentage
       segments: wire.segments.map(segment => ({
         ...segment,
         isPowered,
         isGrounded,
         voltage: wireVoltage,
-        current: circuitCurrent
+        current: circuitCurrent,
+        pwm: wirePWM // Include PWM throttle percentage in segments too
       }))
     }
   })
@@ -1790,18 +1780,14 @@ function traceVoltageThroughCircuit(
   let currentVoltage = initialVoltage
   const visitedComponents = new Set<string>()
   
-  logger.electricalDebug(`Starting voltage trace from ${initialVoltage}V`)
 
   // Find the destination of the start wire (where it connects to a component)
   const wireDestination = findWireDestination(startWire, gridData)
   if (!wireDestination) {
-    logger.wires(`Could not find destination for wire ${startWire.id}`)
-    logger.wiresDebug(`Wire segments:`, startWire.segments.map(s => `(${s.from.x},${s.from.y}) -> (${s.to.x},${s.to.y})`))
     return { componentUpdates }
   }
   
   
-  logger.wiresDebug(`Wire ${startWire.id} connects to component at (${wireDestination.x}, ${wireDestination.y})`)
   
   // Find the component at the destination
   const component = findComponentAtPosition(wireDestination, gridData)
@@ -1811,7 +1797,6 @@ function traceVoltageThroughCircuit(
   }
   
   
-  logger.componentsDebug(`Found component at destination: ${component.componentId} (${component.moduleDefinition.module}) at (${component.x}, ${component.y})`)
   // Trace voltage through this component and continue the path
   const result = traceVoltageThroughComponent(
     component,
@@ -1850,7 +1835,6 @@ function traceVoltageThroughComponent(
   
   // Avoid infinite loops
   if (visitedComponents.has(cellComponentId)) {
-    logger.componentsWarn(`Component ${cellComponentId} already visited, skipping`)
     return { componentUpdates }
   }
   
@@ -1939,6 +1923,155 @@ function traceVoltageThroughComponent(
         isPowered,
         isGrounded: false
       })
+      break
+    case 'Motor':
+    case 'Output': // Handle Output components that are actually motors
+      // For Output components, check if they're actually motors
+      if (component.componentType === 'Output') {
+        const moduleDef = component.moduleDefinition
+        if (!moduleDef || !(moduleDef.module === 'Motor' || moduleDef.module === 'motor' || 
+                           moduleDef.module?.toLowerCase().includes('motor') ||
+                           moduleDef.module?.toLowerCase().includes('bldc'))) {
+          // Not a motor, skip processing
+          break
+        }
+      }
+      
+      console.log(`[MOTOR] Processing motor component: ${component.componentId} at (${component.x}, ${component.y})`)
+      console.log(`[MOTOR] Component type: ${component.componentType}, Module: ${component.moduleDefinition?.module}`)
+      logger.components(`[MOTOR] Processing motor component: ${component.componentId} at (${component.x}, ${component.y})`)
+      // Check for PWM from connected wires
+      let motorPWM: number | undefined = undefined
+      
+      // Look for PWM information from connected wires
+      // Get component position from grid data
+      const componentPosition = { x: component.x || 0, y: component.y || 0 }
+      console.log(`[MOTOR] Looking for PWM wires for motor at position: (${componentPosition.x}, ${componentPosition.y})`)
+      console.log(`[MOTOR] Total wires available: ${wires.length}`)
+      logger.components(`[MOTOR] Looking for PWM wires for motor at position: (${componentPosition.x}, ${componentPosition.y})`)
+      logger.components(`[MOTOR] Total wires available: ${wires.length}`)
+      
+      // Specifically look for wire connected to PWM pin at (2,0) of the motor
+      const pwmPinPosition = {
+        x: componentPosition.x + 2, // PWM pin is at x=2 in motor grid
+        y: componentPosition.y + 0  // PWM pin is at y=0 in motor grid
+      }
+      
+      console.log(`[MOTOR] Looking for PWM wire at motor PWM pin position: (${pwmPinPosition.x}, ${pwmPinPosition.y})`)
+      
+      const connectedWires = wires.filter(wire => {
+        const isConnected = wire.segments.some(segment => 
+          (segment.from.x === pwmPinPosition.x && segment.from.y === pwmPinPosition.y) ||
+          (segment.to.x === pwmPinPosition.x && segment.to.y === pwmPinPosition.y)
+        )
+        if (isConnected) {
+          console.log(`[MOTOR] Found PWM wire connected to PWM pin: ${wire.id} PWM: ${wire.pwm}`)
+          logger.components(`[MOTOR] Found PWM wire connected to PWM pin: ${wire.id} PWM: ${wire.pwm}`)
+        }
+        return isConnected
+      })
+      
+      console.log(`[MOTOR] Connected wires found: ${connectedWires.length}`)
+      logger.components(`[MOTOR] Connected wires found: ${connectedWires.length}`)
+      
+      // Find PWM and voltage from connected wires
+      let motorVoltage = inputVoltage // Default to input voltage
+      let vccVoltage = 0
+      let pwmVoltage = 0
+      
+      for (const wire of connectedWires) {
+        if (wire.pwm !== undefined) {
+          motorPWM = wire.pwm
+          pwmVoltage = wire.voltage
+          console.log(`🔧 [MOTOR] Found PWM from wire: ${motorPWM.toFixed(1)}% throttle, ${pwmVoltage}V`)
+          logger.components(`[MOTOR] Found PWM from wire: ${motorPWM.toFixed(1)}% throttle, ${pwmVoltage}V`)
+        }
+        // Use the highest voltage from connected wires
+        if (wire.voltage > motorVoltage) {
+          motorVoltage = wire.voltage
+          console.log(`🔧 [MOTOR] Using voltage from wire: ${motorVoltage}V`)
+        }
+      }
+      
+      // Check for VCC connection (motor needs both VCC and PWM to be powered)
+      const vccPinPosition = { x: componentPosition.x + 0, y: componentPosition.y + 0 } // VCC is at (0,0) in motor grid
+      const vccWires = wires.filter(wire => 
+        wire.segments.some(segment => 
+          (segment.from.x === vccPinPosition.x && segment.from.y === vccPinPosition.y) ||
+          (segment.to.x === vccPinPosition.x && segment.to.y === vccPinPosition.y)
+        )
+      )
+      
+      for (const wire of vccWires) {
+        if (wire.voltage > vccVoltage) {
+          vccVoltage = wire.voltage
+          console.log(`🔧 [MOTOR] Found VCC voltage: ${vccVoltage}V`)
+        }
+      }
+      
+      // BINARY: Motor is powered if it has PWM signal (ignore VCC for now)
+      const hasPWM = motorPWM !== undefined && motorPWM > 0
+      console.log(`🔧 [MOTOR] BINARY Power check: PWM=${motorPWM}% (${hasPWM})`)
+      
+      // Use PWM voltage as the voltage source
+      if (pwmVoltage > 0) {
+        motorVoltage = pwmVoltage
+      }
+      
+      // Debug: Log wire information
+      console.log(`🔧 [MOTOR] Wire analysis:`)
+      connectedWires.forEach(wire => {
+        console.log(`🔧 [MOTOR] Wire ${wire.id}: PWM=${wire.pwm}, Voltage=${wire.voltage}V`)
+      })
+      console.log(`🔧 [MOTOR] Final motor voltage: ${motorVoltage}V, PWM: ${motorPWM}`)
+      
+      // Calculate motor electrical properties
+      const motorProperties = {
+        inputVoltage: motorVoltage, // Use voltage from wire, not inputVoltage parameter
+        kv: component.parameters?.kv || 1000, // Default kV rating
+        resistance: component.parameters?.resistance || 0.1, // Default resistance
+        maxRPM: component.parameters?.maxRPM || 20000, // Default max RPM
+        efficiency: component.parameters?.efficiency || 85, // Default efficiency
+        poles: component.parameters?.poles || 14 // Default pole count
+      }
+      
+      console.log(`[MOTOR] Calling motor calculation with motorVoltage: ${motorVoltage}V, motorPWM: ${motorPWM}`)
+      console.log(`[MOTOR] Component state key: ${cellComponentId}`)
+      logger.components(`[MOTOR] Calling motor calculation with motorVoltage: ${motorVoltage}V, motorPWM: ${motorPWM}`)
+      const motorResult = calculateMotorElectricalProperties(motorVoltage, motorProperties, motorPWM)
+      
+      // Extract the results
+      outputVoltage = motorResult.outputVoltage
+      // BINARY: Motor is powered if it has PWM signal
+      isPowered = hasPWM
+      status = isPowered ? 'active' : 'inactive'
+      
+      // Update component state with motor-specific properties
+      componentUpdates.set(cellComponentId, {
+        outputVoltage: motorResult.outputVoltage,
+        outputCurrent: motorResult.outputCurrent,
+        power: motorResult.power,
+        status,
+        isPowered,
+        isGrounded: false,
+        // Motor-specific properties
+        motorRPM: motorResult.actualRPM,
+        instantaneousRPM: motorResult.instantaneousRPM,
+        motorTorque: motorResult.instantaneousTorque,
+        instantaneousTorque: motorResult.instantaneousTorque,
+        powerBasedTorque: motorResult.powerBasedTorque,
+        currentBasedTorque: motorResult.currentBasedTorque,
+        motorEfficiency: motorProperties.efficiency,
+        backEMF: motorResult.backEMF,
+        powerLoss: motorResult.power - motorResult.mechanicalPower,
+        angularVelocity: motorResult.angularVelocity,
+        mechanicalPower: motorResult.mechanicalPower,
+        speedConstant: motorResult.speedConstant,
+        torqueConstant: motorResult.torqueConstant
+      })
+      
+      console.log(`[MOTOR] ${componentId}: ${motorVoltage}V → ${motorResult.actualRPM.toFixed(0)} RPM, ${motorResult.instantaneousTorque.toFixed(3)} N⋅m`)
+      console.log('[MOTOR] Setting component state for:', cellComponentId, 'with RPM:', motorResult.actualRPM, 'Status:', status, 'Powered:', isPowered)
       break
     default:
       console.log(`🔍 [BRANCH] Taking default branch for ${componentId}`)
@@ -2173,7 +2306,9 @@ export function updateWiresFromEMPhysics(
       }
     })
 
-    // Determine wire voltage based on connected components
+    // Determine wire voltage and PWM based on connected components
+    let wirePWM: number | undefined = undefined
+    
     if (connectedComponents.length > 0) {
       
       // Check if any component is a voltage source (power supply positive)
@@ -2193,6 +2328,23 @@ export function updateWiresFromEMPhysics(
         if (maxVoltageComponent) {
           wireVoltage = maxVoltageComponent.outputVoltage || 0
           isPowered = maxVoltageComponent.isPowered || false
+          
+          // Handle PWM signals - propagate PWM throttle percentage
+          if (maxVoltageComponent.status === 'pwm' && maxVoltageComponent.pwm !== undefined) {
+            wirePWM = maxVoltageComponent.pwm
+            console.log(`🔧 [PWM_WIRE] Transmitting PWM: ${wireVoltage}V with ${wirePWM.toFixed(1)}% throttle`)
+          }
+        }
+      }
+      
+      // Also check for PWM from any connected component (including microcontrollers)
+      if (wirePWM === undefined) {
+        const pwmComponent = connectedComponents.find(comp => 
+          comp.status === 'pwm' && comp.pwm !== undefined
+        )
+        if (pwmComponent) {
+          wirePWM = pwmComponent.pwm
+          console.log(`🔧 [PWM_WIRE] Found PWM from ${pwmComponent.componentType}: ${wireVoltage}V with ${wirePWM.toFixed(1)}% throttle`)
         }
       }
 
@@ -2227,12 +2379,14 @@ export function updateWiresFromEMPhysics(
       isGrounded,
       isPowerable: isPowered,
       isGroundable: isGrounded,
+      pwm: wirePWM, // Include PWM throttle percentage
       segments: wire.segments.map(segment => ({
         ...segment,
         isPowered,
         isGrounded,
         voltage: wireVoltage,
-        current: wireCurrent
+        current: wireCurrent,
+        pwm: wirePWM // Include PWM throttle percentage in segments too
       }))
     }
   })
@@ -2355,10 +2509,8 @@ export function calculateElectricalFlow(
   })))
   
   if (parallelBranches.length > 0) {
-    logger.info(`Detected ${parallelBranches.length} parallel resistor groups`)
     console.log(`🎉 [PARALLEL_DEBUG] DETECTED ${parallelBranches.length} PARALLEL GROUPS!`)
     parallelBranches.forEach((branch, index) => {
-      logger.circuit(`Parallel group: ${branch.components.length} resistors, combined resistance: ${branch.totalResistance}Ω`)
       console.log(`🎉 [PARALLEL_DEBUG] Group ${index + 1}: ${branch.components.length} resistors, combined resistance: ${branch.totalResistance}Ω`)
     })
   } else {
@@ -2472,7 +2624,6 @@ export function processBranch(
 
   // If no ground connection, no current flows
   if (!hasGroundConnection) {
-    logger.warn(`Circuit: No ground connection - no current flow`)
     return states
   }
 
@@ -2483,8 +2634,6 @@ export function processBranch(
 
   // Current through branch = min(limit by resistor, LED/motor requirement, source)
   const branchCurrent = Math.min(ledCurrentRequirement + motorCurrentRequirement, resistorCurrent, maxCurrent)
-
-  logger.circuit(`Branch analysis: ${effectiveVoltage}V effective, ${branchCurrent}A current, ${totalResistance}Ω resistance`)
   
   // Calculate parallel branch currents
   const updatedParallelBranches = calculateParallelBranchCurrents(parallelBranches, effectiveVoltage)
