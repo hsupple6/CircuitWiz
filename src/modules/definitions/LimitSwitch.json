@@ -1,0 +1,44 @@
+{
+  "module": "Limit Switch",
+  "gridX": 3,
+  "gridY": 1,
+  "background": "#1F2937",
+  "css": "border-radius: 6px; border: 2px solid #6B7280;",
+  "category": "switches",
+  "description": "Normally-open limit switch — click to toggle contact closed",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "INPUT",
+      "pin": "COM",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "border-radius: 6px 0 0 6px; background: #F59E0B; border: 2px solid #D97706; border-right: none; color: #111; font-size: 9px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "SWITCH_BODY",
+      "pin": "ARM",
+      "isConnectable": false,
+      "isClickable": true,
+      "isOn": false,
+      "css": "background: #374151; border: 2px solid #6B7280; border-left: none; border-right: none; cursor: pointer; color: white; font-size: 9px; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "type": "OUTPUT",
+      "pin": "NO",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "border-radius: 0 6px 6px 0; background: #10B981; border: 2px solid #059669; border-left: none; color: white; font-size: 9px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    }
+  ],
+  "behavior": {
+    "onClick": "const switchBody = context.getCellByPosition(1, 0);\nif (switchBody) {\n  const newState = !(switchBody.isOn || false);\n  context.updateCellProperty(1, 0, { isOn: newState, isPowered: newState });\n}"
+  }
+}

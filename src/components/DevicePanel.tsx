@@ -213,7 +213,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
         let hasChanges = false
         
         dynamicStates.forEach((state, pin) => {
-          const newState = state.state === 'PULSING' ? 'HIGH' : state.state
+          const newState = state.state
           const currentState = simulationState.gpioStates.get(pin)?.state
           
           if (currentState !== newState) {
@@ -236,7 +236,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
             gpioStates.forEach((gpioState, pin) => {
               const connectedWires = findWiresConnectedToPin(simulationState.currentMicrocontroller!, pin)
               connectedWires.forEach(wireId => {
-                wireStates.set(wireId, gpioState.state === 'HIGH' ? 'active' : 'inactive')
+                wireStates.set(wireId, (gpioState.state === 'HIGH' || gpioState.state === 'PULSING') ? 'active' : 'inactive')
               })
             })
           }
@@ -584,7 +584,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
         dynamicStates.forEach((state, pin) => {
           gpioStates.set(pin, {
             pin,
-            state: state.state === 'PULSING' ? 'HIGH' : state.state, // Convert PULSING to HIGH for compatibility
+            state: state.state,
             value: state.value,
             timestamp: state.timestamp
           })
@@ -602,7 +602,7 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
           // Find wires connected to this pin
           const connectedWires = findWiresConnectedToPin(microcontroller, pin)
           connectedWires.forEach(wireId => {
-            wireStates.set(wireId, gpioState.state === 'HIGH' ? 'active' : 'inactive')
+            wireStates.set(wireId, (gpioState.state === 'HIGH' || gpioState.state === 'PULSING') ? 'active' : 'inactive')
           })
         })
 

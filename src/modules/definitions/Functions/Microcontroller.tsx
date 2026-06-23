@@ -62,6 +62,9 @@ export function MicrocontrollerVoltageFlow(
         const dutyCycle = gpioState?.value || 0.5 // Default to 50% duty cycle
         const throttlePercent = dutyCycle * 100
         console.log(`🔧 [MICROCONTROLLER] Pin ${pinNumber} PWM: ${outputVoltage}V (${throttlePercent.toFixed(1)}% throttle)`)
+        console.log(`🔧 [MICROCONTROLLER] GPIO State received:`, gpioState)
+        console.log(`🔧 [MICROCONTROLLER] Duty cycle: ${dutyCycle}, Throttle: ${throttlePercent.toFixed(1)}%`)
+        console.log(`🔧 [MICROCONTROLLER] Component ID: ${componentId}, Cell Component ID: ${cellComponentId}`)
       } else {
         // Pin is LOW - no voltage output, regardless of input
         outputVoltage = 0
@@ -79,6 +82,7 @@ export function MicrocontrollerVoltageFlow(
         ...(pinState === 'PULSING' && { pwm: (gpioState?.value || 0.5) * 100 }) // Add PWM throttle percentage
       }
       
+      console.log(`🔧 [MICROCONTROLLER_UPDATE] Setting component update for ${cellComponentId}:`, componentUpdate)
       componentUpdates.set(cellComponentId, componentUpdate)
       
     } else {

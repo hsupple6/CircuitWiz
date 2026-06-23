@@ -38,6 +38,20 @@ export class DynamicGPIO {
     const fadePattern = this.detectFadePattern(lines)
     const staticPattern = this.detectStaticPattern(lines)
     
+    console.log(`🔧 [PWM_DEBUG] Code analysis results:`, {
+      blinkPattern: blinkPattern.length,
+      fadePattern: fadePattern.length,
+      staticPattern: staticPattern.length,
+      total: blinkPattern.length + fadePattern.length + staticPattern.length
+    })
+    
+    if (fadePattern.length > 0) {
+      console.log(`🔧 [PWM_DEBUG] Fade patterns detected:`, fadePattern)
+    }
+    if (staticPattern.length > 0) {
+      console.log(`🔧 [PWM_DEBUG] Static patterns detected:`, staticPattern)
+    }
+    
     animations.push(...blinkPattern, ...fadePattern, ...staticPattern)
     
     return animations
@@ -136,6 +150,15 @@ export class DynamicGPIO {
                 startTime: 0
               })
             }
+          } else {
+            // Static PWM in loop - treat as constant PWM signal
+            animations.push({
+              pin,
+              pattern: 'STATIC',
+              frequency: 1000, // 1Hz for static
+              dutyCycle: value / 255, // PWM duty cycle
+              startTime: 0
+            })
           }
         }
       }
@@ -175,6 +198,21 @@ export class DynamicGPIO {
             pattern: 'STATIC',
             frequency: 0,
             dutyCycle: state === 'HIGH' ? 1 : 0,
+            startTime: 0
+          })
+        }
+        
+        // Also detect analogWrite in setup (static PWM)
+        const analogWriteMatch = line.match(/analogWrite\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/)
+        if (analogWriteMatch) {
+          const pin = parseInt(analogWriteMatch[1])
+          const value = parseInt(analogWriteMatch[2])
+          
+          animations.push({
+            pin,
+            pattern: 'STATIC',
+            frequency: 0,
+            dutyCycle: value / 255, // PWM duty cycle
             startTime: 0
           })
         }
@@ -228,6 +266,33 @@ export class DynamicGPIO {
    */
   getCurrentStates(): Map<number, DynamicGPIOState> {
     return new Map(this.currentStates)
+  }
+
+  /**
+   * Test PWM detection with sample code
+   */
+  testPWMAnalysis(): void {
+    const testCode = `void setup() {
+  pinMode(9, OUTPUT);
+}
+
+void loop() {
+  analogWrite(9, 168);
+}`
+
+    console.log(`🔧 [PWM_TEST] Testing PWM analysis with code:`)
+    console.log(testCode)
+    
+    const animations = this.analyzeCode(testCode)
+    console.log(`🔧 [PWM_TEST] Analysis result:`, animations)
+    
+    if (animations.length > 0) {
+      this.startSimulation(animations)
+      setTimeout(() => {
+        const states = this.getCurrentStates()
+        console.log(`🔧 [PWM_TEST] Current GPIO states:`, Array.from(states.entries()))
+      }, 100)
+    }
   }
 
   /**
@@ -337,15 +402,35 @@ export class DynamicGPIO {
    * Calculate static state
    */
   private calculateStaticState(animation: GPIOAnimation): DynamicGPIOState {
-    return {
+    // Determine state based on duty cycle
+    let state: 'HIGH' | 'LOW' | 'PULSING' = 'LOW'
+    if (animation.dutyCycle >= 1) {
+      state = 'HIGH'
+    } else if (animation.dutyCycle > 0) {
+      state = 'PULSING' // PWM signal
+    }
+    
+    const result: DynamicGPIOState = {
       pin: animation.pin,
-      state: animation.dutyCycle > 0 ? 'HIGH' : 'LOW',
+      state,
       value: animation.dutyCycle,
       timestamp: Date.now() - this.startTime,
       pattern: 'STATIC',
       frequency: 0,
       dutyCycle: animation.dutyCycle
     }
+    
+    // Debug: Log PWM state creation
+    if (state === 'PULSING') {
+      console.log(`🔧 [PWM_DEBUG] Created PWM state for pin ${animation.pin}:`, {
+        state,
+        value: animation.dutyCycle,
+        dutyCycle: animation.dutyCycle,
+        percentage: (animation.dutyCycle * 100).toFixed(1) + '%'
+      })
+    }
+    
+    return result
   }
 
   /**
@@ -368,6 +453,12 @@ export class DynamicGPIO {
 
 // Export singleton instance for backward compatibility
 export const dynamicGPIO = new DynamicGPIO()
+
+// Make test function and dynamicGPIO available globally for debugging
+if (typeof window !== 'undefined') {
+  (window as any).testPWM = () => dynamicGPIO.testPWMAnalysis()
+  (window as any).dynamicGPIO = dynamicGPIO
+}
 
 // Multi-microcontroller GPIO manager
 export class MultiMicrocontrollerGPIO {

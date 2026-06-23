@@ -1,0 +1,57 @@
+{
+  "module": "Capacitor",
+  "description": "Ceramic capacitor — open at DC, blocks steady current",
+  "category": "passives",
+  "gridX": 3,
+  "gridY": 1,
+  "background": "#1E3A5F",
+  "css": "border-radius: 8px; border: 2px solid #2563EB;",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "LEAD",
+      "pin": "1",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "border-radius: 8px 0 0 8px; background: #94A3B8; border: 2px solid #64748B; border-right: none;"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "BODY",
+      "pin": "C",
+      "isConnectable": false,
+      "css": "background: linear-gradient(180deg, #3B82F6 0%, #1D4ED8 100%); border: 2px solid #1E40AF; border-left: none; border-right: none; color: white; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "type": "LEAD",
+      "pin": "2",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "border-radius: 0 8px 8px 0; background: #94A3B8; border: 2px solid #64748B; border-left: none;"
+    }
+  ],
+  "properties": {
+    "capacitance": {
+      "type": "number",
+      "default": 0.0001,
+      "min": 1e-9,
+      "max": 1,
+      "unit": "F",
+      "description": "Capacitance"
+    },
+    "voltageRating": {
+      "type": "number",
+      "default": 50,
+      "min": 1,
+      "max": 500,
+      "unit": "V",
+      "description": "Max voltage rating"
+    }
+  }
+}

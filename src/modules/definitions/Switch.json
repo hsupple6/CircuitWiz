@@ -5,7 +5,7 @@
   "background": "#8B4513",
   "css": "border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);",
   "category": "switches",
-  "description": "Interactive toggle switch with input, output terminals, and clickable switch body",
+  "description": "SPST toggle switch — click body to open or close",
   "grid": [
     {
       "x": 0,
@@ -55,6 +55,6 @@
     }
   ],
   "behavior": {
-    "onClick": "// Toggle switch state and pass power from input to output\nconst inputCell = context.getCellByPosition(0, 0);\nconst outputCell = context.getCellByPosition(2, 0);\nconst switchBody = context.getCellByPosition(1, 0);\n\nif (switchBody) {\n  // Toggle switch state\n  const currentState = switchBody.isOn || false;\n  const newState = !currentState;\n  \n  // Update switch body state\n  context.updateCellPower(1, 0, newState);\n  \n  // If input is powered and switch is on, power the output\n  if (inputCell && inputCell.isPowered && newState) {\n    context.updateCellPower(2, 0, true);\n    console.log('Switch ON - Power flowing from input to output');\n  } else {\n    context.updateCellPower(2, 0, false);\n    console.log('Switch OFF - No power flow');\n  }\n}"
+    "onClick": "const switchBody = context.getCellByPosition(1, 0);\nif (switchBody) {\n  const newState = !(switchBody.isOn || false);\n  context.updateCellProperty(1, 0, { isOn: newState, isPowered: newState });\n}"
   }
 }

@@ -1,0 +1,57 @@
+{
+  "module": "Inductor",
+  "description": "Fixed inductor — low impedance at DC (short for steady state)",
+  "category": "passives",
+  "gridX": 3,
+  "gridY": 1,
+  "background": "#422006",
+  "css": "border-radius: 8px; border: 2px solid #B45309;",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "LEAD",
+      "pin": "1",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "border-radius: 8px 0 0 8px; background: #94A3B8; border: 2px solid #64748B; border-right: none;"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "BODY",
+      "pin": "L",
+      "isConnectable": false,
+      "css": "background: linear-gradient(180deg, #D97706 0%, #92400E 100%); border: 2px solid #B45309; border-left: none; border-right: none; color: white; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "type": "LEAD",
+      "pin": "2",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "border-radius: 0 8px 8px 0; background: #94A3B8; border: 2px solid #64748B; border-left: none;"
+    }
+  ],
+  "properties": {
+    "inductance": {
+      "type": "number",
+      "default": 0.001,
+      "min": 1e-6,
+      "max": 10,
+      "unit": "H",
+      "description": "Inductance"
+    },
+    "dcResistance": {
+      "type": "number",
+      "default": 0.5,
+      "min": 0.01,
+      "max": 100,
+      "unit": "Ω",
+      "description": "Wire resistance (DCR)"
+    }
+  }
+}

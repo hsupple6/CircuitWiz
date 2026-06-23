@@ -2,7 +2,7 @@
   "module": "Resistor",
   "name": "Resistor",
   "description": "Electrical resistor with selectable resistance value and color bands",
-  "category": "Passive Components",
+  "category": "passives",
   "gridX": 3,
   "gridY": 1,
   "background": "#8B4513",

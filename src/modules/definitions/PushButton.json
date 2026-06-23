@@ -1,0 +1,45 @@
+{
+  "module": "Push Button",
+  "gridX": 3,
+  "gridY": 1,
+  "background": "#374151",
+  "css": "border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);",
+  "category": "switches",
+  "description": "Momentary push button — hold to close contact",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "INPUT",
+      "pin": "IN",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "css": "border-radius: 8px 0 0 8px; background: #4A90E2; border: 2px solid #2563EB; border-right: none; color: white; font-weight: bold; font-size: 10px; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "SWITCH_BODY",
+      "pin": "BTN",
+      "isConnectable": false,
+      "isClickable": true,
+      "isOn": false,
+      "css": "border-radius: 0; background: #6B7280; border: 2px solid #4B5563; border-left: none; border-right: none; cursor: pointer; display: flex; align-items: center; justify-content: center; color: white; font-size: 9px; font-weight: bold;"
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "type": "OUTPUT",
+      "pin": "OUT",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "css": "border-radius: 0 8px 8px 0; background: #E24A4A; border: 2px solid #DC2626; border-left: none; color: white; font-weight: bold; font-size: 10px; display: flex; align-items: center; justify-content: center;"
+    }
+  ],
+  "behavior": {
+    "onMouseDown": "const switchBody = context.getCellByPosition(1, 0);\nif (switchBody && !switchBody.isOn) {\n  context.updateCellProperty(1, 0, { isOn: true, isPowered: true });\n}",
+    "onMouseUp": "const switchBody = context.getCellByPosition(1, 0);\nif (switchBody?.isOn) {\n  context.updateCellProperty(1, 0, { isOn: false, isPowered: false });\n}"
+  }
+}

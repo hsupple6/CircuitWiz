@@ -11,6 +11,7 @@ export interface ModuleGridCell {
   properties?: Record<string, any> // Additional properties specific to this cell
   isPowered?: boolean // Power state for this cell
   isClickable?: boolean // Whether this cell can be clicked for interaction
+  isOn?: boolean // Switch / momentary contact state (default from definition)
   isPowerable?: boolean // Whether this cell can provide power
   isGroundable?: boolean // Whether this cell can be grounded
   voltage?: number // Voltage level for this cell
@@ -25,6 +26,7 @@ export interface ModuleDefinition {
   background?: string // Overall module background
   css?: string // Overall module CSS
   category: string // microcontrollers, sensors, power, connectors, etc.
+  subcategory?: string // e.g. output.light, output.electromechanical
   description?: string
   manufacturer?: string
   datasheet?: string
@@ -33,6 +35,8 @@ export interface ModuleDefinition {
 
 export interface ComponentBehavior {
   onClick?: string // JavaScript code to execute when component is clicked
+  onMouseDown?: string // JavaScript code to execute when component body is pressed
+  onMouseUp?: string // JavaScript code to execute when component body is released
   onPowerChange?: string // JavaScript code to execute when power state changes
   customFunctions?: Record<string, string> // Additional custom JavaScript functions
 }

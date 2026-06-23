@@ -11,232 +11,14 @@ import { CircuitTutorial } from './CircuitTutorial'
 import { logger } from '../services/Logger'
 import { crdtService } from '../services/CRDTService'
 import { getCRDTSaveService } from '../services/CRDTSaveService'
-import { Eraser } from 'lucide-react'
+import { Eraser, Focus } from 'lucide-react'
+import { ComponentStatsBadge } from './ComponentStatsBadge'
+import { formatCapacitance } from './CapacitanceSelector'
+import { formatInductance } from './InductanceSelector'
+import { OUTPUT_MODULE_NAMES } from '../modules/registry'
 
-// Debug Panel Component for Motor PWM Diagnostics
-interface MotorPWMDebugPanelProps {
-  gridData: GridCell[][]
-  wires: WireConnection[]
-  componentStates: Map<string, ComponentState>
-}
-
-function MotorPWMDebugPanel({ gridData, wires, componentStates }: MotorPWMDebugPanelProps) {
-  // Find all motor components - check for various possible motor types
-  const motors = []
-  const possibleMotorTypes = ['Motor', 'motor', 'Brushless Motor', 'brushless motor', 'BLDC', 'bldc', 'DC Motor', 'dc motor', 'Output']
-  
-  for (let y = 0; y < gridData.length; y++) {
-    for (let x = 0; x < gridData[y].length; x++) {
-      const cell = gridData[y][x]
-      if (cell?.occupied && cell.componentType && possibleMotorTypes.includes(cell.componentType)) {
-        // For "Output" type, check if it's actually a motor by looking at the module definition
-        if (cell.componentType === 'Output') {
-          const moduleDef = cell.moduleDefinition
-          if (moduleDef && (moduleDef.module === 'Motor' || moduleDef.module === 'motor' || 
-                           moduleDef.module?.toLowerCase().includes('motor') ||
-                           moduleDef.module?.toLowerCase().includes('bldc'))) {
-            motors.push({
-              id: cell.componentId,
-              position: { x, y },
-              cell
-            })
-          }
-        } else {
-          motors.push({
-            id: cell.componentId,
-            position: { x, y },
-            cell
-          })
-        }
-      }
-    }
-  }
-
-  // Find all PWM wires (wires with PWM data)
-  const pwmWires = wires.filter(wire => wire.pwm !== undefined)
-
-  // Find Arduino components
-  const arduinos = []
-  for (let y = 0; y < gridData.length; y++) {
-    for (let x = 0; x < gridData[y].length; x++) {
-      const cell = gridData[y][x]
-      if (cell?.occupied && cell.componentType === 'Microcontroller') {
-        arduinos.push({
-          id: cell.componentId,
-          position: { x, y },
-          cell
-        })
-      }
-    }
-  }
-
-  return (
-    <div className="space-y-3">
-      {/* PWM Connection Status */}
-      <div>
-        <h4 className="font-semibold text-orange-400 mb-2">🔗 PWM Connection Status</h4>
-        <div className="bg-gray-800 p-2 rounded text-xs">
-          {pwmWires.length > 0 ? (
-            <div className="text-green-300">
-              ✅ PWM signals detected: {pwmWires.length} wire(s)
-              {pwmWires.map((wire, index) => (
-                <div key={index} className="ml-2">
-                  Wire {wire.id}: {wire.pwm?.toFixed(1)}% PWM
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-red-300">❌ No PWM signals detected</div>
-          )}
-        </div>
-      </div>
-
-      {/* Motors Section */}
-      <div>
-        <h4 className="font-semibold text-yellow-400 mb-2">🔌 Motors Found: {motors.length}</h4>
-        {motors.length === 0 ? (
-          <div className="bg-gray-800 p-2 rounded text-xs text-red-300">
-            ❌ No motors found. Checking for: {possibleMotorTypes.join(', ')}
-          </div>
-        ) : (
-          motors.map((motor, index) => {
-            const pwmPinPosition = { x: motor.position.x + 2, y: motor.position.y + 0 }
-            const vccPinPosition = { x: motor.position.x + 0, y: motor.position.y + 0 }
-            
-            const connectedWires = wires.filter(wire => 
-              wire.segments.some(segment => 
-                (segment.from.x === pwmPinPosition.x && segment.from.y === pwmPinPosition.y) ||
-                (segment.to.x === pwmPinPosition.x && segment.to.y === pwmPinPosition.y)
-              )
-            )
-            
-            const vccWires = wires.filter(wire => 
-              wire.segments.some(segment => 
-                (segment.from.x === vccPinPosition.x && segment.from.y === vccPinPosition.y) ||
-                (segment.to.x === vccPinPosition.x && segment.to.y === vccPinPosition.y)
-              )
-            )
-            
-            // Use the same key construction logic as the electrical system
-            const cellComponentId = `${motor.id}-${motor.cell.cellIndex || 0}`
-            const motorState = componentStates.get(cellComponentId)
-            const hasPWMConnection = connectedWires.some(wire => wire.pwm !== undefined && wire.pwm > 0)
-            const hasVCCConnection = vccWires.some(wire => wire.voltage > 0)
-            
-            // Debug: Show VCC wire details and motor state
-            console.log(`[DEBUG] Motor ${motor.id} VCC wires:`, vccWires.map(w => ({ id: w.id, voltage: w.voltage })))
-            console.log(`[DEBUG] Motor ${motor.id} state key: ${cellComponentId}`)
-            console.log(`[DEBUG] Motor ${motor.id} state:`, motorState)
-            console.log(`[DEBUG] Motor ${motor.id} componentStates keys:`, Array.from(componentStates.keys()).filter(k => k.includes(motor.id || '')))
-            
-            return (
-              <div key={index} className="bg-gray-800 p-2 rounded text-xs">
-                <div className="font-mono text-blue-300">Motor {index + 1}</div>
-                <div>ID: {motor.id}</div>
-                <div>State Key: {cellComponentId}</div>
-                <div>Type: {motor.cell.componentType}</div>
-                <div>Position: ({motor.position.x}, {motor.position.y})</div>
-                <div>VCC Pin: ({vccPinPosition.x}, {vccPinPosition.y})</div>
-                <div>PWM Pin: ({pwmPinPosition.x}, {pwmPinPosition.y})</div>
-                <div>Connected Wires: {connectedWires.length}</div>
-                <div className={hasVCCConnection ? "text-green-300" : "text-red-300"}>
-                  VCC Connection: {hasVCCConnection ? "✅ Connected" : "❌ No VCC"}
-                </div>
-                <div className={hasPWMConnection ? "text-green-300" : "text-red-300"}>
-                  PWM Connection: {hasPWMConnection ? "✅ Connected" : "❌ No PWM"}
-                </div>
-                <div className={hasVCCConnection && hasPWMConnection ? "text-green-300" : "text-red-300"}>
-                  Motor Powered: {hasVCCConnection && hasPWMConnection ? "✅ Yes" : "❌ No"}
-                </div>
-                {connectedWires.map((wire, wireIndex) => (
-                  <div key={wireIndex} className="ml-2 text-green-300">
-                    PWM Wire {wire.id}: PWM {wire.pwm?.toFixed(1)}%, Voltage {wire.voltage?.toFixed(1)}V
-                  </div>
-                ))}
-                {vccWires.map((wire, wireIndex) => (
-                  <div key={`vcc-${wireIndex}`} className="ml-2 text-blue-300">
-                    VCC Wire {wire.id}: Voltage {wire.voltage?.toFixed(1)}V
-                  </div>
-                ))}
-                {motorState && (
-                  <div className="mt-1">
-                    <div className="text-yellow-300">RPM: {motorState.motorRPM?.toFixed(0) || 0}</div>
-                    <div className="text-yellow-300">Torque: {motorState.motorTorque?.toFixed(3) || 0} N⋅m</div>
-                    <div className="text-gray-400">Status: {motorState.status}</div>
-                  </div>
-                )}
-              </div>
-            )
-          })
-        )}
-      </div>
-
-      {/* PWM Wires Section */}
-      <div>
-        <h4 className="font-semibold text-green-400 mb-2">⚡ PWM Wires: {pwmWires.length}</h4>
-        {pwmWires.map((wire, index) => (
-          <div key={index} className="bg-gray-800 p-2 rounded text-xs">
-            <div className="font-mono text-green-300">Wire {wire.id}</div>
-            <div>PWM: {wire.pwm?.toFixed(1)}%</div>
-            <div>Voltage: {wire.voltage?.toFixed(1)}V</div>
-            <div>Segments: {wire.segments.length}</div>
-            {wire.segments.map((segment, segIndex) => (
-              <div key={segIndex} className="ml-2 text-gray-400">
-                {segIndex}: ({segment.from.x},{segment.from.y}) → ({segment.to.x},{segment.to.y})
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-
-      {/* Arduino Section */}
-      <div>
-        <h4 className="font-semibold text-blue-400 mb-2">🤖 Arduino: {arduinos.length}</h4>
-        {arduinos.map((arduino, index) => (
-          <div key={index} className="bg-gray-800 p-2 rounded text-xs">
-            <div className="font-mono text-blue-300">Arduino {index + 1}</div>
-            <div>ID: {arduino.id}</div>
-            <div>Position: ({arduino.position.x}, {arduino.position.y})</div>
-          </div>
-        ))}
-      </div>
-
-      {/* All Components Found */}
-      <div>
-        <h4 className="font-semibold text-cyan-400 mb-2">🔍 All Components Found</h4>
-        <div className="bg-gray-800 p-2 rounded text-xs">
-          {(() => {
-            const componentTypes = new Map<string, number>()
-            for (let y = 0; y < gridData.length; y++) {
-              for (let x = 0; x < gridData[y].length; x++) {
-                const cell = gridData[y][x]
-                if (cell?.occupied && cell.componentType) {
-                  const type = cell.componentType
-                  componentTypes.set(type, (componentTypes.get(type) || 0) + 1)
-                }
-              }
-            }
-            return Array.from(componentTypes.entries()).map(([type, count]) => (
-              <div key={type} className="text-cyan-300">
-                {type}: {count} found
-              </div>
-            ))
-          })()}
-        </div>
-      </div>
-
-      {/* System Info */}
-      <div>
-        <h4 className="font-semibold text-purple-400 mb-2">📊 System Info</h4>
-        <div className="bg-gray-800 p-2 rounded text-xs">
-          <div>Total Wires: {wires.length}</div>
-          <div>Total Components: {componentStates.size}</div>
-          <div>Grid Size: {gridData.length} × {gridData[0]?.length || 0}</div>
-        </div>
-      </div>
-    </div>
-  )
-}
+const GRID_PADDING = 4
+const DEFAULT_CELL_SIZE_PX = () => (window.innerWidth * 2.5) / 100
 
 interface Project {
   id: number
@@ -279,6 +61,8 @@ interface ProjectGridProps {
   // Zoom controls
   zoom?: number
   onZoomChange?: (zoom: number) => void
+  // Coordinate display
+  onHoveredPositionChange?: (position: {x: number, y: number} | null) => void
 }
 
 interface GridCell {
@@ -294,7 +78,133 @@ interface GridCell {
   voltage?: number // Voltage level for this cell
   current?: number // Current level for this cell
   resistance?: number // Resistance value for resistors
+  capacitance?: number // Capacitance value for capacitors (farads)
+  inductance?: number // Inductance value for inductors (henries)
   isOn?: boolean // Switch state
+}
+
+interface LastPlacedObject {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+function getModuleNumericProperty(properties: Record<string, unknown> | undefined, key: string, fallback: number): number {
+  const val = properties?.[key]
+  if (typeof val === 'number') return val
+  if (val && typeof val === 'object' && 'default' in val && typeof (val as { default: unknown }).default === 'number') {
+    return (val as { default: number }).default
+  }
+  return fallback
+}
+
+function buildPlacedModuleDefinition(module: ModuleDefinition): ModuleDefinition {
+  const props = (module as ModuleDefinition & { properties?: Record<string, unknown> }).properties
+  if (module.module === 'Resistor') {
+    return {
+      ...module,
+      properties: {
+        ...props,
+        resistance: getModuleNumericProperty(props, 'resistance', 1000),
+      },
+    } as ModuleDefinition
+  }
+  if (module.module === 'Capacitor') {
+    return {
+      ...module,
+      properties: {
+        ...props,
+        capacitance: getModuleNumericProperty(props, 'capacitance', 0.0001),
+      },
+    } as ModuleDefinition
+  }
+  if (module.module === 'Inductor') {
+    return {
+      ...module,
+      properties: {
+        ...props,
+        inductance: getModuleNumericProperty(props, 'inductance', 0.001),
+      },
+    } as ModuleDefinition
+  }
+  return module
+}
+
+function findLastPlacedFromGrid(gridData: GridCell[][]): LastPlacedObject | null {
+  const components = new Map<string, { x: number; y: number; width: number; height: number; timestamp: number }>()
+
+  for (let y = 0; y < gridData.length; y++) {
+    for (let x = 0; x < (gridData[y]?.length ?? 0); x++) {
+      const cell = gridData[y][x]
+      if (!cell?.occupied || !cell.componentId) continue
+
+      const id = cell.componentId
+      const existing = components.get(id)
+      if (!existing) {
+        const parts = id.split('-')
+        const timestamp = parseInt(parts[parts.length - 1], 10) || 0
+        const def = cell.moduleDefinition
+        components.set(id, {
+          x,
+          y,
+          width: def?.gridX ?? 1,
+          height: def?.gridY ?? 1,
+          timestamp,
+        })
+      } else {
+        existing.x = Math.min(existing.x, x)
+        existing.y = Math.min(existing.y, y)
+      }
+    }
+  }
+
+  let best: LastPlacedObject | null = null
+  let maxTs = -1
+  for (const comp of components.values()) {
+    if (comp.timestamp > maxTs) {
+      maxTs = comp.timestamp
+      best = { x: comp.x, y: comp.y, width: comp.width, height: comp.height }
+    }
+  }
+  return best
+}
+
+function findModuleOriginInGrid(
+  gridData: GridCell[][],
+  x: number,
+  y: number,
+  moduleId: string
+): { x: number; y: number } | null {
+  const isModuleOrigin = (gx: number, gy: number) => {
+    const cell = gridData[gy]?.[gx]
+    if (!cell?.occupied || cell.componentId !== moduleId) return false
+    const leftCell = gx > 0 ? gridData[gy]?.[gx - 1] : null
+    const topCell = gy > 0 ? gridData[gy - 1]?.[gx] : null
+    const isLeftEdge = !leftCell?.occupied || leftCell.componentId !== moduleId
+    const isTopEdge = !topCell?.occupied || topCell.componentId !== moduleId
+    return isLeftEdge && isTopEdge
+  }
+
+  if (x < 0 || y < 0) {
+    for (let gy = 0; gy < gridData.length; gy++) {
+      for (let gx = 0; gx < (gridData[gy]?.length ?? 0); gx++) {
+        if (isModuleOrigin(gx, gy)) return { x: gx, y: gy }
+      }
+    }
+    return null
+  }
+
+  for (let dy = 0; dy < 25; dy++) {
+    for (let dx = 0; dx < 10; dx++) {
+      const checkX = x - dx
+      const checkY = y - dy
+      if (checkX >= 0 && checkY >= 0 && isModuleOrigin(checkX, checkY)) {
+        return { x: checkX, y: checkY }
+      }
+    }
+  }
+  return null
 }
 
 
@@ -313,11 +223,14 @@ export function ProjectGrid({
   onWiresChange,
   onCircuitInfoChange,
   zoom: externalZoom,
-  onZoomChange
+  onZoomChange,
+  onHoveredPositionChange
 }: ProjectGridProps) {
   const { isDark } = useTheme()
   const gridRef = useRef<HTMLDivElement>(null)
+  const gridLayerRef = useRef<HTMLDivElement>(null)
   const dragComponentRef = useRef<any>(null)
+  const [cellSizePx, setCellSizePx] = useState(DEFAULT_CELL_SIZE_PX)
   const [gridSize, setGridSize] = useState({ width: 50, height: 50 }) // Much smaller initial grid
   const [internalZoom, setInternalZoom] = useState(1)
   
@@ -359,11 +272,16 @@ export function ProjectGrid({
     }
     return initialGrid
   })
+  const gridDataRef = useRef(gridData)
+  gridDataRef.current = gridData
   const [hoverState, setHoverState] = useState<{
     x: number
     y: number
   } | null>(null)
   const [gridOffset, setGridOffset] = useState({ x: -200, y: -200 }) // Standard positioning
+  const [lastPlacedObject, setLastPlacedObject] = useState<LastPlacedObject | null>(() =>
+    initialGridData?.length ? findLastPlacedFromGrid(initialGridData as GridCell[][]) : null
+  )
   const [isPanning, setIsPanning] = useState(false)
   const [panStart, setPanStart] = useState({ x: 0, y: 0 })
   
@@ -382,7 +300,6 @@ export function ProjectGrid({
   const [snapToGrid] = useState(true) // Keep for internal logic but don't expose UI
   const [electricalValidations, setElectricalValidations] = useState<any[]>([])
   const [showTutorial, setShowTutorial] = useState(false)
-  const [showDebugPanel, setShowDebugPanel] = useState(false)
   const [hoveredTile, setHoveredTile] = useState<{ x: number; y: number; cell: GridCell | null } | null>(null)
   const [componentStates, setComponentStates] = useState<Map<string, ComponentState>>(() => {
     if (initialComponentStates) {
@@ -430,39 +347,24 @@ export function ProjectGrid({
       return () => clearTimeout(timeoutId)
     }
   }, [gridData, wires, componentStates])
-  
-  
-  // Calculate cell size in pixels - moved to visibleBounds calculation
-  
-  // Virtualization: Calculate visible grid bounds
-  const visibleBounds = useMemo(() => {
-    if (!gridRef.current) return { startX: 0, endX: 50, startY: 0, endY: 50 }
-    
-    const rect = gridRef.current.getBoundingClientRect()
-    // Get actual cell size from DOM for accurate calculations
-    const firstCell = gridRef.current.querySelector('[data-grid-cell]') as HTMLElement
-    const actualCellSize = firstCell ? firstCell.offsetWidth : (window.innerWidth * 2.5) / 100
-    
-    // Calculate visible area with buffer, accounting for the transform
-    const buffer = 5 // Extra cells to render for smooth scrolling
-    const translateX = gridOffset.x + 4 / zoom
-    const translateY = gridOffset.y + 4 / zoom
-    
-    // Calculate the visible area in transformed coordinates
-    const visibleLeft = -translateX / zoom
-    const visibleTop = -translateY / zoom
-    const visibleRight = (rect.width - translateX) / zoom
-    const visibleBottom = (rect.height - translateY) / zoom
-    
-    // Convert to grid coordinates using actual cell size
-    const startX = Math.max(0, Math.floor(visibleLeft / actualCellSize) - buffer)
-    const endX = Math.min(gridSize.width, Math.ceil(visibleRight / actualCellSize) + buffer)
-    const startY = Math.max(0, Math.floor(visibleTop / actualCellSize) - buffer)
-    const endY = Math.min(gridSize.height, Math.ceil(visibleBottom / actualCellSize) + buffer)
-    
-    return { startX, endX, startY, endY }
-  }, [gridOffset, zoom, gridSize.width, gridSize.height])
-  
+
+  // Keep cell size in sync with rendered vw-based grid (avoids hover vs click drift)
+  useEffect(() => {
+    const el = gridLayerRef.current
+    if (!el) return
+
+    const updateCellSize = () => {
+      if (gridSize.width > 0 && el.offsetWidth > 0) {
+        setCellSizePx(el.offsetWidth / gridSize.width)
+      }
+    }
+
+    updateCellSize()
+    const observer = new ResizeObserver(updateCellSize)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [gridSize.width])
+
   // Helper function to snap coordinates to grid
   const snapToGridCoords = useCallback((x: number, y: number) => {
     if (!snapToGrid) return { x, y }
@@ -472,6 +374,100 @@ export function ProjectGrid({
     }
   }, [snapToGrid, gridSize.width, gridSize.height])
 
+  const getGridTranslate = useCallback(() => ({
+    x: gridOffset.x + GRID_PADDING / zoom,
+    y: gridOffset.y + GRID_PADDING / zoom,
+  }), [gridOffset, zoom])
+
+  const screenToLocal = useCallback((clientX: number, clientY: number) => {
+    const rect = gridRef.current?.getBoundingClientRect()
+    if (!rect) return null
+
+    const { x: translateX, y: translateY } = getGridTranslate()
+    const mouseX = clientX - rect.left
+    const mouseY = clientY - rect.top
+
+    return {
+      x: (mouseX - translateX) / zoom,
+      y: (mouseY - translateY) / zoom,
+    }
+  }, [getGridTranslate, zoom])
+
+  const localToGridCoords = useCallback((localX: number, localY: number, mode: 'cell' | 'wire' = 'cell') => {
+    const offset = mode === 'wire' ? cellSizePx / 2 : 0
+    return snapToGridCoords(
+      (localX - offset) / cellSizePx,
+      (localY - offset) / cellSizePx
+    )
+  }, [cellSizePx, snapToGridCoords])
+
+  const screenToGridCoords = useCallback((clientX: number, clientY: number, mode: 'cell' | 'wire' = 'cell') => {
+    const local = screenToLocal(clientX, clientY)
+    if (!local) return null
+    return localToGridCoords(local.x, local.y, mode)
+  }, [screenToLocal, localToGridCoords])
+
+  const zoomAtPoint = useCallback((newZoom: number, clientX: number, clientY: number) => {
+    const rect = gridRef.current?.getBoundingClientRect()
+    if (!rect) {
+      updateZoom(newZoom)
+      return
+    }
+
+    const mouseX = clientX - rect.left
+    const mouseY = clientY - rect.top
+    const oldTranslateX = gridOffset.x + GRID_PADDING / zoom
+    const oldTranslateY = gridOffset.y + GRID_PADDING / zoom
+    const localX = (mouseX - oldTranslateX) / zoom
+    const localY = (mouseY - oldTranslateY) / zoom
+
+    setGridOffset({
+      x: mouseX - newZoom * localX - GRID_PADDING / newZoom,
+      y: mouseY - newZoom * localY - GRID_PADDING / newZoom,
+    })
+    updateZoom(newZoom)
+  }, [gridOffset, zoom, updateZoom])
+  
+  // Virtualization: Calculate visible grid bounds
+  const visibleBounds = useMemo(() => {
+    if (!gridRef.current) return { startX: 0, endX: 50, startY: 0, endY: 50 }
+    
+    const rect = gridRef.current.getBoundingClientRect()
+    const buffer = 5
+    const translateX = gridOffset.x + GRID_PADDING / zoom
+    const translateY = gridOffset.y + GRID_PADDING / zoom
+    
+    const visibleLeft = -translateX / zoom
+    const visibleTop = -translateY / zoom
+    const visibleRight = (rect.width - translateX) / zoom
+    const visibleBottom = (rect.height - translateY) / zoom
+    
+    const startX = Math.max(0, Math.floor(visibleLeft / cellSizePx) - buffer)
+    const endX = Math.min(gridSize.width, Math.ceil(visibleRight / cellSizePx) + buffer)
+    const startY = Math.max(0, Math.floor(visibleTop / cellSizePx) - buffer)
+    const endY = Math.min(gridSize.height, Math.ceil(visibleBottom / cellSizePx) + buffer)
+    
+    return { startX, endX, startY, endY }
+  }, [gridOffset, zoom, gridSize.width, gridSize.height, cellSizePx])
+
+  const gridLineColor = isDark ? '#d1d5db' : '#9ca3af'
+  const gridTransform = `scale(${zoom}) translate(${gridOffset.x + GRID_PADDING / zoom}px, ${gridOffset.y + GRID_PADDING / zoom}px)`
+
+  const zoomToLastPlaced = useCallback(() => {
+    if (!lastPlacedObject || !gridRef.current) return
+
+    const rect = gridRef.current.getBoundingClientRect()
+    const centerX = lastPlacedObject.x + lastPlacedObject.width / 2
+    const centerY = lastPlacedObject.y + lastPlacedObject.height / 2
+    const targetZoom = Math.min(3, Math.max(zoom, 1.5))
+
+    setGridOffset({
+      x: (rect.width / 2 - GRID_PADDING) / targetZoom - centerX * cellSizePx,
+      y: (rect.height / 2 - GRID_PADDING) / targetZoom - centerY * cellSizePx,
+    })
+    updateZoom(targetZoom)
+  }, [lastPlacedObject, zoom, updateZoom, cellSizePx])
+  
   // Expand grid dynamically based on content and viewport - MEMORY OPTIMIZED
   const expandGrid = useCallback((newZoom: number) => {
     // Calculate viewport size in grid cells
@@ -656,18 +652,16 @@ export function ProjectGrid({
       const zoomStep = 0.1
       
       if (delta < 0) {
-        // Zoom in
         const newZoom = Math.min(zoom + zoomStep, 3)
-        updateZoom(newZoom)
+        zoomAtPoint(newZoom, e.clientX, e.clientY)
         expandGrid(newZoom)
       } else {
-        // Zoom out
         const newZoom = Math.max(zoom - zoomStep, 0.25)
-        updateZoom(newZoom)
+        zoomAtPoint(newZoom, e.clientX, e.clientY)
         expandGrid(newZoom)
       }
     }
-  }, [zoom, expandGrid, updateZoom])
+  }, [zoom, expandGrid, zoomAtPoint])
 
   // Handle touch/pinch zoom
   const handleTouchStart = useCallback((e: TouchEvent) => {
@@ -705,7 +699,9 @@ export function ProjectGrid({
         
         if (Math.abs(zoomStep) > 0.05) { // Only zoom if significant change
           const newZoom = Math.max(0.25, Math.min(3, zoom + zoomStep))
-          updateZoom(newZoom)
+          const centerX = (touch1.clientX + touch2.clientX) / 2
+          const centerY = (touch1.clientY + touch2.clientY) / 2
+          zoomAtPoint(newZoom, centerX, centerY)
           expandGrid(newZoom)
           
           // Update initial distance for continuous pinch
@@ -715,7 +711,7 @@ export function ProjectGrid({
         }
       }
     }
-  }, [zoom, expandGrid])
+  }, [zoom, expandGrid, zoomAtPoint])
 
   // Add wheel and touch event listeners
   useEffect(() => {
@@ -758,9 +754,33 @@ export function ProjectGrid({
     }
   }, [isPanning, isModalOpen, panStart])
 
+  const releaseHeldPushButtons = useCallback(() => {
+    setGridData(prev => {
+      let changed = false
+      const newGrid = prev.map(row => {
+        if (!row) return row
+        return row.map(cell => {
+          if (
+            !cell?.occupied ||
+            cell.moduleDefinition?.module !== 'Push Button' ||
+            !cell.isOn
+          ) {
+            return cell
+          }
+          const moduleCell = cell.moduleDefinition?.grid[cell.cellIndex ?? 0]
+          if (moduleCell?.type !== 'SWITCH_BODY') return cell
+          changed = true
+          return { ...cell, isOn: false, isPowered: false }
+        })
+      })
+      return changed ? newGrid : prev
+    })
+  }, [setGridData])
+
   const handleMouseUp = useCallback(() => {
     setIsPanning(false)
-  }, [])
+    releaseHeldPushButtons()
+  }, [releaseHeldPushButtons])
 
   // Stop panning when modal opens
   React.useEffect(() => {
@@ -795,7 +815,8 @@ export function ProjectGrid({
 
   const handleTouchEnd = useCallback(() => {
     setIsPanning(false)
-  }, [])
+    releaseHeldPushButtons()
+  }, [releaseHeldPushButtons])
 
   // Add pan event listeners
   useEffect(() => {
@@ -823,40 +844,19 @@ export function ProjectGrid({
   // Handle mouse move for hover preview
   const handleHoverMove = useCallback((e: React.MouseEvent) => {
     if (!gridRef.current) return
-    
-    const rect = gridRef.current.getBoundingClientRect()
-    // Use actual cell size with zoom since grid cells are sized with 2.5 * zoom vw
-    // Grid cells are sized with 2.5vw, so we need to convert this to pixels
-    const baseCellSize = (window.innerWidth * 2.5) / 100
-    
-    // Calculate coordinates relative to the grid container
-    // The grid is transformed with: scale(${zoom}) translate(${gridOffset.x + 4 / zoom}px, ${gridOffset.y + 4 / zoom}px)
-    // We need to account for the transform by using the inverse calculation
-    const translateX = gridOffset.x + 4 / zoom
-    const translateY = gridOffset.y + 4 / zoom
-    
-    // Calculate the mouse position relative to the transformed grid
-    const mouseX = e.clientX - rect.left
-    const mouseY = e.clientY - rect.top
-    
-    // Apply inverse transform: first subtract translation, then divide by scale
-    const transformedX = (mouseX - translateX) / zoom
-    const transformedY = (mouseY - translateY) / zoom
-    
-    // Convert to grid coordinates
-    // Remove the half cell size offset to match the fixed click calculation
-    const rawX = transformedX / baseCellSize
-    const rawY = transformedY / baseCellSize
-    
-    // Snap to grid if enabled
-    const { x, y } = snapToGridCoords(rawX, rawY)
+
+    const gridCoords = screenToGridCoords(e.clientX, e.clientY, 'cell')
+    if (!gridCoords) return
+    const { x, y } = gridCoords
     
     // Update hovered tile display
     if (x >= 0 && x < gridSize.width && y >= 0 && y < gridSize.height) {
       const cell = gridData[y]?.[x]
       setHoveredTile({ x, y, cell: cell || null })
+      onHoveredPositionChange?.({ x, y })
     } else {
       setHoveredTile(null)
+      onHoveredPositionChange?.(null)
     }
     
     // Handle delete mode hover
@@ -872,24 +872,82 @@ export function ProjectGrid({
     
     // Handle module placement preview
     if (selectedModule && !wiringState.isWiring) {
-      // Place the module with its top-left corner at the target cell
-      const centeredX = x
-      const centeredY = y
-      
-      setHoverState({ x: centeredX, y: centeredY })
+      setHoverState({ x, y })
     }
     
     // Handle wire preview
     if (wiringState.isWiring && wiringState.currentConnection) {
-      // For wire preview, use offset coordinates to match wire placement
-      const wireX = (transformedX - baseCellSize / 2) / baseCellSize
-      const wireY = (transformedY - baseCellSize / 2) / baseCellSize
-      const { x: wireGridX, y: wireGridY } = snapToGridCoords(wireX, wireY)
-      
+      const wireCoords = screenToGridCoords(e.clientX, e.clientY, 'wire')
+      if (!wireCoords) return
+      const { x: wireGridX, y: wireGridY } = wireCoords
       const currentSegments = [...wiringState.currentConnection.segments, { x: wireGridX, y: wireGridY }]
       setWirePreview(currentSegments)
     }
-  }, [selectedModule, zoom, gridOffset, wiringState, snapToGridCoords, deleteMode, gridData, gridSize.width, gridSize.height])
+  }, [selectedModule, wiringState, screenToGridCoords, deleteMode, gridData, gridSize.width, gridSize.height, onHoveredPositionChange])
+
+  // Handle clicking on connectable cells for wiring - removed (handled by grid click handler)
+
+  // Execute JavaScript behavior for components
+  const executeComponentBehavior = useCallback((jsCode: string, componentId: string, cellIndex: number) => {
+    try {
+      const currentGrid = gridDataRef.current
+      const componentOrigin = findModuleOriginInGrid(currentGrid, -1, -1, componentId)
+      if (!componentOrigin) return
+      
+      // Create a context for the JavaScript execution
+      const context = {
+        componentId,
+        cellIndex,
+        gridData: currentGrid,
+        setGridData,
+        // Helper functions
+        getCellByPosition: (relativeX: number, relativeY: number) => {
+          const absoluteX = componentOrigin.x + relativeX
+          const absoluteY = componentOrigin.y + relativeY
+          return gridDataRef.current[absoluteY]?.[absoluteX]
+        },
+        updateCellPower: (relativeX: number, relativeY: number, isPowered: boolean) => {
+          const absoluteX = componentOrigin.x + relativeX
+          const absoluteY = componentOrigin.y + relativeY
+          setGridData(prev => {
+            const cell = prev[absoluteY]?.[absoluteX]
+            if (!cell || (cell.isPowered === isPowered && cell.isOn === isPowered)) return prev
+            const newGrid = [...prev]
+            newGrid[absoluteY] = [...newGrid[absoluteY]]
+            newGrid[absoluteY][absoluteX] = {
+              ...newGrid[absoluteY][absoluteX],
+              isPowered: isPowered,
+              isOn: isPowered,
+            }
+            return newGrid
+          })
+        },
+        updateCellProperty: (relativeX: number, relativeY: number, props: Record<string, unknown>) => {
+          const absoluteX = componentOrigin.x + relativeX
+          const absoluteY = componentOrigin.y + relativeY
+          setGridData(prev => {
+            if (!prev[absoluteY]?.[absoluteX]) return prev
+            const newGrid = [...prev]
+            newGrid[absoluteY] = [...newGrid[absoluteY]]
+            newGrid[absoluteY][absoluteX] = {
+              ...newGrid[absoluteY][absoluteX],
+              ...props,
+            }
+            return newGrid
+          })
+        },
+        propagatePower: (fromX: number, fromY: number, isPowered: boolean) => {
+          // TODO: Implement power propagation through connections
+        }
+      }
+      
+      // Execute the JavaScript code in a controlled context
+      const func = new Function('context', `with(context) { ${jsCode} }`)
+      func(context)
+    } catch (error) {
+      console.error('Error executing component behavior:', error)
+    }
+  }, [setGridData])
 
   // Handle clicking on placed components
   const handleComponentClick = useCallback((e: React.MouseEvent, componentId: string, cellIndex: number) => {
@@ -913,59 +971,29 @@ export function ProjectGrid({
     if (module.behavior?.onClick) {
       executeComponentBehavior(module.behavior.onClick, componentId, cellIndex)
     }
-  }, [gridData])
+  }, [executeComponentBehavior])
 
-  // Handle clicking on connectable cells for wiring - removed (handled by grid click handler)
+  const handleComponentMouseDown = useCallback((e: React.MouseEvent, componentId: string, cellIndex: number) => {
+    e.stopPropagation()
 
-  // Execute JavaScript behavior for components
-  const executeComponentBehavior = useCallback((jsCode: string, componentId: string, cellIndex: number) => {
-    try {
-      // Find the component's origin position
-      const componentOrigin = findModuleOrigin(-1, -1, componentId)
-      if (!componentOrigin) return
-      
-      // Create a context for the JavaScript execution
-      const context = {
-        componentId,
-        cellIndex,
-        gridData,
-        setGridData,
-        // Helper functions
-        getCellByPosition: (relativeX: number, relativeY: number) => {
-          const absoluteX = componentOrigin.x + relativeX
-          const absoluteY = componentOrigin.y + relativeY
-          return gridData[absoluteY]?.[absoluteX]
-        },
-        updateCellPower: (relativeX: number, relativeY: number, isPowered: boolean) => {
-          const absoluteX = componentOrigin.x + relativeX
-          const absoluteY = componentOrigin.y + relativeY
-          setGridData(prev => {
-            // More memory-efficient update - only update the specific cell
-            if (prev[absoluteY]?.[absoluteX] && prev[absoluteY][absoluteX].isPowered !== isPowered) {
-              const newGrid = [...prev]
-              newGrid[absoluteY] = [...newGrid[absoluteY]]
-              newGrid[absoluteY][absoluteX] = {
-                ...newGrid[absoluteY][absoluteX],
-                isPowered: isPowered
-              }
-              return newGrid
-            }
-            return prev // No changes needed
-          })
-        },
-        propagatePower: (fromX: number, fromY: number, isPowered: boolean) => {
-          // TODO: Implement power propagation through connections
-        }
-      }
-      
-      // Execute the JavaScript code in a controlled context
-      const func = new Function('context', `with(context) { ${jsCode} }`)
-      func(context)
-    } catch (error) {
-      console.error('Error executing component behavior:', error)
-    }
-  }, [gridData, setGridData])
+    const targetCell = gridDataRef.current
+      .flat()
+      .find(c => c?.componentId === componentId && c.cellIndex === cellIndex)
+    if (!targetCell?.moduleDefinition?.behavior?.onMouseDown) return
 
+    executeComponentBehavior(targetCell.moduleDefinition.behavior.onMouseDown, componentId, cellIndex)
+  }, [executeComponentBehavior])
+
+  const handleComponentMouseUp = useCallback((e: React.MouseEvent, componentId: string, cellIndex: number) => {
+    e.stopPropagation()
+
+    const targetCell = gridDataRef.current
+      .flat()
+      .find(c => c?.componentId === componentId && c.cellIndex === cellIndex)
+    if (!targetCell?.moduleDefinition?.behavior?.onMouseUp) return
+
+    executeComponentBehavior(targetCell.moduleDefinition.behavior.onMouseUp, componentId, cellIndex)
+  }, [executeComponentBehavior])
 
   // Check if a cell is a connection point
   const isConnectionPoint = useCallback((x: number, y: number) => {
@@ -1103,113 +1131,6 @@ export function ProjectGrid({
       onModuleSelect(null)
     }
   }, [wiringState.isWiring, cancelWiring, selectedModule, onModuleSelect])
-
-  // PWM Test function
-  const handlePWMTest = useCallback(() => {
-    console.log('🔧 PWM Test: Sending PWM signal from Arduino UNO pin D13')
-    console.log('🔧 Grid data length:', gridData.length, 'x', gridData[0]?.length)
-    
-    // Find Arduino UNO microcontroller in the grid
-    let arduinoUno = null
-    let foundComponents = []
-    let allOccupiedCells = []
-    
-    for (let y = 0; y < gridData.length; y++) {
-      for (let x = 0; x < gridData[y].length; x++) {
-        const cell = gridData[y][x]
-        if (cell?.occupied) {
-          allOccupiedCells.push({
-            position: { x, y },
-            componentType: cell.componentType,
-            module: cell.moduleDefinition?.module,
-            cellIndex: cell.cellIndex,
-            componentId: cell.componentId,
-            moduleDefinition: cell.moduleDefinition
-          })
-          
-          if (cell.componentType === 'Microcontroller') {
-            foundComponents.push({
-              module: cell.moduleDefinition?.module,
-              componentType: cell.componentType,
-              position: { x, y },
-              cellIndex: cell.cellIndex,
-              componentId: cell.componentId
-            })
-            
-            console.log('🔧 Found microcontroller at', { x, y }, ':', {
-              module: cell.moduleDefinition?.module,
-              componentType: cell.componentType,
-              cellIndex: cell.cellIndex
-            })
-            
-            // Check if this is an Arduino UNO (either by module name or component type)
-            if (cell.moduleDefinition?.module?.toLowerCase().includes('arduino') || 
-                cell.moduleDefinition?.module?.toLowerCase().includes('uno')) {
-              arduinoUno = cell
-              console.log('🔧 Arduino UNO found at', { x, y }, 'module:', cell.moduleDefinition?.module)
-              break
-            }
-          }
-        }
-      }
-      if (arduinoUno) break
-    }
-    
-    console.log('🔧 All occupied cells:', allOccupiedCells)
-    console.log('🔧 Found microcontrollers:', foundComponents)
-    
-    // Additional debugging for Arduino detection
-    if (foundComponents.length === 0) {
-      console.log('🔧 No microcontrollers found. Checking all occupied cells...')
-      allOccupiedCells.forEach(cell => {
-        console.log('🔧 Cell at', cell.position, ':', {
-          componentType: cell.componentType,
-          module: cell.module,
-          category: cell.moduleDefinition?.category
-        })
-      })
-    }
-    
-    if (!arduinoUno) {
-      alert(`Please place an Arduino UNO microcontroller on the grid first!\n\nFound microcontrollers: ${foundComponents.map(c => c.module || 'Unknown').join(', ') || 'None'}`)
-      return
-    }
-    
-    // Create a PWM signal for pin D13 (pin 13)
-    const pwmSignal: DynamicGPIOState = {
-      pin: 13,
-      state: 'PULSING',
-      value: 0.75, // 75% duty cycle
-      timestamp: Date.now(),
-      pattern: 'STATIC',
-      frequency: 1000, // 1kHz
-      dutyCycle: 0.75
-    }
-    
-    // Update the simulation state with PWM signal
-    setSimulationState(prev => {
-      const newGPIOStates = new Map(prev.gpioStates)
-      newGPIOStates.set(13, pwmSignal)
-      
-      console.log('🔧 PWM Test: Setting GPIO states:', Array.from(newGPIOStates.entries()))
-      
-      // Trigger electrical calculation immediately after state update
-      setTimeout(() => {
-        console.log('🔧 PWM Test: Triggering electrical calculation...')
-        console.log('🔧 PWM Test: Current GPIO states:', Array.from(newGPIOStates.entries()))
-        performElectricalCalculation()
-      }, 50) // Reduced timeout for faster response
-      
-      return {
-        ...prev,
-        gpioStates: newGPIOStates,
-        isRunning: true
-      }
-    })
-    
-    console.log('🔧 PWM Test: PWM signal sent to pin D13 with 75% duty cycle')
-    console.log('🔧 PWM Test: Check motor RPM - should show PWM activity!')
-  }, [gridData, performElectricalCalculation, simulationState])
 
   const deleteComponent = useCallback((componentId: string) => {
     setGridData(prev => {
@@ -1681,34 +1602,11 @@ export function ProjectGrid({
 
   // Handle click to place module or wire
   const handleGridClick = useCallback((e: React.MouseEvent) => {
-    const rect = gridRef.current?.getBoundingClientRect()
-    if (!rect) return
-    
-    // Get the actual rendered cell size from the DOM instead of calculating from vw
-    // This ensures perfect alignment between CSS and JavaScript
-    const firstCell = gridRef.current?.querySelector('[data-grid-cell]') as HTMLElement
-    const actualCellSize = firstCell ? firstCell.offsetWidth : (window.innerWidth * 2.5) / 100
-    
-    // Calculate coordinates relative to the grid container
-    // The grid is transformed with: scale(${zoom}) translate(${gridOffset.x + 4 / zoom}px, ${gridOffset.y + 4 / zoom}px)
-    // We need to account for the transform by using the inverse calculation
-    const translateX = gridOffset.x + 4 / zoom
-    const translateY = gridOffset.y + 4 / zoom
-    
-    // Calculate the mouse position relative to the transformed grid
-    const mouseX = e.clientX - rect.left
-    const mouseY = e.clientY - rect.top
-    
-    // Apply inverse transform: first subtract translation, then divide by scale
-    const transformedX = (mouseX - translateX) / zoom
-    const transformedY = (mouseY - translateY) / zoom
-    
-    // Convert to grid coordinates using actual cell size
-    const rawX = transformedX / actualCellSize
-    const rawY = transformedY / actualCellSize
-    
-    // Snap to grid if enabled
-    const { x, y } = snapToGridCoords(rawX, rawY)
+    if (!gridRef.current) return
+
+    const gridCoords = screenToGridCoords(e.clientX, e.clientY, 'cell')
+    if (!gridCoords) return
+    const { x, y } = gridCoords
     
     // Handle delete mode
     if (deleteMode) {
@@ -1725,10 +1623,9 @@ export function ProjectGrid({
     
     // Handle wiring mode
     if (wiringState.isWiring) {
-      // For wires, use offset coordinates to account for cell positioning
-      const wireX = (transformedX - actualCellSize / 2) / actualCellSize
-      const wireY = (transformedY - actualCellSize / 2) / actualCellSize
-      const { x: wireGridX, y: wireGridY } = snapToGridCoords(wireX, wireY)
+      const wireCoords = screenToGridCoords(e.clientX, e.clientY, 'wire')
+      if (!wireCoords) return
+      const { x: wireGridX, y: wireGridY } = wireCoords
       
       if (wiringState.currentConnection) {
         // Add segment or finish wiring
@@ -1789,6 +1686,8 @@ export function ProjectGrid({
           // More memory-efficient update - only update cells that change
           const newGrid = [...prev] // Shallow copy of rows
           const componentId = `${selectedModule.module}-${Date.now()}`
+          const placedModuleDefinition = buildPlacedModuleDefinition(selectedModule)
+          const placedProps = (placedModuleDefinition as ModuleDefinition & { properties?: Record<string, unknown> }).properties
           
           // Create CRDT operation for component placement
           const componentData = {
@@ -1796,7 +1695,7 @@ export function ProjectGrid({
             type: selectedModule.module,
             position: { x: centeredX, y: centeredY },
             size: { width: selectedModule.gridX, height: selectedModule.gridY },
-            moduleDefinition: selectedModule,
+            moduleDefinition: placedModuleDefinition,
             isPowered: false,
             isClickable: false
           }
@@ -1829,14 +1728,16 @@ export function ProjectGrid({
                 if (!newGrid[cellY][cellX].occupied) {
                   newGrid[cellY] = [...newGrid[cellY]] // Shallow copy of row
                   // Determine component type based on category
-                  const getComponentType = (module: any) => {
+                  const getComponentType = (module: ModuleDefinition) => {
                     if (module.category === 'microcontrollers') return 'Microcontroller'
                     if (module.category === 'power') return 'PowerSupply'
-                    if (module.category === 'output') return 'Output'
                     if (module.category === 'sensors') return 'Sensor'
+                    if (module.category === 'switches') return module.module
+                    if (module.category === 'passives') return module.module
+                    if (module.category === 'output' || module.category === 'semiconductors') return module.module
+                    if (module.category === 'electromechanical') return module.module
                     if (module.category === 'connectors') return 'Connector'
-                    if (module.category === 'passive') return 'Resistor'
-                    return module.module // fallback to module name
+                    return module.module
                   }
                   
                   newGrid[cellY][cellX] = {
@@ -1844,14 +1745,20 @@ export function ProjectGrid({
                     occupied: true,
                     componentId: componentId,
                     componentType: getComponentType(selectedModule),
-                    moduleDefinition: selectedModule,
+                    moduleDefinition: placedModuleDefinition,
                     isPowered: moduleCell?.isPowered || false,
                     cellIndex: cellIndex,
                     isClickable: moduleCell?.isClickable || false,
-                    // Add resistance for resistors to all cells
-                    ...(selectedModule.module === 'Resistor' && (selectedModule as any).properties?.resistance ? {
-                      resistance: (selectedModule as any).properties.resistance
-                    } : {})
+                    ...(moduleCell?.isOn !== undefined ? { isOn: moduleCell.isOn } : {}),
+                    ...(selectedModule.module === 'Resistor' ? {
+                      resistance: getModuleNumericProperty(placedProps, 'resistance', 1000),
+                    } : {}),
+                    ...(selectedModule.module === 'Capacitor' ? {
+                      capacitance: getModuleNumericProperty(placedProps, 'capacitance', 0.0001),
+                    } : {}),
+                    ...(selectedModule.module === 'Inductor' ? {
+                      inductance: getModuleNumericProperty(placedProps, 'inductance', 0.001),
+                    } : {}),
                   }
                 }
               }
@@ -1861,12 +1768,19 @@ export function ProjectGrid({
           console.log('🔧 ProjectGrid: GridData updated, new occupied cells:', newGrid.flat().filter(cell => cell.occupied).length)
           return newGrid
         })
+
+        setLastPlacedObject({
+          x: centeredX,
+          y: centeredY,
+          width: selectedModule.gridX,
+          height: selectedModule.gridY,
+        })
         
         // Deselect the module after placing
         onModuleSelect(null)
       }
     }
-  }, [selectedModule, zoom, gridOffset, gridSize.width, gridSize.height, onModuleSelect, wiringState, addWireSegment, finishWiringWithValidation, startWiring, isConnectionPoint, snapToGridCoords, checkAndExpandForPlacement])
+  }, [selectedModule, gridSize.width, gridSize.height, onModuleSelect, wiringState, addWireSegment, finishWiringWithValidation, startWiring, isConnectionPoint, screenToGridCoords, checkAndExpandForPlacement, deleteMode, gridData])
 
   // Handle mouse leave to clear hover state
   const handleMouseLeave = useCallback(() => {
@@ -2010,14 +1924,10 @@ export function ProjectGrid({
 
   // Render wire segment
   const renderWireSegment = (segment: WireSegment, wireId: string) => {
-    // Use base cell size (without zoom) since SVG transform handles zoom scaling
-    const baseCellSize = (window.innerWidth * 2.5) / 100
-    
-    // Center wires in cells with fine-tuned positioning
-    const startX = segment.from.x * baseCellSize + baseCellSize / 2
-    const startY = segment.from.y * baseCellSize + baseCellSize / 2
-    const endX = segment.to.x * baseCellSize + baseCellSize / 2
-    const endY = segment.to.y * baseCellSize + baseCellSize / 2
+    const startX = segment.from.x * cellSizePx + cellSizePx / 2
+    const startY = segment.from.y * cellSizePx + cellSizePx / 2
+    const endX = segment.to.x * cellSizePx + cellSizePx / 2
+    const endY = segment.to.y * cellSizePx + cellSizePx / 2
     
     const isSelected = false // Wire selection moved to DevicePanel
     
@@ -2134,32 +2044,8 @@ export function ProjectGrid({
   // Get the module definition at a specific position - removed (unused)
 
   // Find the origin position of a module by its ID
-  const findModuleOrigin = (x: number, y: number, moduleId: string) => {
-    // Search for the top-left corner of this module
-    for (let dy = 0; dy < 25; dy++) { // Search up to 25 cells up (increased for ESP32)
-      for (let dx = 0; dx < 10; dx++) { // Search up to 10 cells left
-        const checkX = x - dx
-        const checkY = y - dy
-        
-        if (checkX >= 0 && checkY >= 0) {
-          const cell = gridData[checkY]?.[checkX]
-          if (cell?.occupied && cell.componentId === moduleId) {
-            // Check if this is the origin (no occupied cell to the left or above)
-            const leftCell = checkX > 0 ? gridData[checkY]?.[checkX - 1] : null
-            const topCell = checkY > 0 ? gridData[checkY - 1]?.[checkX] : null
-            
-            const isLeftEdge = !leftCell?.occupied || leftCell.componentId !== moduleId
-            const isTopEdge = !topCell?.occupied || topCell.componentId !== moduleId
-            
-            if (isLeftEdge && isTopEdge) {
-              return { x: checkX, y: checkY }
-            }
-          }
-        }
-      }
-    }
-    return null
-  }
+  const findModuleOrigin = (x: number, y: number, moduleId: string) =>
+    findModuleOriginInGrid(gridData, x, y, moduleId)
 
   // Helper functions to get cell properties from module definition
   const getCellFromDefinition = (definition: any, x: number, y: number) => {
@@ -2343,13 +2229,14 @@ const GridCell = React.memo(({
   hasCollision, 
   isCellOccupied, 
   onComponentClick,
+  onComponentMouseDown,
+  onComponentMouseUp,
   findModuleOrigin,
   getCellBackground,
   getCellCSS,
   getCellPin,
   getResistorColorBands,
   componentStates,
-  zoom,
   highlightedMicrocontroller,
   deleteMode,
   hoveredForDeletion
@@ -2361,13 +2248,14 @@ const GridCell = React.memo(({
   hasCollision: boolean
   isCellOccupied: (x: number, y: number) => boolean
   onComponentClick: (e: React.MouseEvent, componentId: string, cellIndex: number) => void
+  onComponentMouseDown?: (e: React.MouseEvent, componentId: string, cellIndex: number) => void
+  onComponentMouseUp?: (e: React.MouseEvent, componentId: string, cellIndex: number) => void
   findModuleOrigin: (x: number, y: number, moduleId: string) => any
   getCellBackground: (definition: any, x: number, y: number) => string
   getCellCSS: (definition: any, x: number, y: number) => React.CSSProperties
   getCellPin: (definition: any, x: number, y: number) => string
   getResistorColorBands: (resistance: number) => string[]
   componentStates: Map<string, ComponentState>
-  zoom: number
   highlightedMicrocontroller: string | null
   deleteMode: boolean
   hoveredForDeletion: { type: 'component' | 'wire', id: string } | null
@@ -2394,10 +2282,8 @@ const GridCell = React.memo(({
       style={{
         left: `${x * 2.5}vw`,
         top: `${y * 2.5}vw`,
-        width: `${2.5 * zoom}vw`,
-        height: `${2.5 * zoom}vw`,
-        minWidth: '10px',
-        minHeight: '10px',
+        width: '2.5vw',
+        height: '2.5vw',
         cursor: occupied && (cell.isClickable || (cell.moduleDefinition?.grid[cell.cellIndex || 0]?.isConnectable)) ? 'pointer' : 'default'
       }}
       onClick={(e) => {
@@ -2411,6 +2297,34 @@ const GridCell = React.memo(({
             console.log('🔍 Component click:', cell.componentType, cell.cellIndex)
             onComponentClick(e, cell.componentId, cell.cellIndex)
           } 
+        }
+      }}
+      onMouseDown={(e) => {
+        if (
+          occupied &&
+          cell.isClickable &&
+          cell.componentId &&
+          cell.cellIndex !== null &&
+          cell.cellIndex !== undefined &&
+          cell.moduleDefinition?.behavior?.onMouseDown &&
+          onComponentMouseDown
+        ) {
+          e.stopPropagation()
+          onComponentMouseDown(e, cell.componentId, cell.cellIndex)
+        }
+      }}
+      onMouseUp={(e) => {
+        if (
+          occupied &&
+          cell.isClickable &&
+          cell.componentId &&
+          cell.cellIndex !== null &&
+          cell.cellIndex !== undefined &&
+          cell.moduleDefinition?.behavior?.onMouseUp &&
+          onComponentMouseUp
+        ) {
+          e.stopPropagation()
+          onComponentMouseUp(e, cell.componentId, cell.cellIndex)
         }
       }}
     >
@@ -2539,6 +2453,7 @@ const GridCell = React.memo(({
                       {torque.toFixed(2)} N⋅m
                     </div>
                   </div>
+                  <ComponentStatsBadge state={motorState ?? null} compact />
                   
                   {/* Active indicator */}
                   {isActive && (
@@ -2557,6 +2472,44 @@ const GridCell = React.memo(({
                   </div>
                 </div>
               )
+            })()}
+
+            {cell.moduleDefinition.module === 'Capacitor' && relativeX === 1 && relativeY === 0 && (() => {
+              const capacitance =
+                cell.capacitance ??
+                getModuleNumericProperty(cell.moduleDefinition.properties, 'capacitance', 0.0001)
+              return (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-[9px] font-bold text-white pointer-events-none leading-tight">
+                  <span>C</span>
+                  <span className="text-[8px] font-normal opacity-90">{formatCapacitance(capacitance)}</span>
+                </div>
+              )
+            })()}
+            {cell.moduleDefinition.module === 'Inductor' && relativeX === 1 && relativeY === 0 && (() => {
+              const inductance =
+                cell.inductance ??
+                getModuleNumericProperty(cell.moduleDefinition.properties, 'inductance', 0.001)
+              return (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-[9px] font-bold text-white pointer-events-none leading-tight">
+                  <span>L</span>
+                  <span className="text-[8px] font-normal opacity-90">{formatInductance(inductance)}</span>
+                </div>
+              )
+            })()}
+
+            {/* Output V / I / P stats (Buzzer, Speaker, Servo, Potentiometer) */}
+            {(() => {
+              const mod = cell.moduleDefinition.module
+              if (!OUTPUT_MODULE_NAMES.has(mod)) return null
+              const showStats =
+                (mod === 'Buzzer' && relativeX === 1 && relativeY === 0) ||
+                (mod === 'Speaker' && relativeX === 1 && relativeY === 0) ||
+                (mod === 'Servo' && relativeX === 1 && relativeY === 1) ||
+                (mod === 'Potentiometer' && relativeX === 1 && relativeY === 0)
+              if (!showStats) return null
+              const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
+              const outputState = componentStates.get(cellComponentId)
+              return <ComponentStatsBadge state={outputState ?? null} label={mod} />
             })()}
             
             {/* Show LED state indicator */}
@@ -2617,16 +2570,10 @@ const GridCell = React.memo(({
                   
                   {/* Voltage and Current indicators */}
                   {isOn && (
-                    <>
-                      <div className={`absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs font-mono px-1 rounded ${
-                        isPWMSignal ? 'text-purple-600 bg-purple-100 dark:bg-purple-900' : 'text-green-600 bg-green-100 dark:bg-green-900'
-                      }`}>
-                        {isPWMSignal ? 'PWM ' : ''}{forwardVoltage.toFixed(1)}V
-                      </div>
-                      <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 text-xs text-blue-600 font-mono bg-blue-100 dark:bg-blue-900 px-1 rounded">
-                        {ledState?.outputCurrent ? `${(ledState.outputCurrent * 1000).toFixed(0)}mA` : '0mA'}
-                      </div>
-                    </>
+                    <ComponentStatsBadge
+                      state={ledState ?? null}
+                      compact
+                    />
                   )}
                   
                   {/* Brightness indicator rings */}
@@ -2641,12 +2588,17 @@ const GridCell = React.memo(({
             })()}
             
             {/* Show switch state indicator */}
-            {cell.moduleDefinition.module === 'Switch' && relativeX === 1 && relativeY === 0 && (() => {
+            {(cell.moduleDefinition.module === 'Switch' ||
+              cell.moduleDefinition.module === 'Push Button' ||
+              cell.moduleDefinition.module === 'Limit Switch') &&
+              relativeX === 1 &&
+              relativeY === 0 &&
+              (() => {
               const isOn = cell?.isOn || false
               const isPowered = cell?.isPowered || false
               
               return (
-                <div className="absolute inset-0 flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className={`w-4 h-2 rounded-full border-2 transition-colors ${
                     isOn 
                       ? 'bg-green-500 border-green-600' 
@@ -2705,33 +2657,11 @@ const GridCell = React.memo(({
         <CircuitTutorial onClose={() => setShowTutorial(false)} />
       )}
       
-      {/* Debug Panel - Overlay below tutorial button */}
-      {showDebugPanel && (
-        <div className="absolute top-16 right-4 w-96 max-h-96 bg-gray-900 text-white rounded-lg shadow-2xl border border-gray-700 z-[100] overflow-hidden" data-debug-panel>
-          <div className="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
-            <h3 className="font-bold text-sm">🔧 Motor PWM Debug</h3>
-            <button
-              onClick={() => setShowDebugPanel(false)}
-              className="text-gray-400 hover:text-white text-lg"
-            >
-              ×
-            </button>
-          </div>
-          <div className="p-4 text-xs overflow-y-auto max-h-80">
-            <MotorPWMDebugPanel 
-              gridData={gridData}
-              wires={wires}
-              componentStates={componentStates}
-            />
-          </div>
-        </div>
-      )}
-      
       {/* Wire Layer */}
       <svg 
         className="absolute inset-0 z-10"
         style={{
-          transform: `scale(${zoom}) translate(${gridOffset.x + 4 / zoom}px, ${gridOffset.y + 4 / zoom}px)`,
+          transform: gridTransform,
           transformOrigin: 'top left',
           width: `${gridSize.width * 2.5}vw`,
           height: `${gridSize.height * 2.5}vw`,
@@ -2754,13 +2684,10 @@ const GridCell = React.memo(({
           <>
             {wirePreview.slice(0, -1).map((point, i) => {
               const nextPoint = wirePreview[i + 1]
-              const baseCellSize = (window.innerWidth * 2.5) / 100
-              
-              // Center preview wires in cells without offset to match actual wires
-              const startX = point.x * baseCellSize + baseCellSize / 2
-              const startY = point.y * baseCellSize + baseCellSize / 2
-              const endX = nextPoint.x * baseCellSize + baseCellSize / 2
-              const endY = nextPoint.y * baseCellSize + baseCellSize / 2
+              const startX = point.x * cellSizePx + cellSizePx / 2
+              const startY = point.y * cellSizePx + cellSizePx / 2
+              const endX = nextPoint.x * cellSizePx + cellSizePx / 2
+              const endY = nextPoint.y * cellSizePx + cellSizePx / 2
               
               return (
                 <line
@@ -2783,7 +2710,6 @@ const GridCell = React.memo(({
         {Array.from({ length: gridSize.height }, (_, y) =>
           Array.from({ length: gridSize.width }, (_, x) => {
             if (isConnectionPoint(x, y)) {
-              const baseCellSize = (window.innerWidth * 2.5) / 100
               const isStartPoint = wiringState.currentConnection &&
                 wiringState.currentConnection.startX === x && 
                 wiringState.currentConnection.startY === y
@@ -2793,10 +2719,10 @@ const GridCell = React.memo(({
                   {/* Large gray border for active connection point */}
                   {isStartPoint && (
                     <rect
-                      x={x * baseCellSize}
-                      y={y * baseCellSize}
-                      width={baseCellSize}
-                      height={baseCellSize}
+                      x={x * cellSizePx}
+                      y={y * cellSizePx}
+                      width={cellSizePx}
+                      height={cellSizePx}
                       fill="none"
                       stroke="#666666"
                       strokeWidth={3}
@@ -2811,32 +2737,35 @@ const GridCell = React.memo(({
         )}
       </svg>
 
-      {/* Grid Background Pattern */}
-      <div 
-        className="absolute inset-0 opacity-30"
-        style={{
-          transform: `scale(${zoom}) translate(${gridOffset.x + 4 / zoom}px, ${gridOffset.y + 4 / zoom}px)`,
-          transformOrigin: 'top left',
-          width: `${gridSize.width * 2.5}vw`,
-          height: `${gridSize.height * 2.5}vw`,
-          backgroundImage: `
-            linear-gradient(to right, ${isDark ? '#d1d5db' : '#9ca3af'} 1px, transparent 1px),
-            linear-gradient(to bottom, ${isDark ? '#d1d5db' : '#9ca3af'} 1px, transparent 1px)
-          `,
-          backgroundSize: `${(window.innerWidth * 2.5) / 100}px ${(window.innerWidth * 2.5) / 100}px`
-        }}
-      />
-
       {/* Virtualized Grid - Only render visible cells */}
       <div 
+        ref={gridLayerRef}
+        data-grid-layer
         className="absolute inset-0"
         style={{
-          transform: `scale(${zoom}) translate(${gridOffset.x + 4 / zoom}px, ${gridOffset.y + 4 / zoom}px)`,
+          transform: gridTransform,
           transformOrigin: 'top left',
           width: `${gridSize.width * 2.5}vw`,
           height: `${gridSize.height * 2.5}vw`
         }}
       >
+        {/* Grid background — shares the same transform + vw cell size as components */}
+        <div
+          className="absolute opacity-30 pointer-events-none"
+          style={{
+            left: '-500vw',
+            top: '-500vw',
+            width: '1000vw',
+            height: '1000vw',
+            backgroundImage: `
+              linear-gradient(to right, ${gridLineColor} 1px, transparent 1px),
+              linear-gradient(to bottom, ${gridLineColor} 1px, transparent 1px)
+            `,
+            backgroundSize: '2.5vw 2.5vw',
+            backgroundRepeat: 'repeat',
+          }}
+        />
+
         {Array.from({ length: visibleBounds.endY - visibleBounds.startY }, (_, rowIndex) => {
           const y = visibleBounds.startY + rowIndex
           return Array.from({ length: visibleBounds.endX - visibleBounds.startX }, (_, colIndex) => {
@@ -2855,13 +2784,14 @@ const GridCell = React.memo(({
                 hasCollision={hasCollision}
                 isCellOccupied={isCellOccupied}
                 onComponentClick={handleComponentClick}
+                onComponentMouseDown={handleComponentMouseDown}
+                onComponentMouseUp={handleComponentMouseUp}
                 findModuleOrigin={findModuleOrigin}
                 getCellBackground={getCellBackground}
                 getCellCSS={getCellCSS}
                 getCellPin={getCellPin}
                 getResistorColorBands={getResistorColorBands}
                 componentStates={componentStates}
-                zoom={zoom}
                 highlightedMicrocontroller={highlightedMicrocontroller}
                 deleteMode={deleteMode}
                 hoveredForDeletion={hoveredForDeletion}
@@ -2886,39 +2816,9 @@ const GridCell = React.memo(({
       />
 
 
-      {/* Hover Tile Display */}
-      <div className="absolute top-4 left-4 bg-gray-900 text-white px-3 py-2 rounded-lg shadow-lg border border-gray-700 z-[100] text-sm" data-hover-tile>
-        {hoveredTile ? (
-          <div className="font-mono">
-            <div>Tile: ({hoveredTile.x}, {hoveredTile.y})</div>
-            {hoveredTile.cell?.occupied ? (
-              <div>
-                <div>Component: {hoveredTile.cell.componentType}</div>
-                <div>ID: {hoveredTile.cell.componentId}</div>
-                {hoveredTile.cell.cellIndex !== undefined && (
-                  <div>Cell Index: {hoveredTile.cell.cellIndex}</div>
-                )}
-              </div>
-            ) : (
-              <div className="text-gray-400">Empty</div>
-            )}
-          </div>
-        ) : (
-          <div className="text-gray-400">Hover over a tile</div>
-        )}
-      </div>
 
       {/* Control Buttons */}
       <div className="absolute top-4 right-4 flex gap-2 z-[100]" data-control-buttons>
-        {/* PWM Debug Button */}
-        <button
-          onClick={handlePWMTest}
-          className="px-3 py-2 bg-purple-500 text-white rounded-lg shadow-lg hover:bg-purple-600 transition-colors text-sm flex items-center gap-2"
-          title="Send PWM test signal from Arduino UNO pin D13"
-        >
-          🔧 PWM Test
-        </button>
-        
         {/* Delete Mode Button */}
         <button
           onClick={toggleDeleteMode}
@@ -2940,15 +2840,21 @@ const GridCell = React.memo(({
         >
           📚 Tutorial
         </button>
-        
-        {/* Debug Panel Button */}
-        <button
-          onClick={() => setShowDebugPanel(!showDebugPanel)}
-          className="px-3 py-2 bg-purple-500 text-white rounded-lg shadow-lg hover:bg-purple-600 transition-colors text-sm"
-        >
-          🔧 Debug
-        </button>
       </div>
+
+      {/* Zoom to last placed component */}
+      <button
+        onClick={zoomToLastPlaced}
+        disabled={!lastPlacedObject}
+        className={`absolute bottom-4 right-4 z-[100] p-3 rounded-lg shadow-lg transition-all bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 ${
+          lastPlacedObject ? 'hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer' : 'cursor-default'
+        }`}
+        style={{ opacity: lastPlacedObject ? 1 : 0.25 }}
+        title={lastPlacedObject ? 'Zoom to last placed component' : 'Place a component first'}
+        data-control-buttons
+      >
+        <Focus className="h-5 w-5" />
+      </button>
 
     </div>
   )

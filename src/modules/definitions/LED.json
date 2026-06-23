@@ -5,6 +5,7 @@
   "background": "#EF4444",
   "css": "border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);",
   "category": "output",
+  "subcategory": "light",
   "description": "Light Emitting Diode with positive terminal, LED body, and negative terminal",
   "manufacturer": "Generic",
   "grid": [

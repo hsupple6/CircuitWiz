@@ -342,95 +342,151 @@ export function convertGridToNodes(gridData: any[][], _wires: any[]): CircuitNod
 }
 
 /**
- * Check if there's continuity between voltage source and grounding source
+ * Check if there's continuity from a power terminal to a ground (isGroundable) terminal
+ * through wires and conducting components.
  */
-export function checkContinuity(nodes: CircuitNode[], wires: any[]): boolean {
-  
-  // Find voltage source and grounding source
-  const voltageSource = nodes.find(node => node.type === 'VoltageSource');
-  const groundingSource = nodes.find(node => node.type === 'GroundingSource');
-  
-  if (!voltageSource || !groundingSource) {
-    return false;
+export function checkContinuity(gridData: any[][], wires: any[]): boolean {
+  const groundPositions: Array<{ x: number; y: number }> = []
+  const sourcePositions: Array<{ x: number; y: number }> = []
+
+  const isGroundCell = (moduleCell: any) =>
+    moduleCell?.type === 'GND' ||
+    moduleCell?.type === 'NEGATIVE' ||
+    moduleCell?.isGroundable === true ||
+    moduleCell?.pin === '-' ||
+    moduleCell?.pin === 'GND'
+
+  const isSourceCell = (moduleCell: any) =>
+    moduleCell?.type === 'POSITIVE' ||
+    moduleCell?.type === 'VCC' ||
+    moduleCell?.type === 'LED_POSITIVE' ||
+    moduleCell?.isPowerable === true ||
+    moduleCell?.pin === '+' ||
+    moduleCell?.pin === '5V'
+
+  gridData.forEach((row, y) => {
+    if (!row || !Array.isArray(row)) return
+    row.forEach((cell, x) => {
+      if (!cell?.occupied || !cell.moduleDefinition) return
+      const moduleCell = cell.moduleDefinition.grid[cell.cellIndex || 0]
+      if (!moduleCell?.isConnectable) return
+      if (isGroundCell(moduleCell)) groundPositions.push({ x, y })
+      if (isSourceCell(moduleCell)) sourcePositions.push({ x, y })
+    })
+  })
+
+  if (groundPositions.length === 0 || sourcePositions.length === 0) {
+    return false
   }
-  
-  
-  // If no wires, check if they're adjacent (grid adjacency)
-  if (wires.length === 0) {
-    const distance = Math.abs((voltageSource.position?.x || 0) - (groundingSource.position?.x || 0)) + 
-                    Math.abs((voltageSource.position?.y || 0) - (groundingSource.position?.y || 0));
-    const isAdjacent = distance <= 2; // Allow for some adjacency
-    return isAdjacent;
+
+  const wireAdj = new Map<string, Set<string>>()
+  const linkWire = (ax: number, ay: number, bx: number, by: number) => {
+    const a = `${ax},${ay}`
+    const b = `${bx},${by}`
+    if (!wireAdj.has(a)) wireAdj.set(a, new Set())
+    if (!wireAdj.has(b)) wireAdj.set(b, new Set())
+    wireAdj.get(a)!.add(b)
+    wireAdj.get(b)!.add(a)
   }
-  
-  // Check if there's a path through wires from voltage source to grounding source
-  const visited = new Set<string>();
-  const queue: { x: number; y: number }[] = [voltageSource.position!];
-  
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    const key = `${current.x},${current.y}`;
-    
-    if (visited.has(key)) continue;
-    visited.add(key);
-    
-    
-    // Check if we've reached the grounding source
-    if (current.x === groundingSource.position?.x && current.y === groundingSource.position?.y) {
-      return true;
+
+  wires.forEach((wire) => {
+    wire.segments.forEach((segment: any) => {
+      linkWire(segment.from.x, segment.from.y, segment.to.x, segment.to.y)
+    })
+  })
+
+  const getInternallyLinkedPositions = (x: number, y: number): Array<{ x: number; y: number }> => {
+    const cell = gridData[y]?.[x]
+    if (!cell?.occupied || !cell.moduleDefinition || !cell.componentId) return [{ x, y }]
+
+    const moduleType = cell.moduleDefinition.module
+    const componentId = cell.componentId
+    const linked: Array<{ x: number; y: number; moduleCell: any }> = []
+
+    gridData.forEach((row, gy) => {
+      if (!row) return
+      row.forEach((c, gx) => {
+        if (c?.componentId !== componentId) return
+        const moduleCell = c.moduleDefinition.grid[c.cellIndex || 0]
+        linked.push({ x: gx, y: gy, moduleCell })
+      })
+    })
+
+    if (moduleType === 'Resistor') {
+      return linked.filter((p) => p.moduleCell.type === 'LEAD').map((p) => ({ x: p.x, y: p.y }))
     }
-    
-    // Find wires connected to this position
-    const connectedWires = wires.filter(wire => 
-      wire.segments.some((segment: any) => 
-        (segment.from.x === current.x && segment.from.y === current.y) ||
-        (segment.to.x === current.x && segment.to.y === current.y)
-      )
-    );
-    
-    
-    // Add connected positions to queue
-    connectedWires.forEach(wire => {
-      wire.segments.forEach((segment: any) => {
-        // Add both from and to positions to handle bidirectional connections
-        const positions = [
-          { x: segment.from.x, y: segment.from.y },
-          { x: segment.to.x, y: segment.to.y }
-        ];
-        
-        positions.forEach(pos => {
-          const nextKey = `${pos.x},${pos.y}`;
-          if (!visited.has(nextKey)) {
-            queue.push(pos);
-          }
-        });
-      });
-    });
-    
-    // Also check for grid adjacency (components next to each other)
-    const adjacentPositions = [
-      { x: current.x - 1, y: current.y },
-      { x: current.x + 1, y: current.y },
-      { x: current.x, y: current.y - 1 },
-      { x: current.x, y: current.y + 1 }
-    ];
-    
-    adjacentPositions.forEach(pos => {
-      const nextKey = `${pos.x},${pos.y}`;
-      if (!visited.has(nextKey)) {
-        // Check if there's a component at this adjacent position
-        const hasComponent = nodes.some(node => 
-          node.position?.x === pos.x && node.position?.y === pos.y
-        );
-        if (hasComponent) {
-          queue.push(pos);
-        }
-      }
-    });
+    if (moduleType === 'Capacitor' || moduleType === 'Inductor') {
+      return linked.filter((p) => p.moduleCell.type === 'LEAD').map((p) => ({ x: p.x, y: p.y }))
+    }
+    if (moduleType === 'LED') {
+      return linked
+        .filter(
+          (p) =>
+            p.moduleCell.type === 'LED_POSITIVE' || p.moduleCell.type === 'LED_NEGATIVE'
+        )
+        .map((p) => ({ x: p.x, y: p.y }))
+    }
+    if (moduleType === 'Switch' || moduleType === 'Push Button' || moduleType === 'Limit Switch') {
+      const closed = linked.some((p) => {
+        const cell = gridData[p.y]?.[p.x]
+        return cell?.isOn
+      })
+      if (!closed) return [{ x, y }]
+      return linked
+        .filter((p) => p.moduleCell.type === 'INPUT' || p.moduleCell.type === 'OUTPUT')
+        .map((p) => ({ x: p.x, y: p.y }))
+    }
+    if (moduleType === 'Buzzer' || moduleType === 'Speaker') {
+      return linked
+        .filter(
+          (p) =>
+            p.moduleCell.pin === '+' ||
+            p.moduleCell.pin === '-' ||
+            p.moduleCell.type === 'VCC' ||
+            p.moduleCell.type === 'GND' ||
+            p.moduleCell.type === 'LEAD'
+        )
+        .map((p) => ({ x: p.x, y: p.y }))
+    }
+    if (moduleType === 'Servo') {
+      return linked
+        .filter((p) => ['VCC', 'GND', 'PWM'].includes(p.moduleCell.type))
+        .map((p) => ({ x: p.x, y: p.y }))
+    }
+    if (moduleType === 'Potentiometer') {
+      return linked.filter((p) => p.moduleCell.type === 'LEAD').map((p) => ({ x: p.x, y: p.y }))
+    }
+
+    return [{ x, y }]
   }
-  
-  console.log(`🔍 No path found to grounding source - no continuity`);
-  return false;
+
+  const reachableFrom = (starts: Array<{ x: number; y: number }>): Set<string> => {
+    const visited = new Set<string>()
+    const queue = [...starts]
+
+    while (queue.length > 0) {
+      const pos = queue.shift()!
+      const key = `${pos.x},${pos.y}`
+      if (visited.has(key)) continue
+      visited.add(key)
+
+      for (const neighborKey of wireAdj.get(key) ?? []) {
+        const [nx, ny] = neighborKey.split(',').map(Number)
+        queue.push({ x: nx, y: ny })
+      }
+
+      for (const linked of getInternallyLinkedPositions(pos.x, pos.y)) {
+        queue.push(linked)
+      }
+    }
+
+    return visited
+  }
+
+  return sourcePositions.some((src) => {
+    const reachable = reachableFrom([src])
+    return groundPositions.some((gnd) => reachable.has(`${gnd.x},${gnd.y}`))
+  })
 }
 
 /**
@@ -838,11 +894,12 @@ function findOtherTerminal(component: any, currentPosition: { x: number; y: numb
     )
   );
   
-  // Find terminal that's not at current position
-  const otherTerminal = terminals.find((terminal: any) => 
-    (component.x + terminal.x) !== currentPosition.x || 
-    (component.y + terminal.y) !== currentPosition.y
-  );
+  // Find terminal that's not at the current position
+  const otherTerminal = terminals.find((terminal: any) => {
+    const terminalX = component.x + terminal.x
+    const terminalY = component.y + terminal.y
+    return terminalX !== currentPosition.x || terminalY !== currentPosition.y
+  });
   
   if (otherTerminal) {
     const result = {

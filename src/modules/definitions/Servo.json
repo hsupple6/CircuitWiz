@@ -1,0 +1,71 @@
+{
+  "module": "Servo",
+  "gridX": 3,
+  "gridY": 2,
+  "background": "#0F172A",
+  "css": "border-radius: 6px; border: 2px solid #334155;",
+  "category": "output",
+  "subcategory": "electromechanical",
+  "description": "RC hobby servo — VCC, GND, and PWM signal input",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "VCC",
+      "pin": "VCC",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "voltage": 5,
+      "css": "background: #EF4444; border: 2px solid #DC2626; color: white; font-size: 9px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "GND",
+      "pin": "GND",
+      "isConnectable": true,
+      "isPowerable": false,
+      "isGroundable": true,
+      "css": "background: #7C3AED; border: 2px solid #6D28D9; color: white; font-size: 9px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "type": "PWM",
+      "pin": "SIG",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "voltage": 5,
+      "css": "background: #F59E0B; border: 2px solid #D97706; color: #111; font-size: 9px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "type": "BODY",
+      "isConnectable": false,
+      "css": "background: #1E293B; border: 2px solid #334155;"
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "type": "BODY",
+      "pin": "SRV",
+      "isConnectable": false,
+      "css": "background: #334155; border: 2px solid #475569; color: white; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "type": "BODY",
+      "isConnectable": false,
+      "css": "background: #1E293B; border: 2px solid #334155;"
+    }
+  ],
+  "properties": {
+    "resistance": { "default": 50, "unit": "Ω", "description": "Stall load equivalent" },
+    "minVoltage": { "default": 4.8, "unit": "V", "description": "Minimum supply" },
+    "ratedCurrent": { "default": 0.5, "unit": "A", "description": "Stall current" }
+  }
+}

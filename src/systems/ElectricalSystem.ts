@@ -13,6 +13,7 @@
 import { WireConnection } from '../modules/types'
 import { logger } from '../services/Logger'
 import { CalculateCircuit, convertGridToNodes, findCircuitPathways, checkContinuity } from '../services/EMPhysics'
+import { solveCircuit } from '../services/CircuitSolver'
 import { extractOccupiedComponents } from '../utils/gridUtils'
 import { LEDVoltageFlow } from '../modules/definitions/Functions/LED'
 import { ResistorVoltageFlow } from '../modules/definitions/Functions/Resistor'
@@ -256,7 +257,7 @@ export function findParallelResistors(
   gridData.forEach((row, y) => {
     if (!row || !Array.isArray(row)) return
     row.forEach((cell, x) => {
-      if (cell?.occupied && cell.componentId && cell.componentType === 'Resistor') {
+      if (cell?.occupied && cell.componentId && cell.moduleDefinition?.module === 'Resistor') {
         // Find all terminal positions for this resistor
         const terminals = findResistorTerminals(cell, gridData)
         resistors.push({
@@ -1183,7 +1184,7 @@ export function calculateSystematicVoltageFlow(
   
   
   const nodes = convertGridToNodes(gridData, wires)
-  const hasContinuity = checkContinuity(nodes, wires)
+  const hasContinuity = checkContinuity(gridData, wires)
   const physicsResult = CalculateCircuit(nodes, wires, hasContinuity)
   
   if (!physicsResult.works) {
@@ -1203,7 +1204,8 @@ export function calculateSystematicVoltageFlow(
   if (updatedParallelBranches.length > 0) {
     console.log(`⚡ [PARALLEL_DEBUG] Parallel branch current distribution:`)
     updatedParallelBranches.forEach((branch, index) => {
-      const currentPerResistor = branch.current / (branch.resistors?.length || 1)
+      const componentCount = branch.components?.length || 0
+      const currentPerResistor = componentCount > 0 ? branch.current / componentCount : 0
       console.log(`⚡ [PARALLEL_DEBUG] Branch ${index + 1}: ${branch.current.toFixed(3)}A total, ${currentPerResistor.toFixed(3)}A per resistor through ${branch.totalResistance}Ω`)
     })
   } else {
@@ -1215,32 +1217,30 @@ export function calculateSystematicVoltageFlow(
     console.log(`🔍 [PARALLEL_DEBUG] Processing ${updatedParallelBranches.length} parallel resistor groups...`)
     
     updatedParallelBranches.forEach((branch, branchIndex) => {
-      console.log(`🔍 [PARALLEL_DEBUG] Processing parallel branch ${branchIndex + 1} with ${branch.resistors?.length || 0} resistors`)
+      console.log(`🔍 [PARALLEL_DEBUG] Processing parallel branch ${branchIndex + 1} with ${branch.components?.length || 0} resistors`)
       
-      if (branch.resistors && branch.resistors.length > 0) {
-        branch.resistors.forEach((resistor, resistorIndex) => {
-          const currentPerResistor = branch.current / branch.resistors.length
-          console.log(`🔍 [PARALLEL_DEBUG] Resistor ${resistorIndex + 1}: ${currentPerResistor.toFixed(3)}A through ${resistor.moduleDefinition?.properties?.resistance || 1000}Ω`)
+      if (branch.components && branch.components.length > 0) {
+        branch.components.forEach((resistor, resistorIndex) => {
+          const currentPerResistor = branch.current / branch.components.length
+          console.log(`🔍 [PARALLEL_DEBUG] Resistor ${resistorIndex + 1}: ${currentPerResistor.toFixed(3)}A through ${resistor.properties?.resistance || 1000}Ω`)
           
-          // Calculate voltage drop for this resistor
-          const voltageDrop = currentPerResistor * (resistor.moduleDefinition?.properties?.resistance || 1000)
+          const voltageDrop = currentPerResistor * (resistor.properties?.resistance || 1000)
           console.log(`🔍 [PARALLEL_DEBUG] Voltage drop: ${voltageDrop.toFixed(3)}V`)
           
-          // Update component state for this resistor
-          const resistorState = componentStates.get(resistor.componentId)
+          const resistorState = componentStates.get(resistor.id)
           if (resistorState) {
             resistorState.current = currentPerResistor
             resistorState.voltage = voltageDrop
             resistorState.power = currentPerResistor * voltageDrop
-            componentStates.set(resistor.componentId, resistorState)
+            componentStates.set(resistor.id, resistorState)
             
-            console.log(`✅ [PARALLEL_DEBUG] Updated resistor ${resistor.componentId}: ${currentPerResistor.toFixed(3)}A, ${voltageDrop.toFixed(3)}V, ${(currentPerResistor * voltageDrop).toFixed(3)}W`)
+            console.log(`✅ [PARALLEL_DEBUG] Updated resistor ${resistor.id}: ${currentPerResistor.toFixed(3)}A, ${voltageDrop.toFixed(3)}V, ${(currentPerResistor * voltageDrop).toFixed(3)}W`)
           } else {
-            console.log(`❌ [PARALLEL_DEBUG] No component state found for resistor ${resistor.componentId}`)
+            console.log(`❌ [PARALLEL_DEBUG] No component state found for resistor ${resistor.id}`)
           }
         })
       } else {
-        console.log(`❌ [PARALLEL_DEBUG] Branch ${branchIndex + 1} has no resistors array`)
+        console.log(`❌ [PARALLEL_DEBUG] Branch ${branchIndex + 1} has no components`)
       }
     })
   } else {
@@ -1346,7 +1346,7 @@ export function calculateSystematicVoltageFlow(
           new Set(),
           wires,
           gridData,
-          gpioStates
+          effectiveGPIOStates
         )
         
         console.log(`[PIN_PROCESSING] Result for ${comp.componentId}:`, result.componentUpdates)
@@ -1355,8 +1355,14 @@ export function calculateSystematicVoltageFlow(
         result.componentUpdates.forEach((update, componentId) => {
           const existingState = componentStates.get(componentId)
           if (existingState) {
-            componentStates.set(componentId, { ...existingState, ...update })
+            const newState = { ...existingState, ...update }
+            componentStates.set(componentId, newState)
             console.log(`[PIN_PROCESSING] Updated component state for ${componentId}:`, update)
+            
+            // Debug: Log PWM state updates specifically
+            if (update.status === 'pwm' && update.pwm !== undefined) {
+              console.log(`🔧 [PWM_DEBUG] PIN PWM STATE UPDATED: ${componentId} - Status: ${update.status}, PWM: ${update.pwm.toFixed(1)}%, Voltage: ${update.outputVoltage}V`)
+            }
           }
         })
       } else {
@@ -1455,7 +1461,7 @@ export function calculateSystematicVoltageFlow(
         componentStates,
         wires,
         gridData,
-        gpioStates
+        effectiveGPIOStates
       )
       
       // Update component states with calculated voltages
@@ -1711,6 +1717,17 @@ export function calculateSystematicVoltageFlow(
     let wirePWM: number | undefined = undefined
     
     if (connectedComponents.length > 0) {
+      // Debug: Log all connected components for this wire
+      console.log(`🔧 [PWM_WIRE_DEBUG] Wire ${wire.id} connected to ${connectedComponents.length} components:`, 
+        connectedComponents.map(comp => ({
+          id: comp.componentId,
+          type: comp.componentType,
+          status: comp.status,
+          pwm: comp.pwm,
+          voltage: comp.outputVoltage
+        }))
+      )
+      
       const maxVoltageComponent = connectedComponents.reduce((max, comp) => 
         (comp.outputVoltage || 0) > (max.outputVoltage || 0) ? comp : max
       )
@@ -1722,7 +1739,7 @@ export function calculateSystematicVoltageFlow(
       // Handle PWM signals - propagate PWM throttle percentage
       if (maxVoltageComponent.status === 'pwm' && maxVoltageComponent.pwm !== undefined) {
         wirePWM = maxVoltageComponent.pwm
-        console.log(`🔧 [PWM_WIRE] Transmitting PWM: ${wireVoltage}V with ${wirePWM.toFixed(1)}% throttle`)
+        console.log(`🔧 [PWM_WIRE] Transmitting PWM: ${wireVoltage}V with ${wirePWM?.toFixed(1)}% throttle from ${maxVoltageComponent.componentType}`)
       }
       
       // Also check for PWM from any connected component (including microcontrollers)
@@ -1732,8 +1749,13 @@ export function calculateSystematicVoltageFlow(
         )
         if (pwmComponent) {
           wirePWM = pwmComponent.pwm
-          console.log(`🔧 [PWM_WIRE] Found PWM from ${pwmComponent.componentType}: ${wireVoltage}V with ${wirePWM.toFixed(1)}% throttle`)
+          console.log(`🔧 [PWM_WIRE] Found PWM from ${pwmComponent.componentType}: ${wireVoltage}V with ${wirePWM?.toFixed(1)}% throttle`)
         }
+      }
+      
+      // Debug: Final wire PWM state
+      if (wirePWM !== undefined) {
+        console.log(`🔧 [PWM_WIRE_FINAL] Wire ${wire.id} final PWM: ${wirePWM?.toFixed(1)}% throttle`)
       }
     } 
     
@@ -2079,7 +2101,11 @@ function traceVoltageThroughComponent(
   }
   
   // Find the other terminal of this component and continue tracing
-  const otherTerminal = findOtherTerminal(component, gridData)
+  const entryCell = component.moduleDefinition.grid[component.cellIndex || 0]
+  const entryPosition = entryCell
+    ? { x: component.x + entryCell.x, y: component.y + entryCell.y }
+    : { x: component.x, y: component.y }
+  const otherTerminal = findOtherTerminal(component, entryPosition)
   if (otherTerminal) {
     
     // Find wires connected to the other terminal
@@ -2204,7 +2230,10 @@ function findComponentBasePosition(componentId: string, gridData: GridCell[][]):
 /**
  * Find the other terminal of a component (the one not at the given position)
  */
-function findOtherTerminal(component: any, gridData: GridCell[][]): { x: number; y: number } | null {
+function findOtherTerminal(
+  component: any,
+  currentPosition: { x: number; y: number }
+): { x: number; y: number } | null {
   const terminals = component.moduleDefinition.grid.filter((cell: any) => 
     cell.isConnectable && (
       cell.type === 'LEAD' || 
@@ -2212,25 +2241,24 @@ function findOtherTerminal(component: any, gridData: GridCell[][]): { x: number;
       cell.type === 'LED_NEGATIVE' ||
       cell.type === 'VCC' ||
       cell.type === 'GND' ||
+      cell.type === 'POSITIVE' ||
+      cell.type === 'NEGATIVE' ||
       cell.type.includes('TERMINAL') ||
       cell.type.includes('PIN')
     )
   )
   
-  // Find terminal that's not at the current position
   const otherTerminal = terminals.find((terminal: any) => {
     const terminalX = component.x + terminal.x
     const terminalY = component.y + terminal.y
-    const isDifferentPosition = terminalX !== component.x || terminalY !== component.y
-    return isDifferentPosition
+    return terminalX !== currentPosition.x || terminalY !== currentPosition.y
   })
   
   if (otherTerminal) {
-    const result = {
+    return {
       x: component.x + otherTerminal.x,
       y: component.y + otherTerminal.y
     }
-    return result
   }
   
   return null
@@ -2332,7 +2360,7 @@ export function updateWiresFromEMPhysics(
           // Handle PWM signals - propagate PWM throttle percentage
           if (maxVoltageComponent.status === 'pwm' && maxVoltageComponent.pwm !== undefined) {
             wirePWM = maxVoltageComponent.pwm
-            console.log(`🔧 [PWM_WIRE] Transmitting PWM: ${wireVoltage}V with ${wirePWM.toFixed(1)}% throttle`)
+            console.log(`🔧 [PWM_WIRE] Transmitting PWM: ${wireVoltage}V with ${wirePWM?.toFixed(1)}% throttle`)
           }
         }
       }
@@ -2344,7 +2372,7 @@ export function updateWiresFromEMPhysics(
         )
         if (pwmComponent) {
           wirePWM = pwmComponent.pwm
-          console.log(`🔧 [PWM_WIRE] Found PWM from ${pwmComponent.componentType}: ${wireVoltage}V with ${wirePWM.toFixed(1)}% throttle`)
+          console.log(`🔧 [PWM_WIRE] Found PWM from ${pwmComponent.componentType}: ${wireVoltage}V with ${wirePWM?.toFixed(1)}% throttle`)
         }
       }
 
@@ -2453,156 +2481,92 @@ export function calculateElectricalFlow(
     pathways: any[]
   }
 } {
+  const multiMCUStates = getAllMultiMicrocontrollerGPIOStates()
+  const singleDynamicStates = getDynamicGPIOStates()
+  const effectiveGPIOStates =
+    multiMCUStates.size > 0 ? multiMCUStates :
+    singleDynamicStates.size > 0 ? singleDynamicStates :
+    gpioStates
 
-  // Debug: Check if we have any components at all
-  let totalComponents = 0
-  let resistorComponents = 0
-  gridData.forEach((row, y) => {
-    if (!row || !Array.isArray(row)) return
-    row.forEach((cell, x) => {
-      if (cell?.occupied && cell.componentId) {
-        totalComponents++
-        const moduleType = cell.moduleDefinition?.module
-        
-        if (moduleType === 'Resistor') {
-          resistorComponents++
-        }
-      }
-    })
-  })
-  
-  // Debug: Check grid data content
-  let occupiedCells = 0;
-  gridData.forEach((row, _y) => {
-    if (!row) return;
-    row.forEach((cell, _x) => {
-      if (cell?.occupied && cell.componentId && cell.moduleDefinition) {
-        occupiedCells++;
-      }
-    });
-  });
-  
-  // Step 1: Extract occupied components and find circuit pathways
   const occupiedComponents = extractOccupiedComponents(gridData)
-  console.log(`🔍 [PATHWAY_DEBUG] Found ${occupiedComponents.length} occupied components`)
-  console.log(`🔍 [PATHWAY_DEBUG] Components:`, occupiedComponents.map(c => ({ 
-    id: c.componentId, 
-    type: c.moduleDefinition?.module,
-    position: c.position,
-    grid: c.moduleDefinition?.grid?.length || 0
-  })))
-  
   const circuitAnalysis = findCircuitPathways(occupiedComponents, wires)
   const pathways = circuitAnalysis.pathways
-  
-  console.log(`🔍 [PATHWAY_DEBUG] Found ${pathways.length} circuit pathways`)
-  console.log(`🔍 [PATHWAY_DEBUG] Warnings:`, circuitAnalysis.warnings)
-  
-  // Step 1.5: Detect parallel resistors before circuit calculation
-  const connections = buildConnectionMap(wires)
-  const parallelBranches = findParallelResistors(gridData, connections, wires)
-  
-  console.log(`🔍 [PATHWAY_DEBUG] Parallel branches detected:`, parallelBranches.map(branch => ({
-    resistorCount: branch.resistors?.length || 0,
-    combinedResistance: branch.totalResistance,
-    resistorIds: branch.resistors?.map(r => r.componentId) || []
-  })))
-  
-  if (parallelBranches.length > 0) {
-    console.log(`🎉 [PARALLEL_DEBUG] DETECTED ${parallelBranches.length} PARALLEL GROUPS!`)
-    parallelBranches.forEach((branch, index) => {
-      console.log(`🎉 [PARALLEL_DEBUG] Group ${index + 1}: ${branch.components.length} resistors, combined resistance: ${branch.totalResistance}Ω`)
-    })
-  } else {
-    console.log(`❌ [PARALLEL_DEBUG] NO PARALLEL GROUPS DETECTED`)
-  }
-  
-  // Step 2: Convert grid components to circuit nodes for EMPhysics
-  const circuitNodes = convertGridToNodes(gridData, wires)
-  
-  // Step 3: Check continuity before calculating circuit
-  const _hasContinuity = checkContinuity(circuitNodes, wires)
-  
-  // TEMPORARY: Disable continuity check to debug the node creation issue
-  const hasContinuityOverride = circuitNodes.length > 0 // Allow if we have any nodes
-  
-  // Step 4: Use EMPhysics CalculateCircuit as primary physics engine
-  const physicsResult = CalculateCircuit(circuitNodes, wires, hasContinuityOverride)
 
-  
-  if (physicsResult.works) {
-    // Step 4: Use systematic voltage calculation approach
-    const systematicResult = calculateSystematicVoltageFlow(gridData, wires, gpioStates, parallelBranches)
+  const solverResult = solveCircuit(gridData, wires, effectiveGPIOStates)
 
-    const componentStates = systematicResult.componentStates
-    componentStates.forEach((_state, _id) => {
-    })
-    
-    // Step 5: Use systematic wire updates
-    const updatedWires = systematicResult.updatedWires
-    
-    // Step 6: Update grid data with component states
+  if (solverResult.works) {
+    const componentStates = solverResult.componentStates as Map<string, ComponentState>
+    const updatedWires = solverResult.updatedWires
     const updatedGridData = updateGridData(gridData, componentStates)
-    
-    // Debug: Check if grid data is being preserved
-    let occupiedCellsAfter = 0;
-    updatedGridData.forEach((row) => {
-      if (!row) return;
-      row.forEach((cell) => {
-        if (cell?.occupied && cell.componentId && cell.moduleDefinition) {
-          occupiedCellsAfter++;
-        }
-      });
-    });
-    
-    // Create circuit info for device manager
-    const circuitInfo = {
-      totalVoltage: physicsResult.batteryVoltage,
-      totalCurrent: physicsResult.current,
-      totalResistance: physicsResult.totalResistance,
-      totalPower: physicsResult.powerBattery || 0,
-      errors: physicsResult.errors || [],
-      pathways: pathways
-    }
-    
+
     return {
       componentStates,
       updatedWires,
       updatedGridData,
-      circuitInfo
+      circuitInfo: {
+        totalVoltage: solverResult.totalVoltage,
+        totalCurrent: solverResult.totalCurrent,
+        totalResistance: solverResult.totalResistance,
+        totalPower: solverResult.totalPower,
+        errors: [...circuitAnalysis.errors, ...solverResult.errors],
+        pathways,
+      },
     }
-  } else {    
-    // Create empty component states for failed circuits
-    const _componentStates = new Map<string, ComponentState>()
-    
-    // Still try to update wires with basic information
-    const updatedWires = updateWiresFromEMPhysics(wires, _componentStates, physicsResult, gridData)
-    const updatedGridData = updateGridData(gridData, _componentStates)
-    
-    // Debug: Check if grid data is being preserved in failed case
-    let occupiedCellsAfterFailed = 0;
-    updatedGridData.forEach((row) => {
-      if (!row) return;
-      row.forEach((cell) => {
-        if (cell?.occupied && cell.componentId && cell.moduleDefinition) {
-          occupiedCellsAfterFailed++;
-        }
-      });
-    });
-    
+  }
+
+  const circuitNodes = convertGridToNodes(gridData, wires)
+  const hasContinuity = checkContinuity(gridData, wires)
+  const physicsResult = CalculateCircuit(circuitNodes, wires, hasContinuity)
+
+  if (physicsResult.works) {
+    const connections = buildConnectionMap(wires)
+    const parallelBranches = findParallelResistors(gridData, connections, wires)
+    const systematicResult = calculateSystematicVoltageFlow(
+      gridData,
+      wires,
+      effectiveGPIOStates,
+      parallelBranches
+    )
+
+    const componentStates = systematicResult.componentStates
+    const updatedWires = systematicResult.updatedWires
+    const updatedGridData = updateGridData(gridData, componentStates)
+
     return {
-      componentStates: _componentStates,
+      componentStates,
       updatedWires,
       updatedGridData,
       circuitInfo: {
-        totalVoltage: 0,
-        totalCurrent: 0,
-        totalResistance: 0,
-        totalPower: 0,
-        errors: physicsResult.errors || [physicsResult.reason || 'Unknown error'],
-        pathways: pathways
-      }
+        totalVoltage: physicsResult.batteryVoltage,
+        totalCurrent: physicsResult.current,
+        totalResistance: physicsResult.totalResistance,
+        totalPower: physicsResult.powerBattery || 0,
+        errors: physicsResult.errors || [],
+        pathways,
+      },
     }
+  }
+
+  const emptyComponentStates = new Map<string, ComponentState>()
+  const updatedWires = updateWiresFromEMPhysics(wires, emptyComponentStates, physicsResult, gridData)
+  const updatedGridData = updateGridData(gridData, emptyComponentStates)
+
+  return {
+    componentStates: emptyComponentStates,
+    updatedWires,
+    updatedGridData,
+    circuitInfo: {
+      totalVoltage: 0,
+      totalCurrent: 0,
+      totalResistance: 0,
+      totalPower: 0,
+      errors: [
+        solverResult.reason || 'Circuit solve failed',
+        ...(physicsResult.errors || [physicsResult.reason || 'Unknown error']),
+        ...circuitAnalysis.errors,
+      ],
+      pathways,
+    },
   }
 }
 

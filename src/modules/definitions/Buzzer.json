@@ -1,0 +1,47 @@
+{
+  "module": "Buzzer",
+  "gridX": 3,
+  "gridY": 1,
+  "background": "#1E293B",
+  "css": "border-radius: 8px; border: 2px solid #475569;",
+  "category": "output",
+  "subcategory": "electromechanical",
+  "description": "Active buzzer — resistive load when driven above threshold",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "VCC",
+      "pin": "+",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "voltage": 5,
+      "css": "border-radius: 8px 0 0 8px; background: #EF4444; border: 2px solid #DC2626; border-right: none; color: white; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "BODY",
+      "pin": "BZ",
+      "isConnectable": false,
+      "css": "background: #334155; border: 2px solid #475569; border-left: none; border-right: none; color: #FCD34D; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "type": "GND",
+      "pin": "-",
+      "isConnectable": true,
+      "isPowerable": false,
+      "isGroundable": true,
+      "voltage": 0,
+      "css": "border-radius: 0 8px 8px 0; background: #7C3AED; border: 2px solid #6D28D9; border-left: none; color: white; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    }
+  ],
+  "properties": {
+    "resistance": { "default": 32, "unit": "Ω", "description": "Coil resistance" },
+    "minVoltage": { "default": 3, "unit": "V", "description": "Minimum drive voltage" },
+    "ratedCurrent": { "default": 0.03, "unit": "A", "description": "Rated current" }
+  }
+}

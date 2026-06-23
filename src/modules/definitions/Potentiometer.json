@@ -1,0 +1,50 @@
+{
+  "module": "Potentiometer",
+  "gridX": 3,
+  "gridY": 1,
+  "background": "#292524",
+  "css": "border-radius: 50%; border: 2px solid #78716C;",
+  "category": "output",
+  "subcategory": "rotary",
+  "description": "Rotary potentiometer — voltage divider (A, wiper, B)",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "LEAD",
+      "pin": "A",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "border-radius: 8px 0 0 8px; background: #EF4444; border: 2px solid #DC2626; border-right: none; color: white; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "LEAD",
+      "pin": "W",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "isClickable": true,
+      "css": "background: #F59E0B; border: 2px solid #D97706; border-left: none; border-right: none; color: #111; font-size: 10px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "type": "LEAD",
+      "pin": "B",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "border-radius: 0 8px 8px 0; background: #7C3AED; border: 2px solid #6D28D9; border-left: none; color: white; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    }
+  ],
+  "properties": {
+    "resistance": { "default": 10000, "unit": "Ω", "description": "Total resistance" },
+    "wiperPosition": { "default": 0.5, "min": 0, "max": 1, "description": "Wiper position (0–1)" }
+  },
+  "behavior": {
+    "onClick": "const pos = (context.getCellByPosition(1, 0)?.wiperPosition ?? 0.5);\nconst next = pos >= 0.95 ? 0.1 : pos + 0.15;\ncontext.updateCellProperty(1, 0, { wiperPosition: next });"
+  }
+}

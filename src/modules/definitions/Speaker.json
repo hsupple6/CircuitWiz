@@ -1,0 +1,47 @@
+{
+  "module": "Speaker",
+  "gridX": 3,
+  "gridY": 2,
+  "background": "#111827",
+  "css": "border-radius: 10px; border: 2px solid #374151;",
+  "category": "output",
+  "subcategory": "electromechanical",
+  "description": "8Ω speaker — resistive audio load",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "LEAD",
+      "pin": "+",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "css": "background: #EF4444; border: 2px solid #DC2626; color: white; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "BODY",
+      "pin": "SPK",
+      "isConnectable": false,
+      "css": "background: radial-gradient(circle, #4B5563 30%, #111827 70%); border: 2px solid #374151; color: #9CA3AF; font-size: 10px; display: flex; align-items: center; justify-content: center;"
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "type": "LEAD",
+      "pin": "-",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "background: #7C3AED; border: 2px solid #6D28D9; color: white; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+    },
+    { "x": 0, "y": 1, "type": "BODY", "isConnectable": false, "css": "background: #1F2937; border: 2px solid #374151;" },
+    { "x": 1, "y": 1, "type": "BODY", "isConnectable": false, "css": "background: #111827; border: 2px solid #374151; border-radius: 0 0 8px 8px;" },
+    { "x": 2, "y": 1, "type": "BODY", "isConnectable": false, "css": "background: #1F2937; border: 2px solid #374151;" }
+  ],
+  "properties": {
+    "resistance": { "default": 8, "unit": "Ω", "description": "Voice coil resistance" },
+    "powerRating": { "default": 0.5, "unit": "W", "description": "Power rating" }
+  }
+}
