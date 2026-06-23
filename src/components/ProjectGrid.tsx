@@ -16,6 +16,9 @@ import { ComponentStatsBadge } from './ComponentStatsBadge'
 import { formatCapacitance } from './CapacitanceSelector'
 import { formatInductance } from './InductanceSelector'
 import { OUTPUT_MODULE_NAMES } from '../modules/registry'
+import { SchematicGroupBoxLayer } from './SchematicGroupBoxLayer'
+import { createSchematicGroupBox, type SchematicGroupBox } from '../types/workspace'
+import { buildHoverStats, type HoverStats } from '../utils/hoverStats'
 
 const GRID_PADDING = 4
 const DEFAULT_CELL_SIZE_PX = () => (window.innerWidth * 2.5) / 100
@@ -45,12 +48,14 @@ interface ProjectGridProps {
   initialGridData?: any[][]
   initialWires?: any[]
   initialComponentStates?: Record<string, any>
+  initialGroupBoxes?: SchematicGroupBox[]
   projectId?: string
   getAccessToken?: () => Promise<string>
   onProjectDataChange?: (data: {
     gridData?: any[][]
     wires?: any[]
     componentStates?: Record<string, any>
+    groupBoxes?: SchematicGroupBox[]
     hasUnsavedChanges?: boolean
     triggerUnsavedCheck?: boolean
   }) => void
@@ -63,6 +68,13 @@ interface ProjectGridProps {
   onZoomChange?: (zoom: number) => void
   // Coordinate display
   onHoveredPositionChange?: (position: {x: number, y: number} | null) => void
+  onHoverStatsChange?: (stats: HoverStats | null) => void
+  onGroupBoxesChange?: (boxes: SchematicGroupBox[]) => void
+  groupBoxes?: SchematicGroupBox[]
+  selectedGroupBoxId?: string | null
+  onSelectedGroupBoxIdChange?: (id: string | null) => void
+  focusGroupBoxRequest?: SchematicGroupBox | null
+  onFocusGroupBoxHandled?: () => void
 }
 
 interface GridCell {
@@ -216,6 +228,7 @@ export function ProjectGrid({
   initialGridData,
   initialWires,
   initialComponentStates,
+  initialGroupBoxes,
   projectId,
   getAccessToken,
   onProjectDataChange,
@@ -224,7 +237,14 @@ export function ProjectGrid({
   onCircuitInfoChange,
   zoom: externalZoom,
   onZoomChange,
-  onHoveredPositionChange
+  onHoveredPositionChange,
+  onHoverStatsChange,
+  onGroupBoxesChange,
+  groupBoxes: controlledGroupBoxes,
+  selectedGroupBoxId: externalSelectedGroupBoxId,
+  onSelectedGroupBoxIdChange,
+  focusGroupBoxRequest,
+  onFocusGroupBoxHandled,
 }: ProjectGridProps) {
   const { isDark } = useTheme()
   const gridRef = useRef<HTMLDivElement>(null)
@@ -312,6 +332,46 @@ export function ProjectGrid({
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [deleteMode, setDeleteMode] = useState(false)
   const [hoveredForDeletion, setHoveredForDeletion] = useState<{ type: 'component' | 'wire', id: string } | null>(null)
+
+  const [internalGroupBoxes, setInternalGroupBoxes] = useState<SchematicGroupBox[]>(() => initialGroupBoxes ?? [])
+  const groupBoxes = controlledGroupBoxes ?? internalGroupBoxes
+  const [internalSelectedGroupBoxId, setInternalSelectedGroupBoxId] = useState<string | null>(null)
+  const selectedGroupBoxId = externalSelectedGroupBoxId !== undefined ? externalSelectedGroupBoxId : internalSelectedGroupBoxId
+  const setSelectedGroupBoxId = onSelectedGroupBoxIdChange ?? setInternalSelectedGroupBoxId
+  const [groupBoxDrawStart, setGroupBoxDrawStart] = useState<{ x: number; y: number } | null>(null)
+  const [groupBoxDrawPreview, setGroupBoxDrawPreview] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
+  const justFinishedGroupBoxDraw = useRef(false)
+
+  const isGroupBoxMode = selectedModule?.module === 'Group Box'
+
+  useEffect(() => {
+    if (isGroupBoxMode) setHoverState(null)
+  }, [isGroupBoxMode])
+
+  const updateGroupBoxes = useCallback((updater: SchematicGroupBox[] | ((prev: SchematicGroupBox[]) => SchematicGroupBox[])) => {
+    const apply = (prev: SchematicGroupBox[]) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      onGroupBoxesChange?.(next)
+      if (controlledGroupBoxes === undefined) {
+        setInternalGroupBoxes(next)
+      }
+      return next
+    }
+    if (controlledGroupBoxes !== undefined) {
+      apply(controlledGroupBoxes)
+    } else {
+      setInternalGroupBoxes((prev) => apply(prev))
+    }
+  }, [onGroupBoxesChange, controlledGroupBoxes])
+
+  useEffect(() => {
+    if (controlledGroupBoxes === undefined) {
+      setInternalGroupBoxes(initialGroupBoxes ?? [])
+    }
+    setSelectedGroupBoxId(null)
+    setGroupBoxDrawStart(null)
+    setGroupBoxDrawPreview(null)
+  }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
   
   // Simulation state for wire visual feedback
   const [simulationState, setSimulationState] = useState<SimulationState>({
@@ -331,6 +391,7 @@ export function ProjectGrid({
         gridData,
         wires,
         componentStates: Object.fromEntries(componentStates),
+        groupBoxes,
         hasUnsavedChanges: true,
         triggerUnsavedCheck: true
       })
@@ -340,13 +401,14 @@ export function ProjectGrid({
         onProjectDataChange({
           gridData,
           wires,
-          componentStates: Object.fromEntries(componentStates)
+          componentStates: Object.fromEntries(componentStates),
+          groupBoxes,
         })
       }, 500) // 500ms debounce to prevent excessive saves
 
       return () => clearTimeout(timeoutId)
     }
-  }, [gridData, wires, componentStates])
+  }, [gridData, wires, componentStates, groupBoxes])
 
   // Keep cell size in sync with rendered vw-based grid (avoids hover vs click drift)
   useEffect(() => {
@@ -467,6 +529,28 @@ export function ProjectGrid({
     })
     updateZoom(targetZoom)
   }, [lastPlacedObject, zoom, updateZoom, cellSizePx])
+
+  const zoomToGroupBox = useCallback((box: SchematicGroupBox) => {
+    if (!gridRef.current) return
+
+    const rect = gridRef.current.getBoundingClientRect()
+    const centerX = box.x + box.width / 2
+    const centerY = box.y + box.height / 2
+    const targetZoom = Math.min(2.5, Math.max(zoom, 1.2))
+
+    setGridOffset({
+      x: (rect.width / 2 - GRID_PADDING) / targetZoom - centerX * cellSizePx,
+      y: (rect.height / 2 - GRID_PADDING) / targetZoom - centerY * cellSizePx,
+    })
+    updateZoom(targetZoom)
+    setSelectedGroupBoxId(box.id)
+  }, [zoom, updateZoom, cellSizePx, setSelectedGroupBoxId])
+
+  useEffect(() => {
+    if (!focusGroupBoxRequest) return
+    zoomToGroupBox(focusGroupBoxRequest)
+    onFocusGroupBoxHandled?.()
+  }, [focusGroupBoxRequest, zoomToGroupBox, onFocusGroupBoxHandled])
   
   // Expand grid dynamically based on content and viewport - MEMORY OPTIMIZED
   const expandGrid = useCallback((newZoom: number) => {
@@ -731,15 +815,37 @@ export function ProjectGrid({
 
   // Handle mouse pan
   const handleMouseDown = useCallback((e: MouseEvent) => {
+    if (e.button === 0 && isGroupBoxMode && !isModalOpen) {
+      const coords = screenToGridCoords(e.clientX, e.clientY, 'cell')
+      if (coords) {
+        e.preventDefault()
+        setGroupBoxDrawStart(coords)
+        setGroupBoxDrawPreview({ x: coords.x, y: coords.y, width: 1, height: 1 })
+      }
+      return
+    }
+
     // Pan with left mouse button when no module is selected, not wiring, and modal is not open
     if (e.button === 0 && !selectedModule && !wiringState.isWiring && !isModalOpen) {
       e.preventDefault()
       setIsPanning(true)
       setPanStart({ x: e.clientX, y: e.clientY })
     }
-  }, [selectedModule, wiringState.isWiring, isModalOpen])
+  }, [selectedModule, wiringState.isWiring, isModalOpen, isGroupBoxMode, screenToGridCoords])
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (groupBoxDrawStart && isGroupBoxMode) {
+      const coords = screenToGridCoords(e.clientX, e.clientY, 'cell')
+      if (coords) {
+        const x = Math.min(groupBoxDrawStart.x, coords.x)
+        const y = Math.min(groupBoxDrawStart.y, coords.y)
+        const width = Math.abs(coords.x - groupBoxDrawStart.x) + 1
+        const height = Math.abs(coords.y - groupBoxDrawStart.y) + 1
+        setGroupBoxDrawPreview({ x, y, width, height })
+      }
+      return
+    }
+
     if (isPanning && !isModalOpen) {
       e.preventDefault()
       const deltaX = e.clientX - panStart.x
@@ -752,7 +858,26 @@ export function ProjectGrid({
       
       setPanStart({ x: e.clientX, y: e.clientY })
     }
-  }, [isPanning, isModalOpen, panStart])
+  }, [isPanning, isModalOpen, panStart, groupBoxDrawStart, isGroupBoxMode, screenToGridCoords])
+
+  const finishGroupBoxDraw = useCallback(() => {
+    if (groupBoxDrawStart && groupBoxDrawPreview) {
+      if (groupBoxDrawPreview.width >= 2 && groupBoxDrawPreview.height >= 2) {
+        const newBox = createSchematicGroupBox(
+          groupBoxDrawPreview.x,
+          groupBoxDrawPreview.y,
+          groupBoxDrawPreview.width,
+          groupBoxDrawPreview.height
+        )
+        updateGroupBoxes((prev) => [...prev, newBox])
+        setSelectedGroupBoxId(newBox.id)
+        justFinishedGroupBoxDraw.current = true
+      }
+      onModuleSelect(null)
+    }
+    setGroupBoxDrawStart(null)
+    setGroupBoxDrawPreview(null)
+  }, [groupBoxDrawStart, groupBoxDrawPreview, updateGroupBoxes, setSelectedGroupBoxId, onModuleSelect])
 
   const releaseHeldPushButtons = useCallback(() => {
     setGridData(prev => {
@@ -778,9 +903,12 @@ export function ProjectGrid({
   }, [setGridData])
 
   const handleMouseUp = useCallback(() => {
+    if (groupBoxDrawStart) {
+      finishGroupBoxDraw()
+    }
     setIsPanning(false)
     releaseHeldPushButtons()
-  }, [releaseHeldPushButtons])
+  }, [releaseHeldPushButtons, groupBoxDrawStart, finishGroupBoxDraw])
 
   // Stop panning when modal opens
   React.useEffect(() => {
@@ -854,9 +982,11 @@ export function ProjectGrid({
       const cell = gridData[y]?.[x]
       setHoveredTile({ x, y, cell: cell || null })
       onHoveredPositionChange?.({ x, y })
+      onHoverStatsChange?.(buildHoverStats(x, y, gridData, wires, componentStates))
     } else {
       setHoveredTile(null)
       onHoveredPositionChange?.(null)
+      onHoverStatsChange?.(null)
     }
     
     // Handle delete mode hover
@@ -871,8 +1001,10 @@ export function ProjectGrid({
     }
     
     // Handle module placement preview
-    if (selectedModule && !wiringState.isWiring) {
+    if (selectedModule && !wiringState.isWiring && selectedModule.module !== 'Group Box') {
       setHoverState({ x, y })
+    } else if (selectedModule?.module === 'Group Box') {
+      setHoverState(null)
     }
     
     // Handle wire preview
@@ -883,7 +1015,7 @@ export function ProjectGrid({
       const currentSegments = [...wiringState.currentConnection.segments, { x: wireGridX, y: wireGridY }]
       setWirePreview(currentSegments)
     }
-  }, [selectedModule, wiringState, screenToGridCoords, deleteMode, gridData, gridSize.width, gridSize.height, onHoveredPositionChange])
+  }, [selectedModule, wiringState, screenToGridCoords, deleteMode, gridData, gridSize.width, gridSize.height, wires, componentStates, onHoveredPositionChange, onHoverStatsChange])
 
   // Handle clicking on connectable cells for wiring - removed (handled by grid click handler)
 
@@ -1604,6 +1736,11 @@ export function ProjectGrid({
   const handleGridClick = useCallback((e: React.MouseEvent) => {
     if (!gridRef.current) return
 
+    if (justFinishedGroupBoxDraw.current) {
+      justFinishedGroupBoxDraw.current = false
+      return
+    }
+
     const gridCoords = screenToGridCoords(e.clientX, e.clientY, 'cell')
     if (!gridCoords) return
     const { x, y } = gridCoords
@@ -1658,6 +1795,9 @@ export function ProjectGrid({
     
     // Handle module placement
     if (selectedModule) {
+      if (selectedModule.module === 'Group Box') {
+        return
+      }
       
       // Place the module with its top-left corner at the target cell
       const centeredX = x
@@ -1779,15 +1919,19 @@ export function ProjectGrid({
         // Deselect the module after placing
         onModuleSelect(null)
       }
+    } else if (!wiringState.isWiring && !deleteMode) {
+      setSelectedGroupBoxId(null)
     }
-  }, [selectedModule, gridSize.width, gridSize.height, onModuleSelect, wiringState, addWireSegment, finishWiringWithValidation, startWiring, isConnectionPoint, screenToGridCoords, checkAndExpandForPlacement, deleteMode, gridData])
+  }, [selectedModule, gridSize.width, gridSize.height, onModuleSelect, wiringState, addWireSegment, finishWiringWithValidation, startWiring, isConnectionPoint, screenToGridCoords, checkAndExpandForPlacement, deleteMode, gridData, setSelectedGroupBoxId])
 
   // Handle mouse leave to clear hover state
   const handleMouseLeave = useCallback(() => {
     setHoverState(null)
     setWirePreview(null)
     setHoveredTile(null)
-  }, [])
+    onHoveredPositionChange?.(null)
+    onHoverStatsChange?.(null)
+  }, [onHoveredPositionChange, onHoverStatsChange])
 
 
   // Handle ESC key to cancel wiring and close color picker
@@ -1901,7 +2045,7 @@ export function ProjectGrid({
 
   // Memoized expensive calculations
   const isCellHighlighted = useCallback((x: number, y: number) => {
-    if (!hoverState || !selectedModule) return false
+    if (!hoverState || !selectedModule || selectedModule.module === 'Group Box') return false
     
     const { x: hoverX, y: hoverY } = hoverState
     return x >= hoverX && x < hoverX + selectedModule.gridX && 
@@ -1917,7 +2061,7 @@ export function ProjectGrid({
 
   // Memoized collision check
   const isCollisionPreview = useMemo(() => {
-    if (!hoverState || !selectedModule) return false
+    if (!hoverState || !selectedModule || selectedModule.module === 'Group Box') return false
     return wouldCollide(hoverState.x, hoverState.y, selectedModule.gridX, selectedModule.gridY) ||
            wouldCollideWithWire(hoverState.x, hoverState.y, selectedModule.gridX, selectedModule.gridY)
   }, [hoverState, selectedModule, gridData, wires])
@@ -2633,6 +2777,7 @@ const GridCell = React.memo(({
         isPanning ? 'cursor-grabbing' : 
         deleteMode ? 'cursor-pointer' :
         wiringState.isWiring ? 'cursor-crosshair' :
+        isGroupBoxMode ? 'cursor-crosshair' :
         selectedModule ? 'cursor-crosshair' : 'cursor-grab'
       }`}
       onMouseMove={handleHoverMove}
@@ -2763,6 +2908,26 @@ const GridCell = React.memo(({
             `,
             backgroundSize: '2.5vw 2.5vw',
             backgroundRepeat: 'repeat',
+          }}
+        />
+
+        <SchematicGroupBoxLayer
+          groupBoxes={groupBoxes}
+          selectedId={selectedGroupBoxId}
+          drawPreview={groupBoxDrawPreview}
+          isDrawMode={isGroupBoxMode}
+          isInteractive={!selectedModule && !wiringState.isWiring}
+          deleteMode={deleteMode}
+          cellSizePx={cellSizePx}
+          onSelect={setSelectedGroupBoxId}
+          onUpdate={(id, patch) => {
+            updateGroupBoxes((prev) =>
+              prev.map((box) => (box.id === id ? { ...box, ...patch } : box))
+            )
+          }}
+          onDelete={(id) => {
+            updateGroupBoxes((prev) => prev.filter((box) => box.id !== id))
+            if (selectedGroupBoxId === id) setSelectedGroupBoxId(null)
           }}
         />
 

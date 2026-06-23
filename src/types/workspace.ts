@@ -4,6 +4,47 @@ import { createDefaultPlanSpacePreset } from '../modules/planSpacePreset'
 
 export type PlanBubbleShape = 'rounded' | 'rectangle' | 'ellipse' | 'diamond' | 'pill' | 'card' | 'phase'
 
+export interface SchematicGroupBox {
+  id: string
+  x: number
+  y: number
+  width: number
+  height: number
+  title: string
+  color: string
+  borderColor?: string
+}
+
+export const GROUP_BOX_COLOR_PRESETS: Array<{ name: string; fill: string; border: string }> = [
+  { name: 'Indigo', fill: 'rgba(224, 231, 255, 0.55)', border: '#818CF8' },
+  { name: 'Blue', fill: 'rgba(219, 234, 254, 0.55)', border: '#60A5FA' },
+  { name: 'Green', fill: 'rgba(209, 250, 229, 0.55)', border: '#34D399' },
+  { name: 'Amber', fill: 'rgba(254, 243, 199, 0.55)', border: '#FBBF24' },
+  { name: 'Pink', fill: 'rgba(252, 231, 243, 0.55)', border: '#F472B6' },
+  { name: 'Purple', fill: 'rgba(243, 232, 255, 0.55)', border: '#A78BFA' },
+  { name: 'Slate', fill: 'rgba(241, 245, 249, 0.55)', border: '#94A3B8' },
+]
+
+export function createSchematicGroupBox(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  title = 'New Region',
+  colorPreset = GROUP_BOX_COLOR_PRESETS[0]
+): SchematicGroupBox {
+  return {
+    id: `groupbox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    x,
+    y,
+    width,
+    height,
+    title,
+    color: colorPreset.fill,
+    borderColor: colorPreset.border,
+  }
+}
+
 export interface Schematic {
   id: string
   name: string
@@ -12,6 +53,7 @@ export interface Schematic {
   occupiedComponents?: unknown[]
   wires: WireConnection[]
   componentStates: Record<string, ComponentState>
+  groupBoxes?: SchematicGroupBox[]
   metadata: {
     createdAt: string
     updatedAt: string

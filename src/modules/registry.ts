@@ -22,6 +22,7 @@ import Buzzer from './definitions/Buzzer.json'
 import Speaker from './definitions/Speaker.json'
 import Servo from './definitions/Servo.json'
 import Potentiometer from './definitions/Potentiometer.json'
+import GroupBox from './definitions/GroupBox.json'
 
 import { getOrderedCategoryIds } from './componentCatalog'
 import type { OutputSubcategoryId } from './componentCatalog'
@@ -32,6 +33,8 @@ export interface ModuleRegistryEntry {
   category: string
   subcategory?: OutputSubcategoryId
   keywords?: string[]
+  /** Hidden from the component palette; existing placements still load via getModule */
+  disabled?: boolean
 }
 
 export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
@@ -46,6 +49,7 @@ export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
     type: MicrocontrollerType,
     category: 'microcontrollers',
     keywords: ['esp32', 'wifi', 'bluetooth', 'mcu', 'gpio'],
+    disabled: true,
   },
   Battery: {
     definition: Battery as ModuleDefinition,
@@ -133,6 +137,11 @@ export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
     category: 'sensors',
     keywords: ['temperature', 'thermistor', 'ds18b20'],
   },
+  'Group Box': {
+    definition: GroupBox as ModuleDefinition,
+    category: 'organization',
+    keywords: ['group', 'box', 'region', 'label', 'organize', 'section', 'annotation'],
+  },
 }
 
 export const getModule = (name: string): ModuleDefinition | undefined => {
@@ -147,26 +156,29 @@ export const getModuleType = (name: string): ModuleType | undefined => {
   return moduleRegistry[name]?.type
 }
 
+const availableRegistryEntries = (): ModuleRegistryEntry[] =>
+  Object.values(moduleRegistry).filter((entry) => !entry.disabled)
+
 export const getAllModules = (): ModuleDefinition[] => {
-  return Object.values(moduleRegistry).map((entry) => entry.definition)
+  return availableRegistryEntries().map((entry) => entry.definition)
 }
 
 export const getAllModulesWithTypes = (): ModuleRegistryEntry[] => {
-  return Object.values(moduleRegistry)
+  return availableRegistryEntries()
 }
 
 export const getModulesByCategory = (category: string): ModuleDefinition[] => {
-  return Object.values(moduleRegistry)
+  return availableRegistryEntries()
     .filter((entry) => entry.category === category)
     .map((entry) => entry.definition)
 }
 
 export const getModulesWithTypesByCategory = (category: string): ModuleRegistryEntry[] => {
-  return Object.values(moduleRegistry).filter((entry) => entry.category === category)
+  return availableRegistryEntries().filter((entry) => entry.category === category)
 }
 
 export const getCategories = (): string[] => {
-  const used = new Set(Object.values(moduleRegistry).map((entry) => entry.category))
+  const used = new Set(availableRegistryEntries().map((entry) => entry.category))
   return getOrderedCategoryIds().filter((id) => used.has(id))
 }
 

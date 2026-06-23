@@ -16,6 +16,7 @@ export const COMPONENT_CATEGORIES = [
   { id: 'switches', label: 'Switches' },
   { id: 'output', label: 'Output', nested: true },
   { id: 'sensors', label: 'Sensors' },
+  { id: 'organization', label: 'Organization' },
 ] as const
 
 export type ComponentCategoryId = (typeof COMPONENT_CATEGORIES)[number]['id']

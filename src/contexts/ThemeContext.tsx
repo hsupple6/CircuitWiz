@@ -1,54 +1,55 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
+import { ACCENT_PRESETS, DEFAULT_ACCENT, applyAccentColor, normalizeAccentHex } from '../utils/accentColor'
+
+const ACCENT_STORAGE_KEY = 'carbon-accent-color'
 
 interface ThemeContextType {
   isDark: boolean
-  toggleTheme: () => void
+  accentColor: string
+  accentPresets: typeof ACCENT_PRESETS
+  setAccentColor: (hex: string) => void
+  resetAccentColor: () => void
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [isDark, setIsDark] = useState(() => {
-    // Check localStorage first, then system preference
-    const saved = localStorage.getItem('theme')
-    if (saved) {
-      return saved === 'dark'
-    }
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
+  const [isDark] = useState(true)
+  const [accentColor, setAccentColorState] = useState(() => {
+    const saved = localStorage.getItem(ACCENT_STORAGE_KEY)
+    const initial = saved ? normalizeAccentHex(saved) : DEFAULT_ACCENT
+    applyAccentColor(initial)
+    return initial
   })
 
   useEffect(() => {
-    // Apply theme to document
-    if (isDark) {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
-    
-    // Save to localStorage
-    localStorage.setItem('theme', isDark ? 'dark' : 'light')
-  }, [isDark])
-
-  useEffect(() => {
-    // Listen for system theme changes
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleChange = (e: MediaQueryListEvent) => {
-      // Only update if user hasn't manually set a preference
-      if (!localStorage.getItem('theme')) {
-        setIsDark(e.matches)
-      }
-    }
-
-    mediaQuery.addEventListener('change', handleChange)
-    return () => mediaQuery.removeEventListener('change', handleChange)
+    document.documentElement.classList.add('dark')
+    localStorage.setItem('theme', 'dark')
   }, [])
 
-  const toggleTheme = () => {
-    setIsDark(!isDark)
+  useEffect(() => {
+    const normalized = applyAccentColor(accentColor)
+    localStorage.setItem(ACCENT_STORAGE_KEY, normalized)
+  }, [accentColor])
+
+  const setAccentColor = (hex: string) => {
+    setAccentColorState(normalizeAccentHex(hex))
+  }
+
+  const resetAccentColor = () => {
+    setAccentColorState(DEFAULT_ACCENT)
   }
 
   return (
-    <ThemeContext.Provider value={{ isDark, toggleTheme }}>
+    <ThemeContext.Provider
+      value={{
+        isDark,
+        accentColor,
+        accentPresets: ACCENT_PRESETS,
+        setAccentColor,
+        resetAccentColor,
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   )

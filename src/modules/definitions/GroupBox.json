@@ -1,0 +1,48 @@
+{
+  "module": "Group Box",
+  "gridX": 6,
+  "gridY": 4,
+  "background": "rgba(224, 231, 255, 0.55)",
+  "css": "border: 2px dashed #818CF8; border-radius: 8px;",
+  "category": "organization",
+  "description": "Draw a labeled region box to organize sections of your schematic",
+  "grid": [
+    { "x": 0, "y": 0, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 1, "y": 0, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 2, "y": 0, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 3, "y": 0, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 4, "y": 0, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 5, "y": 0, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 0, "y": 1, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 1, "y": 1, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 2, "y": 1, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 3, "y": 1, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 4, "y": 1, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 5, "y": 1, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 0, "y": 2, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 1, "y": 2, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 2, "y": 2, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 3, "y": 2, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 4, "y": 2, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 5, "y": 2, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 0, "y": 3, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 1, "y": 3, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 2, "y": 3, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 3, "y": 3, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 4, "y": 3, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" },
+    { "x": 5, "y": 3, "background": "transparent", "isConnectable": false, "type": "ORGANIZATION", "pin": "" }
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "default": "New Region",
+      "description": "Region title"
+    },
+    "color": {
+      "type": "select",
+      "default": "Indigo",
+      "options": ["Indigo", "Blue", "Green", "Amber", "Pink", "Purple", "Slate"],
+      "description": "Region color"
+    }
+  }
+}

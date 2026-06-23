@@ -61,6 +61,13 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
               <div className="absolute top-0 right-0 w-2 h-2 bg-white rounded-full opacity-60" />
             )}
             
+            {/* Group box preview label */}
+            {definition.module === 'Group Box' && cell.x === 0 && cell.y === 0 && (
+              <div className="absolute top-0.5 left-1 text-[8px] font-semibold text-indigo-600 bg-white/70 px-1 rounded">
+                Region
+              </div>
+            )}
+            
             {/* Motor label (for preview) */}
             {definition.module === 'Motor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 1 && (
               <div className="absolute inset-0 flex items-end justify-center pb-1">

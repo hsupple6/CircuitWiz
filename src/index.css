@@ -3,6 +3,21 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --accent-50: 240 249 255;
+    --accent-100: 224 242 254;
+    --accent-200: 186 230 253;
+    --accent-300: 125 211 252;
+    --accent-400: 56 189 248;
+    --accent-500: 14 165 233;
+    --accent-600: 2 132 199;
+    --accent-700: 3 105 161;
+    --accent-800: 7 89 133;
+    --accent-900: 12 74 110;
+    --accent-glow: 56 189 248;
+    --accent-hex: #38bdf8;
+  }
+
   * {
     @apply border-gray-200 dark:border-dark-border;
   }
@@ -15,32 +30,67 @@
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black disabled:opacity-50 disabled:pointer-events-none;
   }
   
   .btn-primary {
-    @apply bg-primary-600 text-white hover:bg-primary-700 dark:bg-primary-600 dark:hover:bg-primary-500;
+    @apply bg-primary-500 text-black hover:bg-primary-400 dark:bg-primary-400 dark:text-black dark:hover:bg-primary-300;
   }
   
   .btn-secondary {
-    @apply bg-gray-100 text-gray-900 hover:bg-gray-200 dark:bg-dark-surface dark:text-dark-text-primary dark:hover:bg-dark-card;
+    @apply bg-gray-100 text-gray-900 hover:bg-gray-200 dark:bg-carbon-elevated dark:text-dark-text-primary dark:hover:bg-carbon-card;
   }
   
   .card {
     @apply rounded-lg border bg-white shadow-sm dark:bg-dark-card dark:border-dark-border;
     transition: background-color 0.2s ease, border-color 0.2s ease;
   }
+
+  .carbon-card {
+    @apply rounded-xl border border-white/[0.06] bg-carbon-card/80 backdrop-blur-sm;
+  }
   
   .nav-item {
-    @apply text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-dark-text-secondary dark:hover:bg-dark-surface dark:hover:text-dark-text-primary;
+    @apply text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-dark-text-secondary dark:hover:bg-carbon-surface dark:hover:text-dark-text-primary;
   }
   
   .nav-item-active {
-    @apply bg-primary-100 text-primary-900 dark:bg-dark-surface dark:text-primary-400;
+    @apply bg-primary-100 text-primary-900 dark:bg-carbon-elevated dark:text-primary-300;
   }
   
   .input-field {
-    @apply bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-primary-500 focus:ring-primary-500 dark:bg-dark-surface dark:border-dark-border dark:text-dark-text-primary dark:placeholder-dark-text-muted dark:focus:border-primary-400 dark:focus:ring-primary-400;
+    @apply bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-primary-500 focus:ring-primary-500 dark:bg-carbon-surface dark:border-carbon-border dark:text-dark-text-primary dark:placeholder-dark-text-muted dark:focus:border-primary-400 dark:focus:ring-primary-400;
+  }
+
+  .carbon-orb {
+    background: radial-gradient(
+      circle,
+      rgb(var(--accent-glow) / 0.24) 0%,
+      rgb(var(--accent-glow) / 0.12) 22%,
+      rgb(var(--accent-glow) / 0.05) 48%,
+      rgb(var(--accent-glow) / 0.02) 62%,
+      transparent 78%
+    );
+  }
+
+  .carbon-orb-sm {
+    background: radial-gradient(
+      circle,
+      rgb(var(--accent-glow) / 0.14) 0%,
+      rgb(var(--accent-glow) / 0.05) 45%,
+      transparent 70%
+    );
+  }
+
+  .carbon-rotate-ombre {
+    background: conic-gradient(
+      from 0deg at 50% 50%,
+      transparent 0deg,
+      rgb(var(--accent-glow) / 0.06) 60deg,
+      transparent 120deg,
+      rgb(var(--accent-glow) / 0.04) 200deg,
+      transparent 280deg
+    );
   }
   
   .drag-handle {
@@ -50,7 +100,6 @@
     -ms-user-select: none;
   }
   
-  /* Wire pulse animation for simulation */
   @keyframes wirePulse {
     0% {
       opacity: 0.4;

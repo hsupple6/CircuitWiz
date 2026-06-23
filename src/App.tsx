@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
-  Zap,
   Plus,
   Search,
   ArrowLeft,
@@ -17,9 +16,11 @@ import {
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { extractOccupiedComponents } from './utils/gridUtils'
-import { ThemeToggle } from './components/ThemeToggle'
+import { AppearancePanel } from './components/AppearancePanel'
+import { CarbonLogo } from './components/CarbonLogo'
 import { ProjectGrid } from './components/ProjectGrid'
 import { ComponentPalette } from './components/ComponentPalette'
+import { SchematicGroupBoxBrowser } from './components/SchematicGroupBoxBrowser'
 import { ProjectPreview } from './components/ProjectPreview'
 import { ProjectFolderView } from './components/ProjectFolderView'
 import { DocumentEditor } from './components/DocumentEditor'
@@ -27,6 +28,9 @@ import { PlanSpaceEditor } from './components/PlanSpaceEditor'
 import { ResistanceSelector } from './components/ResistanceSelector'
 import { CapacitanceSelector } from './components/CapacitanceSelector'
 import { InductanceSelector } from './components/InductanceSelector'
+import { HoverStatsPanel } from './components/HoverStatsPanel'
+import type { HoverStats } from './utils/hoverStats'
+import type { ComponentState } from './systems/ElectricalSystem'
 import { ModuleDefinition } from './modules/types'
 import {
   ProjectFolder,
@@ -35,12 +39,14 @@ import {
   createSchematic,
   createDocument,
   seedPlanSpaceIfEmpty,
+  type SchematicGroupBox,
 } from './types/workspace'
 import {
   loadLocalSession,
   saveLocalSession,
   createLocalProjectFolder,
 } from './services/localProjectStorage'
+import { ensureExamplesProject, hasExamplesProject } from './examples/examplesProject'
 
 interface SaveStatusProps {
   isSaving: boolean
@@ -129,9 +135,13 @@ function AppContent() {
   const [selectedResistance, setSelectedResistance] = useState(1000)
   const [selectedCapacitance, setSelectedCapacitance] = useState(0.0001)
   const [selectedInductance, setSelectedInductance] = useState(0.001)
-  const [, setComponentStates] = useState<Map<string, unknown>>(new Map())
+  const [componentStates, setComponentStates] = useState<Map<string, ComponentState>>(new Map())
   const [zoom, setZoom] = useState(1)
   const [hoveredPosition, setHoveredPosition] = useState<{ x: number; y: number } | null>(null)
+  const [hoverStats, setHoverStats] = useState<HoverStats | null>(null)
+  const [groupBoxes, setGroupBoxes] = useState<SchematicGroupBox[]>([])
+  const [selectedGroupBoxId, setSelectedGroupBoxId] = useState<string | null>(null)
+  const [focusGroupBoxRequest, setFocusGroupBoxRequest] = useState<SchematicGroupBox | null>(null)
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean
@@ -152,6 +162,14 @@ function AppContent() {
     if (!selectedFolder || !selectedItemId || activeView !== 'schematic') return null
     return selectedFolder.schematics.find((s) => s.id === selectedItemId) ?? null
   }, [selectedFolder, selectedItemId, activeView])
+
+  useEffect(() => {
+    if (selectedSchematic) {
+      setGroupBoxes(selectedSchematic.groupBoxes ?? [])
+      setSelectedGroupBoxId(null)
+      setFocusGroupBoxRequest(null)
+    }
+  }, [selectedSchematic?.id])
 
   const selectedDocument = useMemo(() => {
     if (!selectedFolder || !selectedItemId || activeView !== 'document') return null
@@ -204,12 +222,25 @@ function AppContent() {
 
   useEffect(() => {
     const session = loadLocalSession()
+    const previous = session?.projectFolders || []
+    const folders = ensureExamplesProject(previous)
+
+    setProjectFolders(folders)
+
+    const examplesAdded = !hasExamplesProject(previous)
+    if (!session || examplesAdded) {
+      persistSession(
+        folders,
+        session?.selectedFolderId ? folders.find((f) => f.id === session.selectedFolderId) ?? null : null,
+        session?.selectedItemId ?? null,
+        session?.activeView ?? 'folders'
+      )
+    }
+
     if (!session) return
 
-    setProjectFolders(session.projectFolders || [])
-
     if (session.selectedFolderId) {
-      const folder = session.projectFolders?.find((f) => f.id === session.selectedFolderId)
+      const folder = folders.find((f) => f.id === session.selectedFolderId)
       if (folder) {
         setSelectedFolder(folder)
         setSelectedItemId(session.selectedItemId)
@@ -519,6 +550,7 @@ function AppContent() {
     gridData?: unknown[][]
     wires?: unknown[]
     componentStates?: Record<string, unknown>
+    groupBoxes?: SchematicGroupBox[]
     hasUnsavedChanges?: boolean
     triggerUnsavedCheck?: boolean
   }) => {
@@ -545,6 +577,7 @@ function AppContent() {
         gridData: (projectData.gridData as Schematic['gridData']) || selectedSchematic.gridData,
         wires: (projectData.wires as Schematic['wires']) || selectedSchematic.wires,
         componentStates: (projectData.componentStates as Schematic['componentStates']) || selectedSchematic.componentStates,
+        groupBoxes: projectData.groupBoxes ?? selectedSchematic.groupBoxes ?? [],
         occupiedComponents,
         metadata: { ...selectedSchematic.metadata, updatedAt: new Date().toISOString() },
       }
@@ -643,18 +676,18 @@ function AppContent() {
   }
 
   const editorTopBar = (title: string, backLabel: string, onBack: () => void, showSave = false) => (
-    <div className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface px-4 shadow-sm">
+    <div className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-white/[0.06] bg-black px-4">
       <div className="flex items-center gap-4">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 dark:text-dark-text-secondary dark:hover:text-dark-text-primary transition-colors"
+          className="flex items-center gap-2 text-zinc-400 hover:text-primary-300 transition-colors"
         >
           <ArrowLeft className="h-5 w-5" />
           {backLabel}
         </button>
-        <div className="h-6 w-px bg-gray-200 dark:bg-dark-border" />
+        <div className="h-6 w-px bg-white/10" />
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-dark-text-primary">{title}</h1>
+          <h1 className="text-xl font-semibold text-zinc-100">{title}</h1>
           {showSave && (
             <SaveStatus
               isSaving={saveStatus.isSaving}
@@ -668,8 +701,12 @@ function AppContent() {
       <div className="flex items-center gap-4">
         {activeView === 'schematic' && (
           <>
-            <div className="text-sm text-gray-500 dark:text-dark-text-muted font-mono">
-              {hoveredPosition ? `(${hoveredPosition.x}, ${hoveredPosition.y})` : 'Hover for coords'}
+            <div className="text-sm text-zinc-500 font-mono truncate max-w-[240px]">
+              {hoverStats
+                ? `${hoverStats.title}${hoverStats.status ? ` · ${hoverStats.status.label}` : ''}`
+                : hoveredPosition
+                  ? `(${hoveredPosition.x}, ${hoveredPosition.y})`
+                  : 'Hover for live stats'}
             </div>
             <div className="flex items-center gap-2">
               <button onClick={handleZoomOut} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-secondary" title="Zoom Out">
@@ -693,7 +730,7 @@ function AppContent() {
             <button onClick={handleZoomReset} className="p-2 text-gray-400 hover:text-gray-600" title="Reset Zoom"><Maximize2 className="h-5 w-5" /></button>
           </div>
         )}
-        <ThemeToggle />
+        <AppearancePanel />
       </div>
     </div>
   )
@@ -703,9 +740,24 @@ function AppContent() {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
         {editorTopBar(selectedSchematic.name, selectedFolder.name, handleBackToFolder, true)}
-        <div className="flex h-[calc(100vh-4rem)]">
-          <ComponentPalette selectedModule={selectedModule} onModuleSelect={handleModuleSelect} />
-          <div className="flex-1 overflow-hidden">
+        <div className="flex h-[calc(100vh-4rem)] min-h-0">
+          <div className="w-80 flex flex-col border-r border-gray-200 dark:border-dark-border shrink-0 bg-white dark:bg-dark-surface min-h-0">
+            <ComponentPalette selectedModule={selectedModule} onModuleSelect={handleModuleSelect} />
+            <SchematicGroupBoxBrowser
+              groupBoxes={groupBoxes}
+              selectedId={selectedGroupBoxId}
+              onSelect={setSelectedGroupBoxId}
+              onUpdate={(id, patch) =>
+                setGroupBoxes((prev) => prev.map((box) => (box.id === id ? { ...box, ...patch } : box)))
+              }
+              onDelete={(id) => {
+                setGroupBoxes((prev) => prev.filter((box) => box.id !== id))
+                if (selectedGroupBoxId === id) setSelectedGroupBoxId(null)
+              }}
+              onFocus={(box) => setFocusGroupBoxRequest(box)}
+            />
+          </div>
+          <div className="flex-1 overflow-hidden min-w-0">
             <ProjectGrid
               project={{
                 id: 1,
@@ -720,14 +772,23 @@ function AppContent() {
               initialGridData={selectedSchematic.gridData || []}
               initialWires={selectedSchematic.wires || []}
               initialComponentStates={selectedSchematic.componentStates || {}}
+              initialGroupBoxes={selectedSchematic.groupBoxes || []}
+              groupBoxes={groupBoxes}
+              onGroupBoxesChange={setGroupBoxes}
+              selectedGroupBoxId={selectedGroupBoxId}
+              onSelectedGroupBoxIdChange={setSelectedGroupBoxId}
+              focusGroupBoxRequest={focusGroupBoxRequest}
+              onFocusGroupBoxHandled={() => setFocusGroupBoxRequest(null)}
               projectId={selectedSchematic.id}
               getAccessToken={getAccessToken}
               onProjectDataChange={handleSchematicDataChange}
               zoom={zoom}
               onZoomChange={setZoom}
               onHoveredPositionChange={setHoveredPosition}
+              onHoverStatsChange={setHoverStats}
             />
           </div>
+          <HoverStatsPanel stats={hoverStats} />
         </div>
         {passiveValueSelector && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -803,7 +864,7 @@ function AppContent() {
           <FolderOpen className="h-5 w-5 text-primary-500" />
           <span className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">{selectedFolder.name}</span>
           <div className="flex-1" />
-          <ThemeToggle />
+          <AppearancePanel />
         </div>
         <ProjectFolderView
           folder={selectedFolder}
@@ -824,51 +885,56 @@ function AppContent() {
 
   // Projects list (folders)
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
-      <div className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-4">
-          <Zap className="h-8 w-8 text-primary-600" />
-          <span className="text-xl font-bold text-gray-900 dark:text-dark-text-primary">CircuitWiz</span>
-        </div>
-        <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-          <div className="relative flex flex-1">
-            <Search className="pointer-events-none absolute inset-y-0 left-0 h-full w-5 text-gray-400 pl-3" />
+    <div className="grid h-screen grid-rows-[10fr_90fr] bg-black overflow-hidden">
+      {/* Top 10% — Carbon + search */}
+      <header className="flex min-h-0 items-center gap-x-4 bg-black sm:gap-x-6">
+        <CarbonLogo size="lg" />
+        <div className="flex flex-1 items-center gap-x-4 lg:gap-x-6">
+          <div className="relative ml-auto flex flex-1 max-w-xl">
+            <Search className="pointer-events-none absolute inset-y-0 left-0 h-full w-5 text-zinc-500 pl-3" />
             <input
               type="search"
               placeholder="Search projects..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="input-field block h-full w-full border-0 py-0 pl-10 pr-0 focus:ring-0 sm:text-sm"
+              className="block h-10 w-full rounded-lg border border-white/[0.08] bg-carbon-surface py-0 pl-10 pr-4 text-sm text-zinc-100 placeholder-zinc-500 focus:border-primary-400/50 focus:outline-none focus:ring-1 focus:ring-primary-400/30"
             />
           </div>
-          <ThemeToggle />
+          <AppearancePanel />
         </div>
-      </div>
+      </header>
 
-      <main className="py-8">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-dark-text-primary">Your Projects</h1>
-            <p className="mt-2 text-gray-600 dark:text-dark-text-secondary">
-              Each project is a folder containing schematics, documents, and a plan space
-            </p>
-          </div>
+      {/* Bottom 90% — Your Projects */}
+      <main className="relative flex min-h-0 flex-col overflow-hidden bg-carbon-matte">
+        {/* Huge orb — bottom right */}
+        <div
+          className="pointer-events-none absolute -bottom-[45%] -right-[25%] h-[min(1100px,95vw)] w-[min(1100px,95vw)] rounded-full carbon-orb"
+          aria-hidden
+        />
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="relative shrink-0 pt-8 pb-6">
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-50 sm:text-4xl px-4 sm:px-6 lg:px-8">Your Projects</h1>
+          <p className="mt-3 max-w-2xl text-base text-zinc-400 px-4 sm:px-6 lg:px-8">
+            Each project is a folder containing schematics, documents, and a plan space
+          </p>
+        </div>
+
+        <div className="relative min-h-0 flex-1 overflow-y-auto pb-8">
+          <div className="grid grid-cols-1 gap-6 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-3 lg:px-8 xl:grid-cols-4">
             <div
-              className="card p-6 border-2 border-dashed border-gray-300 dark:border-dark-border hover:border-primary-400 transition-colors cursor-pointer group"
+              className="carbon-card group cursor-pointer border-dashed border-primary-400/20 p-6 transition-colors hover:border-primary-400/40 hover:bg-carbon-elevated/50"
               onClick={handleCreateFolder}
             >
-              <div className="flex flex-col items-center justify-center h-48">
-                <Plus className="h-12 w-12 text-gray-400 group-hover:text-primary-500 transition-colors" />
-                <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-dark-text-primary">New Project</h3>
-                <p className="mt-2 text-sm text-gray-500 text-center">Create a new project folder</p>
+              <div className="flex h-48 flex-col items-center justify-center">
+                <Plus className="h-12 w-12 text-zinc-600 transition-colors group-hover:text-primary-400" />
+                <h3 className="mt-4 text-lg font-medium text-zinc-100">New Project</h3>
+                <p className="mt-2 text-center text-sm text-zinc-500">Create a new project folder</p>
               </div>
             </div>
 
             {projectsLoading && (
               <div className="col-span-full flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-400" />
               </div>
             )}
 
@@ -881,25 +947,26 @@ function AppContent() {
               />
             ))}
 
-            {!projectsLoading && projectFolders.length === 0 && (
+            {!projectsLoading && projectFolders.length <= 1 && (
               <div className="col-span-full">
-                <div className="text-center py-12 mb-8">
-                  <Zap className="h-16 w-16 mx-auto text-gray-400 mb-4" />
-                  <h3 className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary mb-2">Welcome to CircuitWiz!</h3>
-                  <p className="text-gray-500 mb-6 max-w-md mx-auto">
-                    Create a project folder to organize schematics, notes, and your project roadmap.
+                <div className="relative mb-8 overflow-hidden rounded-2xl border border-white/[0.06] bg-carbon-card py-12 text-center">
+                  <div className="pointer-events-none absolute -top-16 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full carbon-orb-sm" aria-hidden />
+                  <CarbonLogo size="xl" className="mb-6 block mx-auto" />
+                  <h3 className="mb-2 text-2xl font-bold text-zinc-50">Welcome to Carbon</h3>
+                  <p className="mx-auto mb-6 max-w-md text-zinc-400">
+                    Open the <strong className="text-primary-300">Examples</strong> folder for preset simulation test circuits, or create your own project.
                   </p>
                   <button
                     onClick={handleCreateFolder}
-                    className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 px-6 rounded-lg"
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary-400 px-6 py-3 font-medium text-black transition-colors hover:bg-primary-300"
                   >
                     <Plus className="h-5 w-5" />
-                    Create Your First Project
+                    Create a Project
                   </button>
                 </div>
-                <div className="bg-white dark:bg-dark-surface rounded-xl p-6 shadow-lg">
-                  <h4 className="text-lg font-semibold mb-4">Try These Sample Projects</h4>
-                  <div className="grid md:grid-cols-2 gap-4">
+                <div className="carbon-card rounded-xl p-6">
+                  <h4 className="mb-4 text-lg font-semibold text-zinc-100">Try These Sample Projects</h4>
+                  <div className="grid gap-4 md:grid-cols-2">
                     <SampleCard title="LED Blink Circuit" description="A simple circuit to blink an LED using Arduino" onClick={() => createSampleFolder('led-blink')} />
                     <SampleCard title="Temperature Sensor" description="Read temperature with a sensor and display on serial" onClick={() => createSampleFolder('temperature-sensor')} />
                   </div>
@@ -919,10 +986,10 @@ function AppContent() {
 
 function SampleCard({ title, description, onClick }: { title: string; description: string; onClick: () => void }) {
   return (
-    <div className="border border-gray-200 dark:border-dark-border rounded-lg p-4">
-      <h5 className="font-medium mb-2">{title}</h5>
-      <p className="text-sm text-gray-600 dark:text-dark-text-secondary mb-3">{description}</p>
-      <button onClick={onClick} className="text-sm text-primary-600 hover:text-primary-700 font-medium">Try This Project →</button>
+    <div className="rounded-lg border border-white/[0.06] bg-carbon-surface p-4">
+      <h5 className="mb-2 font-medium text-zinc-100">{title}</h5>
+      <p className="mb-3 text-sm text-zinc-400">{description}</p>
+      <button onClick={onClick} className="text-sm font-medium text-primary-400 hover:text-primary-300">Try This Project →</button>
     </div>
   )
 }
@@ -939,33 +1006,34 @@ function FolderCard({ folder, onClick, onDelete }: { folder: ProjectFolder; onCl
   const firstSchematic = folder.schematics[0]
 
   return (
-    <div className="card overflow-hidden hover:shadow-lg transition-all cursor-pointer group" onClick={onClick}>
-      <div className="relative h-48 bg-gradient-to-br from-primary-100 to-primary-200 dark:from-primary-900/30 dark:to-primary-800/30 overflow-hidden">
+    <div className="carbon-card group cursor-pointer overflow-hidden transition-all hover:border-primary-400/20 hover:shadow-[0_0_40px_rgb(var(--accent-glow)/0.06)]" onClick={onClick}>
+      <div className="relative h-48 overflow-hidden bg-carbon-surface">
+        <div className="pointer-events-none absolute -bottom-8 -right-8 h-32 w-32 rounded-full carbon-orb-sm" aria-hidden />
         {firstSchematic ? (
-          <div className="absolute inset-0 opacity-25">
+          <div className="absolute inset-0 opacity-20">
             <ProjectPreview gridData={firstSchematic.gridData} wires={firstSchematic.wires} className="w-full h-full" />
           </div>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
-            <FolderOpen className="h-16 w-16 text-primary-400/50" />
+            <FolderOpen className="h-16 w-16 text-primary-400/30" />
           </div>
         )}
         <button
-          className="absolute top-2 left-2 bg-red-500/90 hover:bg-red-600 text-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-all"
+          className="absolute top-2 left-2 rounded-full bg-red-500/90 p-2 text-white opacity-0 transition-all hover:bg-red-600 group-hover:opacity-100"
           onClick={(e) => { e.stopPropagation(); onDelete() }}
           title="Delete project"
         >
           <Trash2 className="h-4 w-4" />
         </button>
-        <div className="absolute top-2 right-2 bg-white/90 dark:bg-dark-surface/90 rounded px-2 py-1 text-xs text-gray-600">
+        <div className="absolute top-2 right-2 rounded bg-black/70 px-2 py-1 text-xs text-zinc-400 backdrop-blur-sm">
           {folder.schematics.length} schematic{folder.schematics.length !== 1 ? 's' : ''} · {folder.documents.length} doc{folder.documents.length !== 1 ? 's' : ''}
         </div>
       </div>
       <div className="p-4">
-        <h3 className="text-lg font-semibold truncate">{folder.name}</h3>
-        <p className="mt-1 text-sm text-gray-500">Last modified {formatDate(folder.metadata.updatedAt)}</p>
+        <h3 className="truncate text-lg font-semibold text-zinc-100">{folder.name}</h3>
+        <p className="mt-1 text-sm text-zinc-500">Last modified {formatDate(folder.metadata.updatedAt)}</p>
         {folder.description && (
-          <p className="mt-2 text-sm text-gray-600 line-clamp-2">{folder.description}</p>
+          <p className="mt-2 line-clamp-2 text-sm text-zinc-400">{folder.description}</p>
         )}
       </div>
     </div>

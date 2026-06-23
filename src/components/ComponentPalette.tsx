@@ -90,7 +90,7 @@ function ModuleList({
 export function ComponentPalette({ selectedModule, onModuleSelect }: ComponentPaletteProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    () => new Set(['microcontrollers', 'power', 'output', 'output.electromechanical', 'output.light'])
+    () => new Set(['microcontrollers', 'power', 'output', 'output.electromechanical', 'output.light', 'organization'])
   )
 
   const paletteStructure = useMemo(() => {
@@ -128,7 +128,7 @@ export function ComponentPalette({ selectedModule, onModuleSelect }: ComponentPa
   const isExpanded = (id: string) => isSearching || expandedGroups.has(id)
 
   return (
-    <div className="w-80 bg-white dark:bg-dark-surface border-r border-gray-200 dark:border-dark-border flex flex-col">
+    <div className="flex-1 min-h-0 w-full bg-white dark:bg-dark-surface flex flex-col">
       <div className="p-4 border-b border-gray-200 dark:border-dark-border space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">Components</h2>
