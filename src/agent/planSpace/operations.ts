@@ -4,6 +4,7 @@ import {
   PlanBubbleShape,
   PlanConnection,
   PlanArrow,
+  PlanBubbleMetadata,
   seedPlanSpaceIfEmpty,
 } from '../../types/workspace'
 import { createDefaultPlanSpacePreset } from '../../modules/planSpacePreset'
@@ -37,6 +38,7 @@ export function getPlanSpaceState(planSpace: PlanSpace) {
       width: b.width,
       height: b.height,
       color: b.color,
+      metadata: b.metadata,
     })),
     connections: planSpace.connections,
     arrows: planSpace.arrows.map((a) => ({
@@ -279,6 +281,40 @@ export function applyPlanSpacePreset(planSpace: PlanSpace): PlanSpace {
 
 export function seedPlanSpace(planSpace: PlanSpace): PlanSpace {
   return seedPlanSpaceIfEmpty(planSpace)
+}
+
+export function updateBubbleMetadata(
+  planSpace: PlanSpace,
+  bubbleId: string,
+  metadata: Partial<PlanBubbleMetadata>
+): { planSpace: PlanSpace; bubble: PlanBubble | null } {
+  const bubble = planSpace.bubbles.find((b) => b.id === bubbleId)
+  if (!bubble) return { planSpace, bubble: null }
+  return updateBubble(planSpace, bubbleId, {
+    metadata: { ...bubble.metadata, ...metadata },
+  })
+}
+
+export function linkBubbleArtifact(
+  planSpace: PlanSpace,
+  bubbleId: string,
+  link: { schematicId?: string; documentId?: string }
+): { planSpace: PlanSpace; bubble: PlanBubble | null } {
+  const patch: Partial<PlanBubbleMetadata> = {}
+  if (link.schematicId !== undefined) patch.linkedSchematicId = link.schematicId
+  if (link.documentId !== undefined) patch.linkedDocumentId = link.documentId
+  return updateBubbleMetadata(planSpace, bubbleId, patch)
+}
+
+export function setBubbleStageStatus(
+  planSpace: PlanSpace,
+  bubbleId: string,
+  status: PlanBubbleMetadata['status'],
+  stage?: PlanBubbleMetadata['stage']
+): { planSpace: PlanSpace; bubble: PlanBubble | null } {
+  const patch: Partial<PlanBubbleMetadata> = { status }
+  if (stage) patch.stage = stage
+  return updateBubbleMetadata(planSpace, bubbleId, patch)
 }
 
 export function deleteByIds(

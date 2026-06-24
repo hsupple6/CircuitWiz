@@ -1,7 +1,6 @@
 import {
   AgentTool,
   AgentToolParameter,
-  AgentToolResult,
 } from '../types'
 import {
   PLAN_SPACE_COORDINATE_SYSTEM,
@@ -17,21 +16,18 @@ import {
   getArrowPoints,
 } from './coordinates'
 import * as ops from './operations'
-import { PlanBubbleShape, PlanSpace } from '../../types/workspace'
+import { PlanBubbleShape } from '../../types/workspace'
+import { fail, getPlanSpace, makeTool, okPlanSpace, okRead } from '../helpers'
 
 const BUBBLE_SHAPES: PlanBubbleShape[] = [
   'rounded', 'rectangle', 'ellipse', 'diamond', 'pill', 'card', 'phase',
 ]
 
 const CURVE_TYPES = ['straight', 'arc', 'elbow'] as const
-
-function ok(message: string, planSpace: PlanSpace, data?: unknown): AgentToolResult {
-  return { success: true, message, planSpace, data }
-}
-
-function fail(message: string, data?: unknown): AgentToolResult {
-  return { success: false, message, data }
-}
+const STAGE_STATUSES = ['pending', 'in_progress', 'complete'] as const
+const PIPELINE_STAGE_ENUM = [
+  'elicitation', 'system_design', 'schematic', 'code_architecture', 'bom', 'assembly',
+] as const
 
 function pointParam(name: string, description: string): AgentToolParameter {
   return {
@@ -52,7 +48,7 @@ function tool(
   parameters: AgentToolParameter[],
   execute: AgentTool['execute']
 ): AgentTool {
-  return { name, description, category: 'plan_space', parameters, execute }
+  return makeTool(name, description, 'plan_space', parameters, execute)
 }
 
 export const planSpaceAgentTools: AgentTool[] = [
@@ -62,7 +58,7 @@ export const planSpaceAgentTools: AgentTool[] = [
     'Returns the Plan Space world coordinate system specification (origin, axes, units, zoom limits).',
     [],
     (ctx) =>
-      ok('Coordinate system retrieved.', ctx.planSpace, {
+      okRead(ctx, 'Coordinate system retrieved.', {
         coordinateSystem: PLAN_SPACE_COORDINATE_SYSTEM,
       })
   ),
@@ -71,7 +67,7 @@ export const planSpaceAgentTools: AgentTool[] = [
     'plan_space_get_viewport',
     'Get the current viewport (zoom and pan offset) for the plan space.',
     [],
-    (ctx) => ok('Viewport retrieved.', ctx.planSpace, { viewport: getViewport(ctx.planSpace) })
+    (ctx) => okRead(ctx, 'Viewport retrieved.', { viewport: getViewport(getPlanSpace(ctx)) })
   ),
 
   tool(
@@ -93,8 +89,8 @@ export const planSpaceAgentTools: AgentTool[] = [
     (ctx, args) => {
       const offset = args.offset as { x: number; y: number } | undefined
       const zoom = args.zoom as number | undefined
-      const next = ops.setViewport(ctx.planSpace, zoom, offset)
-      return ok('Viewport updated.', next, { viewport: getViewport(next) })
+      const next = ops.setViewport(getPlanSpace(ctx), zoom, offset)
+      return okPlanSpace(ctx, next, 'Viewport updated.', { viewport: getViewport(next) })
     }
   ),
 
@@ -106,8 +102,8 @@ export const planSpaceAgentTools: AgentTool[] = [
       { name: 'deltaY', type: 'number', description: 'Vertical pan delta (screen px)', required: true },
     ],
     (ctx, args) => {
-      const next = ops.panViewport(ctx.planSpace, args.deltaX as number, args.deltaY as number)
-      return ok('Viewport panned.', next, { viewport: getViewport(next) })
+      const next = ops.panViewport(getPlanSpace(ctx), args.deltaX as number, args.deltaY as number)
+      return okPlanSpace(ctx, next, 'Viewport panned.', { viewport: getViewport(next) })
     }
   ),
 
@@ -120,7 +116,7 @@ export const planSpaceAgentTools: AgentTool[] = [
       { name: 'padding', type: 'number', description: 'Padding around content (default 48)', required: false },
     ],
     (ctx, args) => {
-      const bounds = getPlanSpaceContentBounds(ctx.planSpace)
+      const bounds = getPlanSpaceContentBounds(getPlanSpace(ctx))
       if (!bounds) return fail('No content to fit.')
       const vp = viewportToFitBounds(
         bounds,
@@ -128,8 +124,8 @@ export const planSpaceAgentTools: AgentTool[] = [
         args.screenHeight as number,
         (args.padding as number) ?? 48
       )
-      const next = ops.setViewport(ctx.planSpace, vp.zoom, vp.offset)
-      return ok('Viewport fitted to content.', next, { viewport: vp, bounds })
+      const next = ops.setViewport(getPlanSpace(ctx), vp.zoom, vp.offset)
+      return okPlanSpace(ctx, next, 'Viewport fitted to content.', { viewport: vp, bounds })
     }
   ),
 
@@ -139,8 +135,8 @@ export const planSpaceAgentTools: AgentTool[] = [
     [pointParam('world', 'World-space point')],
     (ctx, args) => {
       const world = args.world as { x: number; y: number }
-      const screen = worldToScreen(world, getViewport(ctx.planSpace))
-      return ok('Converted world to screen.', ctx.planSpace, { world, screen })
+      const screen = worldToScreen(world, getViewport(getPlanSpace(ctx)))
+      return okRead(ctx, 'Converted world to screen.', { world, screen })
     }
   ),
 
@@ -150,8 +146,8 @@ export const planSpaceAgentTools: AgentTool[] = [
     [pointParam('screen', 'Screen-space point relative to viewport element')],
     (ctx, args) => {
       const screen = args.screen as { x: number; y: number }
-      const world = screenToWorld(screen, getViewport(ctx.planSpace))
-      return ok('Converted screen to world.', ctx.planSpace, { screen, world })
+      const world = screenToWorld(screen, getViewport(getPlanSpace(ctx)))
+      return okRead(ctx, 'Converted screen to world.', { screen, world })
     }
   ),
 
@@ -160,8 +156,8 @@ export const planSpaceAgentTools: AgentTool[] = [
     'Get the axis-aligned bounding box of all bubbles and arrow points in world coordinates.',
     [],
     (ctx) => {
-      const bounds = getPlanSpaceContentBounds(ctx.planSpace)
-      return ok(bounds ? 'Bounds calculated.' : 'Plan space is empty.', ctx.planSpace, { bounds })
+      const bounds = getPlanSpaceContentBounds(getPlanSpace(ctx))
+      return okRead(ctx, bounds ? 'Bounds calculated.' : 'Plan space is empty.', { bounds })
     }
   ),
 
@@ -170,7 +166,7 @@ export const planSpaceAgentTools: AgentTool[] = [
     'plan_space_get_state',
     'Get a full summary of the plan space including all bubbles, connections, arrows, and viewport.',
     [],
-    (ctx) => ok('Plan space state retrieved.', ctx.planSpace, ops.getPlanSpaceState(ctx.planSpace))
+    (ctx) => okRead(ctx, 'Plan space state retrieved.', ops.getPlanSpaceState(getPlanSpace(ctx)))
   ),
 
   tool(
@@ -178,8 +174,8 @@ export const planSpaceAgentTools: AgentTool[] = [
     'List all bubbles with id, text, shape, position, and size.',
     [],
     (ctx) =>
-      ok('Bubbles listed.', ctx.planSpace, {
-        bubbles: ctx.planSpace.bubbles.map((b) => ({
+      okRead(ctx, 'Bubbles listed.', {
+        bubbles: getPlanSpace(ctx).bubbles.map((b) => ({
           id: b.id,
           text: b.text,
           subtitle: b.subtitle,
@@ -196,9 +192,9 @@ export const planSpaceAgentTools: AgentTool[] = [
     'Get a single bubble by id.',
     [{ name: 'bubbleId', type: 'string', description: 'Bubble id', required: true }],
     (ctx, args) => {
-      const bubble = ctx.planSpace.bubbles.find((b) => b.id === args.bubbleId)
+      const bubble = getPlanSpace(ctx).bubbles.find((b) => b.id === args.bubbleId)
       if (!bubble) return fail(`Bubble not found: ${args.bubbleId}`)
-      return ok('Bubble retrieved.', ctx.planSpace, {
+      return okRead(ctx, 'Bubble retrieved.', {
         bubble: { ...bubble, center: getBubbleCenter(bubble) },
       })
     }
@@ -212,11 +208,11 @@ export const planSpaceAgentTools: AgentTool[] = [
       { name: 'y', type: 'number', description: 'World Y', required: true },
     ],
     (ctx, args) => {
-      const hit = findBubbleAtPoint(ctx.planSpace.bubbles, {
+      const hit = findBubbleAtPoint(getPlanSpace(ctx).bubbles, {
         x: args.x as number,
         y: args.y as number,
       })
-      return ok(hit ? 'Bubble found.' : 'No bubble at point.', ctx.planSpace, { bubble: hit })
+      return okRead(ctx, hit ? 'Bubble found.' : 'No bubble at point.', { bubble: hit })
     }
   ),
 
@@ -224,7 +220,7 @@ export const planSpaceAgentTools: AgentTool[] = [
     'plan_space_list_connections',
     'List all connections between bubbles.',
     [],
-    (ctx) => ok('Connections listed.', ctx.planSpace, { connections: ctx.planSpace.connections })
+    (ctx) => okRead(ctx, 'Connections listed.', { connections: getPlanSpace(ctx).connections })
   ),
 
   tool(
@@ -232,9 +228,9 @@ export const planSpaceAgentTools: AgentTool[] = [
     'Get a connection by id.',
     [{ name: 'connectionId', type: 'string', description: 'Connection id', required: true }],
     (ctx, args) => {
-      const conn = ctx.planSpace.connections.find((c) => c.id === args.connectionId)
+      const conn = getPlanSpace(ctx).connections.find((c) => c.id === args.connectionId)
       if (!conn) return fail(`Connection not found: ${args.connectionId}`)
-      return ok('Connection retrieved.', ctx.planSpace, { connection: conn })
+      return okRead(ctx, 'Connection retrieved.', { connection: conn })
     }
   ),
 
@@ -243,8 +239,8 @@ export const planSpaceAgentTools: AgentTool[] = [
     'List all freeform arrow paths.',
     [],
     (ctx) =>
-      ok('Arrows listed.', ctx.planSpace, {
-        arrows: ctx.planSpace.arrows.map((a) => ({
+      okRead(ctx, 'Arrows listed.', {
+        arrows: getPlanSpace(ctx).arrows.map((a) => ({
           id: a.id,
           points: getArrowPoints(a),
           color: a.color,
@@ -258,9 +254,9 @@ export const planSpaceAgentTools: AgentTool[] = [
     'Get an arrow by id.',
     [{ name: 'arrowId', type: 'string', description: 'Arrow id', required: true }],
     (ctx, args) => {
-      const arrow = ctx.planSpace.arrows.find((a) => a.id === args.arrowId)
+      const arrow = getPlanSpace(ctx).arrows.find((a) => a.id === args.arrowId)
       if (!arrow) return fail(`Arrow not found: ${args.arrowId}`)
-      return ok('Arrow retrieved.', ctx.planSpace, {
+      return okRead(ctx, 'Arrow retrieved.', {
         arrow: { ...arrow, points: getArrowPoints(arrow) },
       })
     }
@@ -284,7 +280,7 @@ export const planSpaceAgentTools: AgentTool[] = [
       { name: 'shadow', type: 'boolean', description: 'Drop shadow', required: false },
     ],
     (ctx, args) => {
-      const { planSpace, bubble } = ops.addBubble(ctx.planSpace, {
+      const { planSpace, bubble } = ops.addBubble(getPlanSpace(ctx), {
         text: args.text as string,
         x: args.x as number,
         y: args.y as number,
@@ -297,7 +293,7 @@ export const planSpaceAgentTools: AgentTool[] = [
         borderColor: args.borderColor as string | undefined,
         shadow: args.shadow as boolean | undefined,
       })
-      return ok(`Bubble "${bubble.text}" created.`, planSpace, { bubble })
+      return okPlanSpace(ctx, planSpace, `Bubble "${bubble.text}" created.`, { bubble })
     }
   ),
 
@@ -320,9 +316,9 @@ export const planSpaceAgentTools: AgentTool[] = [
     ],
     (ctx, args) => {
       const { bubbleId, ...patch } = args as Record<string, unknown>
-      const { planSpace, bubble } = ops.updateBubble(ctx.planSpace, bubbleId as string, patch)
+      const { planSpace, bubble } = ops.updateBubble(getPlanSpace(ctx), bubbleId as string, patch)
       if (!bubble) return fail(`Bubble not found: ${bubbleId}`)
-      return ok('Bubble updated.', planSpace, { bubble })
+      return okPlanSpace(ctx, planSpace, 'Bubble updated.', { bubble })
     }
   ),
 
@@ -336,13 +332,13 @@ export const planSpaceAgentTools: AgentTool[] = [
     ],
     (ctx, args) => {
       const { planSpace, bubble } = ops.moveBubble(
-        ctx.planSpace,
+        getPlanSpace(ctx),
         args.bubbleId as string,
         args.x as number,
         args.y as number
       )
       if (!bubble) return fail(`Bubble not found: ${args.bubbleId}`)
-      return ok('Bubble moved.', planSpace, { bubble })
+      return okPlanSpace(ctx, planSpace, 'Bubble moved.', { bubble })
     }
   ),
 
@@ -356,13 +352,13 @@ export const planSpaceAgentTools: AgentTool[] = [
     ],
     (ctx, args) => {
       const { planSpace, bubble } = ops.resizeBubble(
-        ctx.planSpace,
+        getPlanSpace(ctx),
         args.bubbleId as string,
         args.width as number,
         args.height as number
       )
       if (!bubble) return fail(`Bubble not found: ${args.bubbleId}`)
-      return ok('Bubble resized.', planSpace, { bubble })
+      return okPlanSpace(ctx, planSpace, 'Bubble resized.', { bubble })
     }
   ),
 
@@ -375,12 +371,12 @@ export const planSpaceAgentTools: AgentTool[] = [
       { name: 'subtitle', type: 'string', description: 'Subtitle (optional)', required: false },
     ],
     (ctx, args) => {
-      const { planSpace, bubble } = ops.updateBubble(ctx.planSpace, args.bubbleId as string, {
+      const { planSpace, bubble } = ops.updateBubble(getPlanSpace(ctx), args.bubbleId as string, {
         text: args.text as string,
         subtitle: args.subtitle as string | undefined,
       })
       if (!bubble) return fail(`Bubble not found: ${args.bubbleId}`)
-      return ok('Bubble text updated.', planSpace, { bubble })
+      return okPlanSpace(ctx, planSpace, 'Bubble text updated.', { bubble })
     }
   ),
 
@@ -389,10 +385,10 @@ export const planSpaceAgentTools: AgentTool[] = [
     'Delete a bubble and any connections attached to it.',
     [{ name: 'bubbleId', type: 'string', description: 'Bubble id', required: true }],
     (ctx, args) => {
-      const exists = ctx.planSpace.bubbles.some((b) => b.id === args.bubbleId)
+      const exists = getPlanSpace(ctx).bubbles.some((b) => b.id === args.bubbleId)
       if (!exists) return fail(`Bubble not found: ${args.bubbleId}`)
-      const next = ops.deleteBubble(ctx.planSpace, args.bubbleId as string)
-      return ok('Bubble deleted.', next)
+      const next = ops.deleteBubble(getPlanSpace(ctx), args.bubbleId as string)
+      return okPlanSpace(ctx, next, 'Bubble deleted.')
     }
   ),
 
@@ -406,13 +402,13 @@ export const planSpaceAgentTools: AgentTool[] = [
     ],
     (ctx, args) => {
       const { planSpace, bubble } = ops.duplicateBubble(
-        ctx.planSpace,
+        getPlanSpace(ctx),
         args.bubbleId as string,
         (args.offsetX as number) ?? 24,
         (args.offsetY as number) ?? 24
       )
       if (!bubble) return fail(`Bubble not found: ${args.bubbleId}`)
-      return ok('Bubble duplicated.', planSpace, { bubble })
+      return okPlanSpace(ctx, planSpace, 'Bubble duplicated.', { bubble })
     }
   ),
 
@@ -429,7 +425,7 @@ export const planSpaceAgentTools: AgentTool[] = [
     ],
     (ctx, args) => {
       const { planSpace, connection } = ops.connectBubbles(
-        ctx.planSpace,
+        getPlanSpace(ctx),
         args.fromBubbleId as string,
         args.toBubbleId as string,
         {
@@ -439,7 +435,7 @@ export const planSpaceAgentTools: AgentTool[] = [
         }
       )
       if (!connection) return fail('Could not create connection (bubbles missing or duplicate).')
-      return ok('Bubbles connected.', planSpace, { connection })
+      return okPlanSpace(ctx, planSpace, 'Bubbles connected.', { connection })
     }
   ),
 
@@ -455,12 +451,12 @@ export const planSpaceAgentTools: AgentTool[] = [
     (ctx, args) => {
       const { connectionId, ...patch } = args as Record<string, unknown>
       const { planSpace, connection } = ops.updateConnection(
-        ctx.planSpace,
+        getPlanSpace(ctx),
         connectionId as string,
         patch
       )
       if (!connection) return fail(`Connection not found: ${connectionId}`)
-      return ok('Connection updated.', planSpace, { connection })
+      return okPlanSpace(ctx, planSpace, 'Connection updated.', { connection })
     }
   ),
 
@@ -469,9 +465,9 @@ export const planSpaceAgentTools: AgentTool[] = [
     'Delete a bubble-to-bubble connection.',
     [{ name: 'connectionId', type: 'string', description: 'Connection id', required: true }],
     (ctx, args) => {
-      const exists = ctx.planSpace.connections.some((c) => c.id === args.connectionId)
+      const exists = getPlanSpace(ctx).connections.some((c) => c.id === args.connectionId)
       if (!exists) return fail(`Connection not found: ${args.connectionId}`)
-      return ok('Connection deleted.', ops.deleteConnection(ctx.planSpace, args.connectionId as string))
+      return okPlanSpace(ctx, ops.deleteConnection(getPlanSpace(ctx), args.connectionId as string), 'Connection deleted.')
     }
   ),
 
@@ -500,12 +496,12 @@ export const planSpaceAgentTools: AgentTool[] = [
     ],
     (ctx, args) => {
       const points = args.points as { x: number; y: number }[]
-      const { planSpace, arrow } = ops.addArrow(ctx.planSpace, points, {
+      const { planSpace, arrow } = ops.addArrow(getPlanSpace(ctx), points, {
         color: args.color as string | undefined,
         dashed: args.dashed as boolean | undefined,
       })
       if (!arrow) return fail('Arrow requires at least 2 points.')
-      return ok('Arrow added.', planSpace, { arrow })
+      return okPlanSpace(ctx, planSpace, 'Arrow added.', { arrow })
     }
   ),
 
@@ -538,9 +534,9 @@ export const planSpaceAgentTools: AgentTool[] = [
       if (points !== undefined) patch.points = points
       if (color !== undefined) patch.color = color
       if (dashed !== undefined) patch.dashed = dashed
-      const { planSpace, arrow } = ops.updateArrow(ctx.planSpace, arrowId as string, patch)
+      const { planSpace, arrow } = ops.updateArrow(getPlanSpace(ctx), arrowId as string, patch)
       if (!arrow) return fail(`Arrow not found: ${arrowId}`)
-      return ok('Arrow updated.', planSpace, { arrow })
+      return okPlanSpace(ctx, planSpace, 'Arrow updated.', { arrow })
     }
   ),
 
@@ -549,9 +545,9 @@ export const planSpaceAgentTools: AgentTool[] = [
     'Delete a freeform arrow path.',
     [{ name: 'arrowId', type: 'string', description: 'Arrow id', required: true }],
     (ctx, args) => {
-      const exists = ctx.planSpace.arrows.some((a) => a.id === args.arrowId)
+      const exists = getPlanSpace(ctx).arrows.some((a) => a.id === args.arrowId)
       if (!exists) return fail(`Arrow not found: ${args.arrowId}`)
-      return ok('Arrow deleted.', ops.deleteArrow(ctx.planSpace, args.arrowId as string))
+      return okPlanSpace(ctx, ops.deleteArrow(getPlanSpace(ctx), args.arrowId as string), 'Arrow deleted.')
     }
   ),
 
@@ -583,12 +579,12 @@ export const planSpaceAgentTools: AgentTool[] = [
       },
     ],
     (ctx, args) => {
-      const next = ops.deleteByIds(ctx.planSpace, {
+      const next = ops.deleteByIds(getPlanSpace(ctx), {
         bubbleIds: args.bubbleIds as string[] | undefined,
         connectionIds: args.connectionIds as string[] | undefined,
         arrowIds: args.arrowIds as string[] | undefined,
       })
-      return ok('Items deleted.', next)
+      return okPlanSpace(ctx, next, 'Items deleted.')
     }
   ),
 
@@ -596,21 +592,21 @@ export const planSpaceAgentTools: AgentTool[] = [
     'plan_space_clear',
     'Remove all bubbles, connections, and arrows from the plan space.',
     [],
-    (ctx) => ok('Plan space cleared.', ops.clearPlanSpace(ctx.planSpace))
+    (ctx) => okPlanSpace(ctx, ops.clearPlanSpace(getPlanSpace(ctx)), 'Plan space cleared.')
   ),
 
   tool(
     'plan_space_apply_preset',
     'Replace plan space content with the default project roadmap preset.',
     [],
-    (ctx) => ok('Preset applied.', ops.applyPlanSpacePreset(ctx.planSpace))
+    (ctx) => okPlanSpace(ctx, ops.applyPlanSpacePreset(getPlanSpace(ctx)), 'Preset applied.')
   ),
 
   tool(
     'plan_space_seed_if_empty',
     'Apply the default preset only if the plan space has no bubbles.',
     [],
-    (ctx) => ok('Seed check complete.', ops.seedPlanSpace(ctx.planSpace))
+    (ctx) => okPlanSpace(ctx, ops.seedPlanSpace(getPlanSpace(ctx)), 'Seed check complete.')
   ),
 
   tool(
@@ -618,8 +614,80 @@ export const planSpaceAgentTools: AgentTool[] = [
     'Get the combined bounding box of all bubbles in world coordinates.',
     [],
     (ctx) =>
-      ok('Bubble bounds calculated.', ctx.planSpace, {
-        bounds: getBubbleBounds(ctx.planSpace.bubbles),
+      okRead(ctx, 'Bubble bounds calculated.', {
+        bounds: getBubbleBounds(getPlanSpace(ctx).bubbles),
       })
+  ),
+
+  tool(
+    'plan_space_link_bubble',
+    'Link a plan space bubble to a schematic or document artifact for pipeline tracking.',
+    [
+      { name: 'bubbleId', type: 'string', description: 'Bubble id', required: true },
+      { name: 'schematicId', type: 'string', description: 'Linked schematic id', required: false },
+      { name: 'documentId', type: 'string', description: 'Linked document id', required: false },
+    ],
+    (ctx, args) => {
+      const { planSpace, bubble } = ops.linkBubbleArtifact(getPlanSpace(ctx), args.bubbleId as string, {
+        schematicId: args.schematicId as string | undefined,
+        documentId: args.documentId as string | undefined,
+      })
+      if (!bubble) return fail(`Bubble not found: ${args.bubbleId}`)
+      return okPlanSpace(ctx, planSpace, 'Bubble linked.', { bubble })
+    }
+  ),
+
+  tool(
+    'plan_space_set_bubble_stage',
+    'Set pipeline stage status on a bubble (pending, in_progress, complete). Preset bubbles are fully editable.',
+    [
+      { name: 'bubbleId', type: 'string', description: 'Bubble id', required: true },
+      {
+        name: 'status',
+        type: 'string',
+        description: 'Stage status',
+        required: true,
+        enum: [...STAGE_STATUSES],
+      },
+      {
+        name: 'stage',
+        type: 'string',
+        description: 'Pipeline stage',
+        required: false,
+        enum: [...PIPELINE_STAGE_ENUM],
+      },
+    ],
+    (ctx, args) => {
+      const { planSpace, bubble } = ops.setBubbleStageStatus(
+        getPlanSpace(ctx),
+        args.bubbleId as string,
+        args.status as 'pending' | 'in_progress' | 'complete',
+        args.stage as import('../../types/workspace').PipelineStage | undefined
+      )
+      if (!bubble) return fail(`Bubble not found: ${args.bubbleId}`)
+      return okPlanSpace(ctx, planSpace, 'Bubble stage updated.', { bubble })
+    }
+  ),
+
+  tool(
+    'plan_space_update_bubble_metadata',
+    'Update arbitrary metadata on a bubble (tags, notes, links). Nothing is locked.',
+    [
+      { name: 'bubbleId', type: 'string', description: 'Bubble id', required: true },
+      { name: 'tags', type: 'array', description: 'Tags', required: false, items: { name: 'tag', type: 'string', description: 'Tag' } },
+      { name: 'notes', type: 'string', description: 'Notes', required: false },
+      { name: 'linkedSchematicId', type: 'string', description: 'Linked schematic', required: false },
+      { name: 'linkedDocumentId', type: 'string', description: 'Linked document', required: false },
+    ],
+    (ctx, args) => {
+      const { bubbleId, ...meta } = args as Record<string, unknown>
+      const { planSpace, bubble } = ops.updateBubbleMetadata(
+        getPlanSpace(ctx),
+        bubbleId as string,
+        meta as import('../../types/workspace').PlanBubbleMetadata
+      )
+      if (!bubble) return fail(`Bubble not found: ${bubbleId}`)
+      return okPlanSpace(ctx, planSpace, 'Bubble metadata updated.', { bubble })
+    }
   ),
 ]

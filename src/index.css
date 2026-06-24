@@ -92,6 +92,44 @@
       transparent 280deg
     );
   }
+
+  .agent-panel {
+    opacity: 0;
+    transform: translateY(-4px);
+    transition:
+      opacity 420ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .agent-panel--visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .agent-slot {
+    max-height: min(40vh, 22rem);
+  }
+
+  @media (min-width: 1024px) {
+    .agent-slot {
+      max-height: none;
+    }
+  }
+
+  .agent-panel-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 480ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .agent-panel-body--expanded {
+    grid-template-rows: 1fr;
+  }
+
+  .agent-panel-body-inner {
+    overflow: hidden;
+    min-height: 0;
+  }
   
   .drag-handle {
     user-select: none;
@@ -116,5 +154,12 @@
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+  }
+
+  /* Plan space — always light infinite canvas (independent of app dark theme) */
+  .plan-space-canvas {
+    background-color: #f1f5f9;
+    background-image: radial-gradient(circle, #cbd5e1 1.25px, transparent 1.25px);
+    background-size: 22px 22px;
   }
 }

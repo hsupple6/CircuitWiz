@@ -17,7 +17,7 @@ import { formatCapacitance } from './CapacitanceSelector'
 import { formatInductance } from './InductanceSelector'
 import { OUTPUT_MODULE_NAMES } from '../modules/registry'
 import { SchematicGroupBoxLayer } from './SchematicGroupBoxLayer'
-import { createSchematicGroupBox, type SchematicGroupBox } from '../types/workspace'
+import { createSchematicGroupBox, type SchematicGroupBox, type Program } from '../types/workspace'
 import { buildHoverStats, type HoverStats } from '../utils/hoverStats'
 
 const GRID_PADDING = 4
@@ -75,6 +75,7 @@ interface ProjectGridProps {
   onSelectedGroupBoxIdChange?: (id: string | null) => void
   focusGroupBoxRequest?: SchematicGroupBox | null
   onFocusGroupBoxHandled?: () => void
+  projectPrograms?: Program[]
 }
 
 interface GridCell {
@@ -245,6 +246,7 @@ export function ProjectGrid({
   onSelectedGroupBoxIdChange,
   focusGroupBoxRequest,
   onFocusGroupBoxHandled,
+  projectPrograms,
 }: ProjectGridProps) {
   const { isDark } = useTheme()
   const gridRef = useRef<HTMLDivElement>(null)
@@ -2971,6 +2973,7 @@ const GridCell = React.memo(({
         gridData={gridData}
         wires={wires}
         componentStates={componentStates}
+        projectPrograms={projectPrograms}
         onMicrocontrollerHighlight={setHighlightedMicrocontroller}
         onMicrocontrollerClick={(microcontroller) => {
           console.log('Microcontroller clicked:', microcontroller)

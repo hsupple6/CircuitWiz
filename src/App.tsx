@@ -17,6 +17,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { extractOccupiedComponents } from './utils/gridUtils'
 import { AppearancePanel } from './components/AppearancePanel'
+import { AgentPanel } from './components/AgentPanel'
 import { CarbonLogo } from './components/CarbonLogo'
 import { ProjectGrid } from './components/ProjectGrid'
 import { ComponentPalette } from './components/ComponentPalette'
@@ -24,6 +25,7 @@ import { SchematicGroupBoxBrowser } from './components/SchematicGroupBoxBrowser'
 import { ProjectPreview } from './components/ProjectPreview'
 import { ProjectFolderView } from './components/ProjectFolderView'
 import { DocumentEditor } from './components/DocumentEditor'
+import { ProgramEditor } from './components/ProgramEditor'
 import { PlanSpaceEditor } from './components/PlanSpaceEditor'
 import { ResistanceSelector } from './components/ResistanceSelector'
 import { CapacitanceSelector } from './components/CapacitanceSelector'
@@ -38,8 +40,10 @@ import {
   WorkspaceView,
   createSchematic,
   createDocument,
+  createProgram,
   seedPlanSpaceIfEmpty,
   type SchematicGroupBox,
+  type ProgramCompilation,
 } from './types/workspace'
 import {
   loadLocalSession,
@@ -145,7 +149,7 @@ function AppContent() {
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean
-    type: 'folder' | 'schematic' | 'document'
+    type: 'folder' | 'schematic' | 'document' | 'program'
     folderId: string
     itemId?: string
     name: string
@@ -174,6 +178,11 @@ function AppContent() {
   const selectedDocument = useMemo(() => {
     if (!selectedFolder || !selectedItemId || activeView !== 'document') return null
     return selectedFolder.documents.find((d) => d.id === selectedItemId) ?? null
+  }, [selectedFolder, selectedItemId, activeView])
+
+  const selectedProgram = useMemo(() => {
+    if (!selectedFolder || !selectedItemId || activeView !== 'program') return null
+    return selectedFolder.programs.find((p) => p.id === selectedItemId) ?? null
   }, [selectedFolder, selectedItemId, activeView])
 
   const filteredFolders = useMemo(() => {
@@ -223,7 +232,10 @@ function AppContent() {
   useEffect(() => {
     const session = loadLocalSession()
     const previous = session?.projectFolders || []
-    const folders = ensureExamplesProject(previous)
+    const folders = ensureExamplesProject(previous).map((f) => ({
+      ...f,
+      programs: f.programs ?? [],
+    }))
 
     setProjectFolders(folders)
 
@@ -360,6 +372,25 @@ function AppContent() {
     setActiveView('document')
   }
 
+  const handleCreateProgram = () => {
+    if (!selectedFolder) return
+    const count = selectedFolder.programs.length
+    const program = createProgram(`Program ${count + 1}`)
+    const updated: ProjectFolder = {
+      ...selectedFolder,
+      programs: [program, ...selectedFolder.programs],
+      metadata: { ...selectedFolder.metadata, updatedAt: new Date().toISOString() },
+    }
+    updateFolders(
+      (folders) => folders.map((f) => (f.id === updated.id ? updated : f)),
+      updated,
+      program.id,
+      'program'
+    )
+    setSelectedItemId(program.id)
+    setActiveView('program')
+  }
+
   const handleOpenSchematic = (schematicId: string) => {
     if (!selectedFolder) return
     const schematic = selectedFolder.schematics.find((s) => s.id === schematicId)
@@ -385,6 +416,13 @@ function AppContent() {
     setSelectedItemId(documentId)
     setActiveView('document')
     persistSession(projectFolders, selectedFolder, documentId, 'document')
+  }
+
+  const handleOpenProgram = (programId: string) => {
+    if (!selectedFolder) return
+    setSelectedItemId(programId)
+    setActiveView('program')
+    persistSession(projectFolders, selectedFolder, programId, 'program')
   }
 
   const handleOpenPlanSpace = () => {
@@ -431,6 +469,18 @@ function AppContent() {
     })
   }
 
+  const handleDeleteProgram = (programId: string) => {
+    if (!selectedFolder) return
+    const program = selectedFolder.programs.find((p) => p.id === programId)
+    setDeleteModal({
+      isOpen: true,
+      type: 'program',
+      folderId: selectedFolder.id,
+      itemId: programId,
+      name: program?.name || 'Program',
+    })
+  }
+
   const confirmDelete = () => {
     if (!deleteModal) return
     if (deleteModal.type === 'folder') {
@@ -444,6 +494,9 @@ function AppContent() {
         if (f.id !== deleteModal.folderId) return f
         if (deleteModal.type === 'schematic') {
           return { ...f, schematics: f.schematics.filter((s) => s.id !== deleteModal.itemId) }
+        }
+        if (deleteModal.type === 'program') {
+          return { ...f, programs: f.programs.filter((p) => p.id !== deleteModal.itemId) }
         }
         return { ...f, documents: f.documents.filter((d) => d.id !== deleteModal.itemId) }
       })
@@ -660,6 +713,76 @@ function AppContent() {
     )
   }
 
+  const programSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const updateProgramInFolder = (
+    programId: string,
+    updater: (program: NonNullable<typeof selectedProgram>) => NonNullable<typeof selectedProgram>
+  ) => {
+    if (!selectedFolder) return
+    const folderId = selectedFolder.id
+
+    setProjectFolders((prev) => {
+      const folder = prev.find((f) => f.id === folderId)
+      const program = folder?.programs.find((p) => p.id === programId)
+      if (!folder || !program) return prev
+
+      const updatedProgram = updater(program)
+      const updatedFolder: ProjectFolder = {
+        ...folder,
+        programs: folder.programs.map((p) => (p.id === programId ? updatedProgram : p)),
+        metadata: { ...folder.metadata, updatedAt: new Date().toISOString() },
+      }
+      const next = prev.map((f) => (f.id === folderId ? updatedFolder : f))
+      setSelectedFolder(updatedFolder)
+      persistSession(next, updatedFolder, programId, 'program')
+      return next
+    })
+  }
+
+  const handleProgramChange = (code: string) => {
+    if (!selectedProgram) return
+    const programId = selectedProgram.id
+
+    if (programSaveTimer.current) clearTimeout(programSaveTimer.current)
+    programSaveTimer.current = setTimeout(() => {
+      updateProgramInFolder(programId, (program) => ({
+        ...program,
+        code,
+        compilation: undefined,
+        metadata: { ...program.metadata, updatedAt: new Date().toISOString() },
+      }))
+    }, 400)
+  }
+
+  const handleProgramNameChange = (name: string) => {
+    if (!selectedProgram) return
+    updateProgramInFolder(selectedProgram.id, (program) => ({
+      ...program,
+      name,
+      metadata: { ...program.metadata, updatedAt: new Date().toISOString() },
+    }))
+  }
+
+  const handleProgramBoardChange = (board: string) => {
+    if (!selectedProgram) return
+    updateProgramInFolder(selectedProgram.id, (program) => ({
+      ...program,
+      board,
+      compilation: undefined,
+      metadata: { ...program.metadata, updatedAt: new Date().toISOString() },
+    }))
+  }
+
+  const handleProgramCompilationChange = (compilation: ProgramCompilation | undefined) => {
+    if (!selectedProgram) return
+    updateProgramInFolder(selectedProgram.id, (program) => ({
+      ...program,
+      compilation,
+      metadata: { ...program.metadata, updatedAt: new Date().toISOString() },
+    }))
+  }
+
   const handlePlanSpaceChange = (planSpace: ProjectFolder['planSpace']) => {
     if (!selectedFolder) return
     const updatedFolder: ProjectFolder = {
@@ -786,6 +909,7 @@ function AppContent() {
               onZoomChange={setZoom}
               onHoveredPositionChange={setHoveredPosition}
               onHoverStatsChange={setHoverStats}
+              projectPrograms={selectedFolder.programs}
             />
           </div>
           <HoverStatsPanel stats={hoverStats} />
@@ -831,10 +955,28 @@ function AppContent() {
     )
   }
 
+  // Program editor
+  if (activeView === 'program' && selectedFolder && selectedProgram) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
+        {editorTopBar(selectedProgram.name, selectedFolder.name, handleBackToFolder)}
+        <div className="h-[calc(100vh-4rem)]">
+          <ProgramEditor
+            program={selectedProgram}
+            onChange={handleProgramChange}
+            onNameChange={handleProgramNameChange}
+            onBoardChange={handleProgramBoardChange}
+            onCompilationChange={handleProgramCompilationChange}
+          />
+        </div>
+      </div>
+    )
+  }
+
   // Plan space editor
   if (activeView === 'plan-space' && selectedFolder) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
+      <div className="min-h-screen bg-[#f1f5f9]">
         {editorTopBar('Plan Space', selectedFolder.name, handleBackToFolder)}
         <div className="h-[calc(100vh-4rem)]">
           <PlanSpaceEditor
@@ -870,11 +1012,14 @@ function AppContent() {
           folder={selectedFolder}
           onOpenSchematic={handleOpenSchematic}
           onOpenDocument={handleOpenDocument}
+          onOpenProgram={handleOpenProgram}
           onOpenPlanSpace={handleOpenPlanSpace}
           onCreateSchematic={handleCreateSchematic}
           onCreateDocument={handleCreateDocument}
+          onCreateProgram={handleCreateProgram}
           onDeleteSchematic={handleDeleteSchematic}
           onDeleteDocument={handleDeleteDocument}
+          onDeleteProgram={handleDeleteProgram}
         />
         {deleteModal?.isOpen && (
           <DeleteModal modal={deleteModal} onClose={() => setDeleteModal(null)} onConfirm={confirmDelete} />
@@ -905,21 +1050,23 @@ function AppContent() {
       </header>
 
       {/* Bottom 90% — Your Projects */}
-      <main className="relative flex min-h-0 flex-col overflow-hidden bg-carbon-matte">
-        {/* Huge orb — bottom right */}
-        <div
-          className="pointer-events-none absolute -bottom-[45%] -right-[25%] h-[min(1100px,95vw)] w-[min(1100px,95vw)] rounded-full carbon-orb"
-          aria-hidden
-        />
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-carbon-matte lg:flex-row">
+        {/* Projects column */}
+        <div className="relative order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:order-1">
+          {/* Huge orb — bottom right */}
+          <div
+            className="pointer-events-none absolute -bottom-[45%] -right-[25%] h-[min(1100px,95vw)] w-[min(1100px,95vw)] rounded-full carbon-orb"
+            aria-hidden
+          />
 
-        <div className="relative shrink-0 pt-8 pb-6">
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-50 sm:text-4xl px-4 sm:px-6 lg:px-8">Your Projects</h1>
-          <p className="mt-3 max-w-2xl text-base text-zinc-400 px-4 sm:px-6 lg:px-8">
-            Each project is a folder containing schematics, documents, and a plan space
-          </p>
-        </div>
+          <div className="relative shrink-0 pt-8 pb-6">
+            <h1 className="text-3xl font-bold tracking-tight text-zinc-50 sm:text-4xl px-4 sm:px-6 lg:px-8">Your Projects</h1>
+            <p className="mt-3 max-w-2xl text-base text-zinc-400 px-4 sm:px-6 lg:px-8">
+              Each project is a folder containing schematics, programs, documents, and a plan space
+            </p>
+          </div>
 
-        <div className="relative min-h-0 flex-1 overflow-y-auto pb-8">
+          <div className="relative min-h-0 flex-1 overflow-y-auto pb-8">
           <div className="grid grid-cols-1 gap-6 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-3 lg:px-8 xl:grid-cols-4">
             <div
               className="carbon-card group cursor-pointer border-dashed border-primary-400/20 p-6 transition-colors hover:border-primary-400/40 hover:bg-carbon-elevated/50"
@@ -974,6 +1121,12 @@ function AppContent() {
               </div>
             )}
           </div>
+          </div>
+        </div>
+
+        {/* Agent slot — dedicated column, expandable panel inside */}
+        <div className="agent-slot order-1 flex min-h-0 w-full shrink-0 flex-col border-b border-white/[0.06] lg:order-2 lg:w-80 lg:border-b-0 lg:border-l xl:w-[22rem]">
+          <AgentPanel />
         </div>
       </main>
 
@@ -1026,7 +1179,7 @@ function FolderCard({ folder, onClick, onDelete }: { folder: ProjectFolder; onCl
           <Trash2 className="h-4 w-4" />
         </button>
         <div className="absolute top-2 right-2 rounded bg-black/70 px-2 py-1 text-xs text-zinc-400 backdrop-blur-sm">
-          {folder.schematics.length} schematic{folder.schematics.length !== 1 ? 's' : ''} · {folder.documents.length} doc{folder.documents.length !== 1 ? 's' : ''}
+          {folder.schematics.length} schematic{folder.schematics.length !== 1 ? 's' : ''} · {folder.programs.length} program{folder.programs.length !== 1 ? 's' : ''} · {folder.documents.length} doc{folder.documents.length !== 1 ? 's' : ''}
         </div>
       </div>
       <div className="p-4">

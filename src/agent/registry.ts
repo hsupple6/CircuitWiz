@@ -1,11 +1,22 @@
 import {
   AgentTool,
   AgentToolParameter,
-  AgentPlanSpaceContext,
+  AgentProjectContext,
   AgentToolResult,
   OpenAIToolDefinition,
+  PIPELINE_STAGE_TOOL_CATEGORIES,
+  PipelineStage,
 } from './types'
 import { planSpaceAgentTools } from './planSpace/tools'
+import { projectAgentTools } from './project/tools'
+import { documentAgentTools } from './document/tools'
+import { schematicAgentTools } from './schematic/tools'
+import { catalogAgentTools } from './catalog/tools'
+import { bomAgentTools } from './bom/tools'
+import { firmwareAgentTools } from './firmware/tools'
+import { requirementsAgentTools } from './requirements/tools'
+import { assemblyAgentTools } from './assembly/tools'
+import { validationAgentTools } from './validation/tools'
 
 const toolMap = new Map<string, AgentTool>()
 
@@ -24,6 +35,15 @@ function registerTools(tools: AgentTool[]): void {
 
 // ── Register all tool domains ────────────────────────────────────────────────
 registerTools(planSpaceAgentTools)
+registerTools(projectAgentTools)
+registerTools(documentAgentTools)
+registerTools(schematicAgentTools)
+registerTools(catalogAgentTools)
+registerTools(bomAgentTools)
+registerTools(firmwareAgentTools)
+registerTools(requirementsAgentTools)
+registerTools(assemblyAgentTools)
+registerTools(validationAgentTools)
 
 /** All registered agent tools */
 export function getAllAgentTools(): AgentTool[] {
@@ -40,15 +60,21 @@ export function getAgentTool(name: string): AgentTool | undefined {
   return toolMap.get(name)
 }
 
-/** Tools filtered by category (e.g. `plan_space`) */
+/** Tools filtered by category (e.g. `plan_space`, `schematic`) */
 export function getAgentToolsByCategory(category: string): AgentTool[] {
   return getAllAgentTools().filter((t) => t.category === category)
 }
 
-/** Execute a tool by name against a plan-space context */
+/** Tools recommended for a pipeline stage */
+export function getAgentToolsForPipelineStage(stage: PipelineStage): AgentTool[] {
+  const categories = PIPELINE_STAGE_TOOL_CATEGORIES[stage]
+  return getAllAgentTools().filter((t) => categories.includes(t.category))
+}
+
+/** Execute a tool by name against a project context */
 export function executeAgentTool(
   name: string,
-  context: AgentPlanSpaceContext,
+  context: AgentProjectContext,
   args: Record<string, unknown> = {}
 ): AgentToolResult {
   const tool = toolMap.get(name)
@@ -106,6 +132,20 @@ export function getOpenAIToolDefinitions(): OpenAIToolDefinition[] {
       },
     }
   })
+}
+
+/** OpenAI tool definitions filtered by category */
+export function getOpenAIToolDefinitionsByCategory(category: string): OpenAIToolDefinition[] {
+  const names = new Set(getAgentToolsByCategory(category).map((t) => t.name))
+  return getOpenAIToolDefinitions().filter((d) => names.has(d.function.name))
+}
+
+/** OpenAI tool definitions for a pipeline stage */
+export function getOpenAIToolDefinitionsForPipelineStage(
+  stage: PipelineStage
+): OpenAIToolDefinition[] {
+  const names = new Set(getAgentToolsForPipelineStage(stage).map((t) => t.name))
+  return getOpenAIToolDefinitions().filter((d) => names.has(d.function.name))
 }
 
 export { toolMap as agentToolRegistry }

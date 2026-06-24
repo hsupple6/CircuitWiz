@@ -1221,6 +1221,82 @@ async function simulateGenericArduinoBehavior(board) {
   };
 }
 
+// Agent (Claude) proxy — keeps API key server-side
+function getAnthropicConfig() {
+  const apiKey = (process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY || '').trim();
+  const model = (process.env.ANTHROPIC_MODEL || process.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
+  return { apiKey, model };
+}
+
+app.get('/api/agent/status', (req, res) => {
+  const { apiKey, model } = getAnthropicConfig();
+  res.json({
+    configured: apiKey.length > 0,
+    model,
+  });
+});
+
+app.post('/api/agent/messages', async (req, res) => {
+  const { apiKey, model } = getAnthropicConfig();
+
+  if (!apiKey) {
+    return res.status(503).json({
+      type: 'error',
+      error: {
+        type: 'configuration_error',
+        message: 'ANTHROPIC_API_KEY is not set in .env',
+      },
+    });
+  }
+
+  const { messages, system, tools, max_tokens: maxTokens } = req.body;
+
+  if (!Array.isArray(messages) || typeof system !== 'string') {
+    return res.status(400).json({
+      type: 'error',
+      error: {
+        type: 'invalid_request_error',
+        message: 'messages (array) and system (string) are required',
+      },
+    });
+  }
+
+  const body = {
+    model: req.body.model || model,
+    max_tokens: maxTokens ?? 4096,
+    system,
+    messages,
+  };
+
+  if (Array.isArray(tools) && tools.length > 0) {
+    body.tools = tools;
+  }
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const payload = await response.json();
+    res.status(response.status).json(payload);
+  } catch (error) {
+    console.error('Anthropic proxy error:', error);
+    res.status(502).json({
+      type: 'error',
+      error: {
+        type: 'api_error',
+        message: error instanceof Error ? error.message : 'Failed to reach Anthropic API',
+      },
+    });
+  }
+});
+
 // Start server
 app.listen(PORT, async () => {
   console.log(`CircuitWiz Backend running on port ${PORT}`);

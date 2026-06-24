@@ -84,6 +84,69 @@ export interface Document {
   }
 }
 
+export interface ProgramCompilationError {
+  file: string
+  line: number
+  column: number
+  message: string
+  severity: 'error' | 'warning' | 'info'
+}
+
+export interface ProgramCompilation {
+  success: boolean
+  compiledAt: string
+  output?: string
+  errors?: ProgramCompilationError[]
+  firmware?: string
+  filename?: string
+  size?: number
+  binPath?: string
+}
+
+export interface Program {
+  id: string
+  name: string
+  code: string
+  board: string
+  compilation?: ProgramCompilation
+  metadata: {
+    createdAt: string
+    updatedAt: string
+  }
+}
+
+export const DEFAULT_PROGRAM_CODE = `// Your sketch here
+void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
+}
+
+void loop() {
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(1000);
+  digitalWrite(LED_BUILTIN, LOW);
+  delay(1000);
+}
+`
+
+export type PlanBubbleStageStatus = 'pending' | 'in_progress' | 'complete'
+
+export type PipelineStage =
+  | 'elicitation'
+  | 'system_design'
+  | 'schematic'
+  | 'code_architecture'
+  | 'bom'
+  | 'assembly'
+
+export interface PlanBubbleMetadata {
+  stage?: PipelineStage
+  status?: PlanBubbleStageStatus
+  linkedSchematicId?: string
+  linkedDocumentId?: string
+  tags?: string[]
+  notes?: string
+}
+
 export interface PlanBubble {
   id: string
   x: number
@@ -97,6 +160,64 @@ export interface PlanBubble {
   textColor?: string
   borderColor?: string
   shadow?: boolean
+  metadata?: PlanBubbleMetadata
+}
+
+export interface ProjectRequirements {
+  useCase?: string
+  environment?: string
+  powerRequirements?: string
+  commsProtocol?: string
+  displaySize?: string
+  unitCount?: number
+  budgetRange?: string
+  enclosurePreference?: string
+  notes?: string
+  custom?: Record<string, unknown>
+}
+
+export interface BOMLineItem {
+  id: string
+  description: string
+  partNumber?: string
+  manufacturer?: string
+  quantity: number
+  unitPrice?: number
+  substitutes?: string[]
+  purchaseUrl?: string
+  schematicComponentIds?: string[]
+  notes?: string
+}
+
+export interface BOM {
+  id: string
+  name: string
+  lineItems: BOMLineItem[]
+  metadata: {
+    createdAt: string
+    updatedAt: string
+  }
+}
+
+export interface AssemblyChecklistItem {
+  id: string
+  step: number
+  title: string
+  description?: string
+  completed: boolean
+}
+
+export interface AssemblyGuide {
+  id: string
+  name: string
+  wiringNotes?: string
+  solderingNotes?: string
+  flashGuide?: string
+  checklist: AssemblyChecklistItem[]
+  metadata: {
+    createdAt: string
+    updatedAt: string
+  }
 }
 
 export interface PlanConnection {
@@ -133,7 +254,11 @@ export interface ProjectFolder {
   description?: string
   schematics: Schematic[]
   documents: Document[]
+  programs: Program[]
   planSpace: PlanSpace
+  requirements?: ProjectRequirements
+  bom?: BOM
+  assembly?: AssemblyGuide
   metadata: {
     createdAt: string
     updatedAt: string
@@ -141,9 +266,9 @@ export interface ProjectFolder {
   }
 }
 
-export type WorkspaceView = 'folders' | 'folder' | 'schematic' | 'document' | 'plan-space'
+export type WorkspaceView = 'folders' | 'folder' | 'schematic' | 'document' | 'program' | 'plan-space'
 
-export type WorkspaceItemType = 'schematic' | 'document' | 'plan-space'
+export type WorkspaceItemType = 'schematic' | 'document' | 'program' | 'plan-space'
 
 function newId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -198,6 +323,17 @@ export function createDocument(name: string, content = ''): Document {
   }
 }
 
+export function createProgram(name: string, code = DEFAULT_PROGRAM_CODE, board = 'arduino:avr:uno'): Program {
+  const now = new Date().toISOString()
+  return {
+    id: newId('program'),
+    name,
+    code,
+    board,
+    metadata: { createdAt: now, updatedAt: now },
+  }
+}
+
 export function createProjectFolder(
   name: string,
   description = '',
@@ -210,6 +346,7 @@ export function createProjectFolder(
     description,
     schematics: [],
     documents: [],
+    programs: [],
     planSpace: createPlanSpace(),
     metadata: {
       createdAt: now,
@@ -228,6 +365,9 @@ export function migrateToProjectFolder(old: Record<string, unknown>): ProjectFol
       folder.planSpace = createPlanSpace()
     } else {
       folder.planSpace = seedPlanSpaceIfEmpty(folder.planSpace)
+    }
+    if (!folder.programs) {
+      folder.programs = []
     }
     return folder
   }
@@ -260,6 +400,7 @@ export function migrateToProjectFolder(old: Record<string, unknown>): ProjectFol
     description: old.description as string | undefined,
     schematics: [schematic],
     documents: [],
+    programs: [],
     planSpace: createPlanSpace(),
     metadata: {
       createdAt: (meta.createdAt as string) || now,

@@ -1,4 +1,4 @@
-import { createProjectFolder, type ProjectFolder } from '../types/workspace'
+import { createProjectFolder, createProgram, type ProjectFolder } from '../types/workspace'
 import {
   allSimulationTestSchematics,
   simulationTestReferenceDoc,
@@ -15,6 +15,22 @@ export function createExamplesProjectFolder(): ProjectFolder {
       id: EXAMPLES_FOLDER_ID,
       schematics,
       documents: [simulationTestReferenceDoc()],
+      programs: [
+        createProgram(
+          'LED Blink',
+          `void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
+}
+
+void loop() {
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(500);
+  digitalWrite(LED_BUILTIN, LOW);
+  delay(500);
+}`,
+          'arduino:avr:uno'
+        ),
+      ],
     }
   )
 }

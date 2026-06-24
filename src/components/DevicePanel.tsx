@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useMemo } from 'react'
 import { ChevronDown, ChevronRight, Code, Play, Save, Check, AlertCircle, Cpu, Zap, FolderOpen, FileText, X, Plus, Download, Upload, Settings, Bug, ExternalLink } from 'lucide-react'
 import { WireConnection } from '../modules/types'
 import { GridCell } from '../systems/ElectricalSystem'
@@ -19,6 +19,7 @@ import {
 } from '../systems/ElectricalSystem'
 import { crdtService } from '../services/CRDTService'
 import { formatCurrent, formatPower, formatVoltage } from '../utils/electricalFormatting'
+import type { Program } from '../types/workspace'
 
 interface Microcontroller {
   id: string
@@ -48,6 +49,7 @@ interface DevicePanelProps {
   gridData: GridCell[][]
   wires: WireConnection[]
   componentStates: Map<string, any>
+  projectPrograms?: Program[]
   onMicrocontrollerHighlight: (id: string | null) => void
   onMicrocontrollerClick: (microcontroller: Microcontroller) => void
   onModalStateChange?: (isOpen: boolean) => void
@@ -55,7 +57,7 @@ interface DevicePanelProps {
   onWiresChange?: (wires: WireConnection[]) => void
 }
 
-export function DevicePanel({ gridData, wires, componentStates, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange, onWiresChange }: DevicePanelProps) {
+export function DevicePanel({ gridData, wires, componentStates, projectPrograms, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange, onWiresChange }: DevicePanelProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [activeTab, setActiveTab] = useState<'microcontrollers' | 'wires' | 'simulation'>('microcontrollers')
   const [expandedMicrocontroller, setExpandedMicrocontroller] = useState<string | null>(null)
@@ -102,6 +104,12 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
     startTime: null
   })
   const [showSimulationPanel, setShowSimulationPanel] = useState(false)
+  const [linkedPrograms, setLinkedPrograms] = useState<Map<string, string>>(new Map())
+
+  const compiledProjectPrograms = useMemo(
+    () => (projectPrograms ?? []).filter((p) => p.compilation?.success),
+    [projectPrograms]
+  )
   
   // Wire editing state
   const [selectedWire, setSelectedWire] = useState<string | null>(null)
@@ -425,6 +433,31 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
     } catch (error) {
       console.error('❌ Failed to save microcontroller code to CRDT:', error)
     }
+  }
+
+  const handleLinkProjectProgram = (microcontrollerId: string, program: Program) => {
+    const compilation = program.compilation
+    if (!compilation?.success) return
+
+    const compilationResult: CompilationResult = {
+      success: true,
+      output: compilation.output,
+      firmware: compilation.firmware,
+      filename: compilation.filename,
+      size: compilation.size,
+      binPath: compilation.binPath,
+    }
+
+    const compiledCode: CompiledCode = {
+      microcontrollerId,
+      code: program.code,
+      compilationResult,
+      compiledAt: new Date(compilation.compiledAt),
+    }
+
+    setLinkedPrograms((prev) => new Map(prev.set(microcontrollerId, program.id)))
+    setCompiledCodes((prev) => new Map(prev.set(microcontrollerId, compiledCode)))
+    setMicrocontrollerCode((prev) => new Map(prev.set(microcontrollerId, program.code)))
   }
 
   const handleCompile = async () => {
@@ -1174,6 +1207,30 @@ export function DevicePanel({ gridData, wires, componentStates, onMicrocontrolle
                             </div>
                           </div>
                         
+                        {compiledProjectPrograms.length > 0 && (
+                          <div className="mb-2">
+                            <label className="block text-[10px] font-medium text-gray-500 dark:text-dark-text-muted mb-1">
+                              Project program
+                            </label>
+                            <select
+                              value={linkedPrograms.get(microcontroller.id) ?? ''}
+                              onChange={(e) => {
+                                const program = compiledProjectPrograms.find((p) => p.id === e.target.value)
+                                if (program) handleLinkProjectProgram(microcontroller.id, program)
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full rounded border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface px-2 py-1 text-xs text-gray-700 dark:text-dark-text-primary outline-none focus:border-primary-500"
+                            >
+                              <option value="">Select compiled program…</option>
+                              {compiledProjectPrograms.map((program) => (
+                                <option key={program.id} value={program.id}>
+                                  {program.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
                         <div className="flex gap-2">
                           <button
                             className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"

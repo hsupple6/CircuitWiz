@@ -5,6 +5,8 @@ import {
   Map,
   Trash2,
   ChevronRight,
+  Code,
+  Check,
 } from 'lucide-react'
 import { ProjectFolder } from '../types/workspace'
 import { ProjectPreview } from './ProjectPreview'
@@ -13,22 +15,28 @@ interface ProjectFolderViewProps {
   folder: ProjectFolder
   onOpenSchematic: (schematicId: string) => void
   onOpenDocument: (documentId: string) => void
+  onOpenProgram: (programId: string) => void
   onOpenPlanSpace: () => void
   onCreateSchematic: () => void
   onCreateDocument: () => void
+  onCreateProgram: () => void
   onDeleteSchematic: (schematicId: string) => void
   onDeleteDocument: (documentId: string) => void
+  onDeleteProgram: (programId: string) => void
 }
 
 export function ProjectFolderView({
   folder,
   onOpenSchematic,
   onOpenDocument,
+  onOpenProgram,
   onOpenPlanSpace,
   onCreateSchematic,
   onCreateDocument,
+  onCreateProgram,
   onDeleteSchematic,
   onDeleteDocument,
+  onDeleteProgram,
 }: ProjectFolderViewProps) {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -140,6 +148,77 @@ export function ProjectFolderView({
                     </h3>
                     <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
                       {formatDate(schematic.metadata.updatedAt)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Programs */}
+        <section className="mb-10">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary flex items-center gap-2">
+              <Code className="h-5 w-5 text-emerald-500" />
+              Programs
+            </h2>
+            <button
+              onClick={onCreateProgram}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400"
+            >
+              <Plus className="h-4 w-4" />
+              New Program
+            </button>
+          </div>
+
+          {folder.programs.length === 0 ? (
+            <div className="card p-8 text-center border-2 border-dashed border-gray-200 dark:border-dark-border">
+              <Code className="h-10 w-10 text-gray-300 dark:text-dark-text-muted mx-auto mb-3" />
+              <p className="text-gray-500 dark:text-dark-text-muted text-sm mb-3">No programs yet</p>
+              <button
+                onClick={onCreateProgram}
+                className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+              >
+                Create your first program
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {folder.programs.map((program) => (
+                <div
+                  key={program.id}
+                  className="card overflow-hidden hover:shadow-lg transition-all cursor-pointer group"
+                  onClick={() => onOpenProgram(program.id)}
+                >
+                  <div className="h-36 bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-emerald-900/20 dark:to-teal-900/20 p-4 flex flex-col relative">
+                    <p className="text-xs text-gray-600 dark:text-dark-text-secondary line-clamp-5 flex-1 whitespace-pre-wrap font-mono">
+                      {program.code || '// Empty program'}
+                    </p>
+                    {program.compilation?.success && (
+                      <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-full bg-emerald-500/90 px-2 py-0.5 text-[10px] font-medium text-white">
+                        <Check className="h-3 w-3" />
+                        Compiled
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-3 relative">
+                    <button
+                      className="absolute top-2 right-2 bg-red-500/90 hover:bg-red-600 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-all"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDeleteProgram(program.id)
+                      }}
+                      title="Delete program"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                    <h3 className="font-semibold text-gray-900 dark:text-dark-text-primary truncate pr-8">
+                      {program.name}
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
+                      {formatDate(program.metadata.updatedAt)}
+                      {program.compilation?.success ? ' · Ready for simulation' : ' · Not compiled'}
                     </p>
                   </div>
                 </div>

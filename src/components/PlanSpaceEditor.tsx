@@ -139,7 +139,7 @@ function PlanBubbleNode({
   onBlur: () => void
 }) {
   const ring = isSelected || isConnectSource
-    ? 'ring-2 ring-primary-500 ring-offset-2 ring-offset-gray-50 dark:ring-offset-dark-bg'
+    ? 'ring-2 ring-primary-500 ring-offset-2 ring-offset-[#f1f5f9]'
     : ''
 
   const textStyle = { color: bubble.textColor || '#1e293b' }
@@ -221,7 +221,7 @@ function PlanBubbleNode({
       <div
         className={`absolute flex items-center justify-center rounded-2xl border backdrop-blur-sm ${ring} ${
           bubble.shadow ? 'shadow-lg shadow-black/[0.06]' : ''
-        } dark:bg-dark-surface/90`}
+        } bg-white/95`}
         style={{ ...base, borderWidth: 1 }}
         onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick() }}
       >
@@ -693,7 +693,7 @@ export function PlanSpaceEditor({ planSpace, onChange, zoom, onZoomChange }: Pla
 
       <div
         ref={canvasRef}
-        className="flex-1 overflow-hidden relative bg-[#f8fafc] dark:bg-dark-bg"
+        className="plan-space-canvas flex-1 overflow-hidden relative"
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
