@@ -86,6 +86,20 @@ interface LedStamp {
   isOn: boolean
 }
 
+function ledForwardDrop(anodeVoltage: number, cathodeVoltage: number): number {
+  return anodeVoltage - cathodeVoltage
+}
+
+/** LED conducts only with positive forward bias above Vf. */
+function ledHasForwardBias(
+  anodeVoltage: number,
+  cathodeVoltage: number,
+  forwardVoltage: number
+): boolean {
+  const vDrop = ledForwardDrop(anodeVoltage, cathodeVoltage)
+  return anodeVoltage > 0.01 && vDrop >= forwardVoltage - 0.05
+}
+
 class UnionFind {
   parent: number[]
 
@@ -561,7 +575,7 @@ function buildNets(
         seriesResistance: 10,
         componentId: component.componentId,
         maxCurrent,
-        isOn: true,
+        isOn: false,
       })
       return
     }
@@ -841,9 +855,12 @@ export function solveCircuit(
 
     let changed = false
     ledStates = ledStates.map((led, idx) => {
+      const anodeV = solution!.voltages[led.netAnode] ?? 0
+      const cathodeV = solution!.voltages[led.netCathode] ?? 0
       const ledSourceIdx = voltageSources.length + idx
-      const current = solution!.sourceCurrents[ledSourceIdx] ?? 0
-      const shouldBeOn = current > 1e-9
+      const current = led.isOn ? (solution!.sourceCurrents[ledSourceIdx] ?? 0) : 0
+      const shouldBeOn = ledHasForwardBias(anodeV, cathodeV, led.forwardVoltage) &&
+        (!led.isOn || current > 1e-9)
       if (shouldBeOn !== led.isOn) {
         changed = true
         return { ...led, isOn: shouldBeOn }
@@ -940,25 +957,27 @@ export function solveCircuit(
   ledStates.forEach((led, idx) => {
     const ledSourceIdx = voltageSources.length + idx
     const onCircuit = activeNets.has(led.netAnode) && activeNets.has(led.netCathode)
-    const current = onCircuit ? Math.max(0, solution!.sourceCurrents[ledSourceIdx] ?? 0) : 0
-    const isOn = onCircuit && led.isOn && current > 1e-6
     const anodeVoltage = onCircuit ? voltages[led.netAnode] ?? 0 : 0
     const cathodeVoltage = onCircuit ? voltages[led.netCathode] ?? 0 : 0
+    const rawCurrent = onCircuit && led.isOn ? Math.max(0, solution!.sourceCurrents[ledSourceIdx] ?? 0) : 0
+    const hasBias = ledHasForwardBias(anodeVoltage, cathodeVoltage, led.forwardVoltage)
+    const isOn = onCircuit && led.isOn && hasBias && rawCurrent > 1e-6
+    const current = isOn ? rawCurrent : 0
 
     gridData.forEach((row, y) => {
       if (!row) return
       row.forEach((cell, x) => {
         if (cell?.componentId !== led.componentId) return
         const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
-        const net = posToNet.get(posKey(x, y))
         const moduleCell = cell.moduleDefinition.grid[cell.cellIndex ?? 0]
-        const cellVoltage = onCircuit && net !== undefined ? voltages[net] ?? 0 : 0
+        const net = posToNet.get(posKey(x, y))
         componentStates.set(cellComponentId, {
           componentId: cellComponentId,
           componentType: 'LED',
           position: { x, y },
-          outputVoltage: cellVoltage,
-          outputCurrent: isOn ? current : 0,
+          inputVoltage: anodeVoltage,
+          outputVoltage: isOn ? anodeVoltage : 0,
+          outputCurrent: current,
           power: isOn ? led.forwardVoltage * current : 0,
           forwardVoltage: led.forwardVoltage,
           isOn,
@@ -969,7 +988,7 @@ export function solveCircuit(
       })
     })
 
-    if (onCircuit && !isOn && anodeVoltage - cathodeVoltage < led.forwardVoltage - 0.05) {
+    if (onCircuit && !isOn && !hasBias) {
       errors.push(`LED ${led.componentId} has insufficient forward voltage`)
     }
   })

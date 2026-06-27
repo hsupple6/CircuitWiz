@@ -43,8 +43,10 @@ export function ProjectPreview({ gridData, wires = [], className = '' }: Project
     const colorMap: Record<string, string> = {
       ArduinoUno: '#4F46E5',
       ESP32: '#059669',
-      LED: '#EF4444',
-      Resistor: '#F59E0B',
+      LED: '#141414',
+      Resistor: '#141414',
+      Capacitor: '#141414',
+      Inductor: '#141414',
       Battery: '#10B981',
       PowerSupply: '#3B82F6',
       Switch: '#8B5CF6',

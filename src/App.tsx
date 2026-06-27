@@ -12,12 +12,15 @@ import {
   Clock,
   Trash2,
   FolderOpen,
+  Pencil,
 } from 'lucide-react'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { extractOccupiedComponents } from './utils/gridUtils'
 import { AppearancePanel } from './components/AppearancePanel'
-import { AgentPanel } from './components/AgentPanel'
+import { AgentProvider } from './contexts/AgentContext'
+import { ProductSuiteHost } from './components/ProductSuiteHost'
+import { RightWorkspaceRail } from './components/RightWorkspaceRail'
 import { CarbonLogo } from './components/CarbonLogo'
 import { ProjectGrid } from './components/ProjectGrid'
 import { ComponentPalette } from './components/ComponentPalette'
@@ -31,6 +34,7 @@ import { ResistanceSelector } from './components/ResistanceSelector'
 import { CapacitanceSelector } from './components/CapacitanceSelector'
 import { InductanceSelector } from './components/InductanceSelector'
 import { HoverStatsPanel } from './components/HoverStatsPanel'
+import { ResizableSidebar } from './components/ResizableSidebar'
 import type { HoverStats } from './utils/hoverStats'
 import type { ComponentState } from './systems/ElectricalSystem'
 import { ModuleDefinition } from './modules/types'
@@ -798,6 +802,98 @@ function AppContent() {
     )
   }
 
+  const handleFolderNameChange = (name: string) => {
+    if (!selectedFolder) return
+    const updatedFolder: ProjectFolder = {
+      ...selectedFolder,
+      name,
+      metadata: { ...selectedFolder.metadata, updatedAt: new Date().toISOString() },
+    }
+    updateFolders(
+      (folders) => folders.map((f) => (f.id === updatedFolder.id ? updatedFolder : f)),
+      updatedFolder,
+      selectedItemId,
+      activeView
+    )
+  }
+
+  const handleFolderDescriptionChange = (description: string) => {
+    if (!selectedFolder) return
+    const updatedFolder: ProjectFolder = {
+      ...selectedFolder,
+      description,
+      metadata: { ...selectedFolder.metadata, updatedAt: new Date().toISOString() },
+    }
+    updateFolders(
+      (folders) => folders.map((f) => (f.id === updatedFolder.id ? updatedFolder : f)),
+      updatedFolder,
+      selectedItemId,
+      activeView
+    )
+  }
+
+  const handleRenameFolder = (folderId: string, name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    updateFolders((folders) =>
+      folders.map((f) =>
+        f.id === folderId
+          ? {
+              ...f,
+              name: trimmed,
+              metadata: { ...f.metadata, updatedAt: new Date().toISOString() },
+            }
+          : f
+      )
+    )
+  }
+
+  const agentProjectContext = useMemo(() => {
+    if (!selectedFolder) return null
+    return {
+      folder: selectedFolder,
+      activeSchematicId: activeView === 'schematic' ? selectedItemId : null,
+      activeDocumentId: activeView === 'document' ? selectedItemId : null,
+    }
+  }, [selectedFolder, activeView, selectedItemId])
+
+  const handleAgentProjectUpdate = useCallback(
+    (folder: ProjectFolder) => {
+      updateFolders(
+        (folders) => folders.map((f) => (f.id === folder.id ? folder : f)),
+        folder,
+        selectedItemId,
+        activeView
+      )
+    },
+    [updateFolders, selectedItemId, activeView]
+  )
+
+  const wrapWorkspaceLayout = (
+    content: React.ReactNode,
+    options?: { carbonHeader?: React.ReactNode; showDevicePanel?: boolean }
+  ) =>
+    options?.carbonHeader ? (
+      <div className="grid h-screen grid-rows-[auto_1fr] overflow-hidden bg-black">
+        {options.carbonHeader}
+        <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            {content}
+          </div>
+          <RightWorkspaceRail showDevicePanel={options.showDevicePanel} />
+        </div>
+      </div>
+    ) : (
+      <div className="flex h-screen overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{content}</div>
+        <RightWorkspaceRail showDevicePanel={options?.showDevicePanel} />
+      </div>
+    )
+
+  let workspaceContent: React.ReactNode
+  let carbonHeader: React.ReactNode | undefined
+  let showDevicePanel = false
+
   const editorTopBar = (title: string, backLabel: string, onBack: () => void, showSave = false) => (
     <div className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-white/[0.06] bg-black px-4">
       <div className="flex items-center gap-4">
@@ -860,11 +956,13 @@ function AppContent() {
 
   // Schematic editor
   if (activeView === 'schematic' && selectedFolder && selectedSchematic) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
+    showDevicePanel = true
+
+    workspaceContent = (
+      <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-dark-bg">
         {editorTopBar(selectedSchematic.name, selectedFolder.name, handleBackToFolder, true)}
-        <div className="flex h-[calc(100vh-4rem)] min-h-0">
-          <div className="w-80 flex flex-col border-r border-gray-200 dark:border-dark-border shrink-0 bg-white dark:bg-dark-surface min-h-0">
+        <div className="flex min-h-0 flex-1" data-resizable-row>
+          <ResizableSidebar defaultWidth={320} minWidth={220} maxWidthFraction={0.5}>
             <ComponentPalette selectedModule={selectedModule} onModuleSelect={handleModuleSelect} />
             <SchematicGroupBoxBrowser
               groupBoxes={groupBoxes}
@@ -879,7 +977,7 @@ function AppContent() {
               }}
               onFocus={(box) => setFocusGroupBoxRequest(box)}
             />
-          </div>
+          </ResizableSidebar>
           <div className="flex-1 overflow-hidden min-w-0">
             <ProjectGrid
               project={{
@@ -936,14 +1034,11 @@ function AppContent() {
         )}
       </div>
     )
-  }
-
-  // Document editor
-  if (activeView === 'document' && selectedFolder && selectedDocument) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
+  } else if (activeView === 'document' && selectedFolder && selectedDocument) {
+    workspaceContent = (
+      <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-dark-bg">
         {editorTopBar(selectedDocument.name, selectedFolder.name, handleBackToFolder)}
-        <div className="h-[calc(100vh-4rem)]">
+        <div className="min-h-0 flex-1">
           <DocumentEditor
             name={selectedDocument.name}
             content={selectedDocument.content}
@@ -953,14 +1048,11 @@ function AppContent() {
         </div>
       </div>
     )
-  }
-
-  // Program editor
-  if (activeView === 'program' && selectedFolder && selectedProgram) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
+  } else if (activeView === 'program' && selectedFolder && selectedProgram) {
+    workspaceContent = (
+      <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-dark-bg">
         {editorTopBar(selectedProgram.name, selectedFolder.name, handleBackToFolder)}
-        <div className="h-[calc(100vh-4rem)]">
+        <div className="min-h-0 flex-1">
           <ProgramEditor
             program={selectedProgram}
             onChange={handleProgramChange}
@@ -971,14 +1063,11 @@ function AppContent() {
         </div>
       </div>
     )
-  }
-
-  // Plan space editor
-  if (activeView === 'plan-space' && selectedFolder) {
-    return (
-      <div className="min-h-screen bg-[#f1f5f9]">
+  } else if (activeView === 'plan-space' && selectedFolder) {
+    workspaceContent = (
+      <div className="flex min-h-0 flex-1 flex-col bg-[#f1f5f9]">
         {editorTopBar('Plan Space', selectedFolder.name, handleBackToFolder)}
-        <div className="h-[calc(100vh-4rem)]">
+        <div className="min-h-0 flex-1">
           <PlanSpaceEditor
             planSpace={selectedFolder.planSpace}
             onChange={handlePlanSpaceChange}
@@ -988,13 +1077,10 @@ function AppContent() {
         </div>
       </div>
     )
-  }
-
-  // Folder view
-  if (activeView === 'folder' && selectedFolder) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-dark-bg">
-        <div className="sticky top-0 z-10 flex h-16 items-center gap-x-4 border-b border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface px-4 shadow-sm">
+  } else if (activeView === 'folder' && selectedFolder) {
+    workspaceContent = (
+      <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-dark-bg">
+        <div className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm dark:border-dark-border dark:bg-dark-surface">
           <button
             onClick={handleBackToFolders}
             className="flex items-center gap-2 text-gray-600 hover:text-gray-900 dark:text-dark-text-secondary dark:hover:text-dark-text-primary"
@@ -1008,31 +1094,28 @@ function AppContent() {
           <div className="flex-1" />
           <AppearancePanel />
         </div>
-        <ProjectFolderView
-          folder={selectedFolder}
-          onOpenSchematic={handleOpenSchematic}
-          onOpenDocument={handleOpenDocument}
-          onOpenProgram={handleOpenProgram}
-          onOpenPlanSpace={handleOpenPlanSpace}
-          onCreateSchematic={handleCreateSchematic}
-          onCreateDocument={handleCreateDocument}
-          onCreateProgram={handleCreateProgram}
-          onDeleteSchematic={handleDeleteSchematic}
-          onDeleteDocument={handleDeleteDocument}
-          onDeleteProgram={handleDeleteProgram}
-        />
-        {deleteModal?.isOpen && (
-          <DeleteModal modal={deleteModal} onClose={() => setDeleteModal(null)} onConfirm={confirmDelete} />
-        )}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <ProjectFolderView
+            folder={selectedFolder}
+            onOpenSchematic={handleOpenSchematic}
+            onOpenDocument={handleOpenDocument}
+            onOpenProgram={handleOpenProgram}
+            onOpenPlanSpace={handleOpenPlanSpace}
+            onCreateSchematic={handleCreateSchematic}
+            onCreateDocument={handleCreateDocument}
+            onCreateProgram={handleCreateProgram}
+            onDeleteSchematic={handleDeleteSchematic}
+            onDeleteDocument={handleDeleteDocument}
+            onDeleteProgram={handleDeleteProgram}
+            onNameChange={handleFolderNameChange}
+            onDescriptionChange={handleFolderDescriptionChange}
+          />
+        </div>
       </div>
     )
-  }
-
-  // Projects list (folders)
-  return (
-    <div className="grid h-screen grid-rows-[10fr_90fr] bg-black overflow-hidden">
-      {/* Top 10% — Carbon + search */}
-      <header className="flex min-h-0 items-center gap-x-4 bg-black sm:gap-x-6">
+  } else {
+    carbonHeader = (
+      <header className="flex shrink-0 items-center gap-x-4 bg-black px-4 py-3 sm:gap-x-6 sm:px-6">
         <CarbonLogo size="lg" />
         <div className="flex flex-1 items-center gap-x-4 lg:gap-x-6">
           <div className="relative ml-auto flex flex-1 max-w-xl">
@@ -1048,26 +1131,26 @@ function AppContent() {
           <AppearancePanel />
         </div>
       </header>
+    )
 
-      {/* Bottom 90% — Your Projects */}
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-carbon-matte lg:flex-row">
-        {/* Projects column */}
-        <div className="relative order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:order-1">
-          {/* Huge orb — bottom right */}
-          <div
-            className="pointer-events-none absolute -bottom-[45%] -right-[25%] h-[min(1100px,95vw)] w-[min(1100px,95vw)] rounded-full carbon-orb"
-            aria-hidden
-          />
+    workspaceContent = (
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-carbon-matte">
+      <div
+        className="pointer-events-none absolute -bottom-[45%] -right-[25%] h-[min(1100px,95vw)] w-[min(1100px,95vw)] rounded-full carbon-orb"
+        aria-hidden
+      />
 
-          <div className="relative shrink-0 pt-8 pb-6">
-            <h1 className="text-3xl font-bold tracking-tight text-zinc-50 sm:text-4xl px-4 sm:px-6 lg:px-8">Your Projects</h1>
-            <p className="mt-3 max-w-2xl text-base text-zinc-400 px-4 sm:px-6 lg:px-8">
-              Each project is a folder containing schematics, programs, documents, and a plan space
-            </p>
-          </div>
+      <div className="relative shrink-0 pt-8 pb-6">
+        <h1 className="px-4 text-3xl font-bold tracking-tight text-zinc-50 sm:px-6 sm:text-4xl lg:px-8">
+          Your Projects
+        </h1>
+        <p className="mt-3 max-w-2xl px-4 text-base text-zinc-400 sm:px-6 lg:px-8">
+          Each project is a folder containing schematics, programs, documents, and a plan space
+        </p>
+      </div>
 
-          <div className="relative min-h-0 flex-1 overflow-y-auto pb-8">
-          <div className="grid grid-cols-1 gap-6 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-3 lg:px-8 xl:grid-cols-4">
+      <div className="relative min-h-0 flex-1 overflow-y-auto pb-8">
+        <div className="grid grid-cols-1 gap-6 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-3 lg:px-8 xl:grid-cols-4">
             <div
               className="carbon-card group cursor-pointer border-dashed border-primary-400/20 p-6 transition-colors hover:border-primary-400/40 hover:bg-carbon-elevated/50"
               onClick={handleCreateFolder}
@@ -1091,6 +1174,7 @@ function AppContent() {
                 folder={folder}
                 onClick={() => handleOpenFolder(folder)}
                 onDelete={() => setDeleteModal({ isOpen: true, type: 'folder', folderId: folder.id, name: folder.name })}
+                onRename={(name) => handleRenameFolder(folder.id, name)}
               />
             ))}
 
@@ -1120,20 +1204,23 @@ function AppContent() {
                 </div>
               </div>
             )}
-          </div>
-          </div>
         </div>
+      </div>
+    </div>
+    )
+  }
 
-        {/* Agent slot — dedicated column, expandable panel inside */}
-        <div className="agent-slot order-1 flex min-h-0 w-full shrink-0 flex-col border-b border-white/[0.06] lg:order-2 lg:w-80 lg:border-b-0 lg:border-l xl:w-[22rem]">
-          <AgentPanel />
-        </div>
-      </main>
-
+  return (
+    <AgentProvider
+      projectContext={agentProjectContext}
+      onProjectUpdate={handleAgentProjectUpdate}
+    >
+      {wrapWorkspaceLayout(workspaceContent, { carbonHeader, showDevicePanel })}
+      <ProductSuiteHost onProjectUpdate={handleAgentProjectUpdate} />
       {deleteModal?.isOpen && (
         <DeleteModal modal={deleteModal} onClose={() => setDeleteModal(null)} onConfirm={confirmDelete} />
       )}
-    </div>
+    </AgentProvider>
   )
 }
 
@@ -1147,7 +1234,34 @@ function SampleCard({ title, description, onClick }: { title: string; descriptio
   )
 }
 
-function FolderCard({ folder, onClick, onDelete }: { folder: ProjectFolder; onClick: () => void; onDelete: () => void }) {
+function FolderCard({
+  folder,
+  onClick,
+  onDelete,
+  onRename,
+}: {
+  folder: ProjectFolder
+  onClick: () => void
+  onDelete: () => void
+  onRename: (name: string) => void
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [draftName, setDraftName] = useState(folder.name)
+
+  useEffect(() => {
+    setDraftName(folder.name)
+  }, [folder.name])
+
+  const commitRename = () => {
+    const trimmed = draftName.trim()
+    if (trimmed && trimmed !== folder.name) {
+      onRename(trimmed)
+    } else {
+      setDraftName(folder.name)
+    }
+    setIsEditing(false)
+  }
+
   const formatDate = (dateString: string) => {
     const diffHours = Math.floor((Date.now() - new Date(dateString).getTime()) / (1000 * 60 * 60))
     if (diffHours < 1) return 'Just now'
@@ -1183,7 +1297,43 @@ function FolderCard({ folder, onClick, onDelete }: { folder: ProjectFolder; onCl
         </div>
       </div>
       <div className="p-4">
-        <h3 className="truncate text-lg font-semibold text-zinc-100">{folder.name}</h3>
+        <div className="flex items-start gap-2">
+          {isEditing ? (
+            <input
+              type="text"
+              value={draftName}
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setDraftName(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  commitRename()
+                }
+                if (e.key === 'Escape') {
+                  setDraftName(folder.name)
+                  setIsEditing(false)
+                }
+              }}
+              className="min-w-0 flex-1 rounded border border-primary-400/40 bg-carbon-surface px-2 py-1 text-lg font-semibold text-zinc-100 outline-none focus:ring-1 focus:ring-primary-400/50"
+            />
+          ) : (
+            <h3 className="min-w-0 flex-1 truncate text-lg font-semibold text-zinc-100">{folder.name}</h3>
+          )}
+          <button
+            type="button"
+            className="shrink-0 rounded-md p-1.5 text-zinc-500 opacity-0 transition-all hover:bg-white/[0.06] hover:text-primary-400 group-hover:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsEditing(true)
+            }}
+            title="Rename project"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        </div>
         <p className="mt-1 text-sm text-zinc-500">Last modified {formatDate(folder.metadata.updatedAt)}</p>
         {folder.description && (
           <p className="mt-2 line-clamp-2 text-sm text-zinc-400">{folder.description}</p>

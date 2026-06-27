@@ -27,8 +27,8 @@ export function LEDVoltageFlow(
       )
     )
     
-    const isOn = inputVoltage >= forwardVoltage && circuitCurrent > 0 && isConnectedToGround
-    const isPowered = inputVoltage > 0
+    const isOn = inputVoltage > 0.01 && inputVoltage >= forwardVoltage && circuitCurrent > 1e-6 && isConnectedToGround
+    const isPowered = isOn
     const status = isOn ? 'on' : 'off'
     
     // For LEDs, we need to process ALL cells of the component (like resistors)
@@ -59,15 +59,15 @@ export function LEDVoltageFlow(
       allLEDCells.forEach(cell => {
         const updateData = {
           componentId: cell.id,  // Use the correct cell ID
-          inputVoltage,  // Add input voltage for debugging/UI
-          outputVoltage,
-          outputCurrent: circuitCurrent,
-          power: forwardVoltage * circuitCurrent,
+          inputVoltage,
+          outputVoltage: isOn ? inputVoltage : 0,
+          outputCurrent: isOn ? circuitCurrent : 0,
+          power: isOn ? forwardVoltage * circuitCurrent : 0,
           forwardVoltage,
           isOn,
           status,
-          isPowered: inputVoltage >= forwardVoltage,
-          isGrounded: inputVoltage > 0
+          isPowered: isOn,
+          isGrounded: isConnectedToGround
         }
         componentUpdates.set(cell.id, updateData)
 

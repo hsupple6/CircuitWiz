@@ -15,6 +15,7 @@ import { catalogAgentTools } from './catalog/tools'
 import { bomAgentTools } from './bom/tools'
 import { firmwareAgentTools } from './firmware/tools'
 import { requirementsAgentTools } from './requirements/tools'
+import { productAgentTools } from './product/tools'
 import { assemblyAgentTools } from './assembly/tools'
 import { validationAgentTools } from './validation/tools'
 
@@ -42,6 +43,7 @@ registerTools(catalogAgentTools)
 registerTools(bomAgentTools)
 registerTools(firmwareAgentTools)
 registerTools(requirementsAgentTools)
+registerTools(productAgentTools)
 registerTools(assemblyAgentTools)
 registerTools(validationAgentTools)
 

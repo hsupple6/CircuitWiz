@@ -209,9 +209,14 @@ function buildComponentStats(
 
   switch (moduleName) {
     case 'LED': {
-      const isOn = state?.isOn ?? false
-      const isPwm = state?.status === 'pwm'
       const forwardV = state?.forwardVoltage ?? getNumericProperty(cell.moduleDefinition?.properties, 'forwardVoltage', 2)
+      const anodeV = state?.inputVoltage ?? state?.outputVoltage ?? voltage
+      const isOn =
+        (state?.isOn ?? false) &&
+        anodeV > 0.01 &&
+        anodeV >= forwardV - 0.05 &&
+        current > 1e-6
+      const isPwm = state?.status === 'pwm'
       const color =
         (cell.moduleDefinition?.properties?.color as { default?: string } | string | undefined) &&
         typeof cell.moduleDefinition?.properties?.color === 'object'

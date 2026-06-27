@@ -2,18 +2,18 @@
   "module": "LED",
   "gridX": 3,
   "gridY": 1,
-  "background": "#EF4444",
-  "css": "border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);",
+  "background": "#141414",
+  "css": "border-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.35);",
   "category": "output",
   "subcategory": "light",
-  "description": "Light Emitting Diode with positive terminal, LED body, and negative terminal",
+  "description": "SMD LED with positive terminal, body, and negative terminal",
   "manufacturer": "Generic",
   "grid": [
     {
       "x": 0,
       "y": 0,
-      "css": "border-radius: 8px 0 0 8px; background: #6B7280; color: white; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; border: 2px solid #4B5563; border-right: none;",
-      "background": "#6B7280",
+      "background": "#141414",
+      "css": "border-radius: 2px 0 0 2px; border: 1px solid #333; border-right: none; background: linear-gradient(90deg, #c0c0c0 0%, #c0c0c0 50%, #141414 50%, #141414 100%);",
       "isConnectable": true,
       "isPowerable": true,
       "isGroundable": false,
@@ -21,6 +21,7 @@
       "pin": "+",
       "voltage": 2.0,
       "current": 0.02,
+      "isClickable": false,
       "properties": {
         "voltage": "2.0V",
         "current": "20mA",
@@ -33,16 +34,17 @@
     {
       "x": 1,
       "y": 0,
-      "css": "border-radius: 0; background: radial-gradient(circle, #FEF3C7 0%, #EF4444 50%, #DC2626 100%); color: white; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; border: 2px solid #DC2626; border-left: none; border-right: none;",
-      "background": "#EF4444",
+      "background": "#141414",
+      "css": "border-radius: 0; border: 1px solid #333; border-left: none; border-right: none; background: linear-gradient(180deg, #222 0%, #141414 28%, #141414 100%); cursor: pointer;",
       "isConnectable": false,
       "isPowerable": false,
       "isGroundable": false,
       "type": "LED_BODY",
-      "pin": "LED",
+      "pin": "",
       "voltage": 2.0,
       "current": 0.02,
       "isPowered": false,
+      "isClickable": false,
       "properties": {
         "voltage": "2.0V",
         "current": "20mA",
@@ -56,8 +58,8 @@
     {
       "x": 2,
       "y": 0,
-      "css": "border-radius: 0 8px 8px 0; background: #6B7280; color: white; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; border: 2px solid #4B5563; border-left: none;",
-      "background": "#6B7280",
+      "background": "#141414",
+      "css": "border-radius: 0 2px 2px 0; border: 1px solid #333; border-left: none; background: linear-gradient(90deg, #141414 0%, #141414 50%, #c0c0c0 50%, #c0c0c0 100%);",
       "isConnectable": true,
       "isPowerable": false,
       "isGroundable": true,
@@ -65,6 +67,7 @@
       "pin": "-",
       "voltage": 0,
       "current": 0.02,
+      "isClickable": false,
       "properties": {
         "voltage": "0V",
         "current": "20mA",
@@ -98,8 +101,5 @@
       "unit": "A",
       "description": "Maximum forward current"
     }
-  },
-  "behavior": {
-    "onClick": "// Toggle LED color and state\nconst colors = ['Red', 'Green', 'Blue', 'Yellow', 'White'];\nconst currentColor = context.getCellByPosition(1, 0).properties?.color || 'Red';\nconst currentIndex = colors.indexOf(currentColor);\nconst nextIndex = (currentIndex + 1) % colors.length;\nconst newColor = colors[nextIndex];\n\n// Update LED color properties\nconst colorMap = {\n  'Red': { voltage: 2.0, background: '#EF4444', border: '#DC2626', offBackground: '#7F1D1D' },\n  'Green': { voltage: 2.2, background: '#10B981', border: '#059669', offBackground: '#064E3B' },\n  'Blue': { voltage: 3.3, background: '#3B82F6', border: '#2563EB', offBackground: '#1E3A8A' },\n  'Yellow': { voltage: 2.1, background: '#F59E0B', border: '#D97706', offBackground: '#92400E' },\n  'White': { voltage: 3.3, background: '#F3F4F6', border: '#9CA3AF', offBackground: '#6B7280' }\n};\n\nconst colorProps = colorMap[newColor];\n\n// Update the LED body cell (middle cell)\nconst ledBody = context.getCellByPosition(1, 0);\nif (ledBody) {\n  // Toggle between on and off states\n  const isCurrentlyOn = ledBody.isPowered || false;\n  const newState = !isCurrentlyOn;\n  \n  // Update power state\n  context.updateCellPower(1, 0, newState);\n  \n  console.log('LED color changed to:', newColor, 'Voltage:', colorProps.voltage + 'V', 'State:', newState ? 'ON' : 'OFF');\n}"
   }
 }

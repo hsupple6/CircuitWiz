@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { ModuleDefinition, WireConnection, WireSegment, WiringState } from '../modules/types'
 import { GPIOState } from '../services/QEMUEmulatorReal'
 import { DynamicGPIOState } from '../services/DynamicGPIO'
@@ -6,6 +7,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { calculateElectricalFlow, ComponentState } from '../systems/ElectricalSystem'
 import { ElectricalValidator } from './ElectricalValidator'
 import { DevicePanel } from './DevicePanel'
+import { DEVICE_PANEL_SLOT_ID } from './VerticalSplitPane'
 import { ElectricalNotifications } from './ElectricalNotifications'
 import { CircuitTutorial } from './CircuitTutorial'
 import { logger } from '../services/Logger'
@@ -13,11 +15,15 @@ import { crdtService } from '../services/CRDTService'
 import { getCRDTSaveService } from '../services/CRDTSaveService'
 import { Eraser, Focus } from 'lucide-react'
 import { ComponentStatsBadge } from './ComponentStatsBadge'
-import { formatCapacitance } from './CapacitanceSelector'
-import { formatInductance } from './InductanceSelector'
+import { InductorBodyLabel } from './InductorBodyLabel'
 import { OUTPUT_MODULE_NAMES } from '../modules/registry'
 import { SchematicGroupBoxLayer } from './SchematicGroupBoxLayer'
 import { createSchematicGroupBox, type SchematicGroupBox, type Program } from '../types/workspace'
+import { ResistorBodyLabel } from './ResistorBodyLabel'
+import { CapacitorBodyLabel } from './CapacitorBodyLabel'
+import { LedBodyIndicator, resolveLedColor } from './LedBodyIndicator'
+import { getDisplayPin } from '../utils/smdVisual'
+import { resolveCellResistance } from '../utils/resistorVisual'
 import { buildHoverStats, type HoverStats } from '../utils/hoverStats'
 
 const GRID_PADDING = 4
@@ -412,7 +418,7 @@ export function ProjectGrid({
     }
   }, [gridData, wires, componentStates, groupBoxes])
 
-  // Keep cell size in sync with rendered vw-based grid (avoids hover vs click drift)
+  // Local (pre-transform) cell size for SVG wire geometry inside the transformed layer
   useEffect(() => {
     const el = gridLayerRef.current
     if (!el) return
@@ -427,7 +433,7 @@ export function ProjectGrid({
     const observer = new ResizeObserver(updateCellSize)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [gridSize.width])
+  }, [gridSize.width, zoom])
 
   // Helper function to snap coordinates to grid
   const snapToGridCoords = useCallback((x: number, y: number) => {
@@ -438,38 +444,35 @@ export function ProjectGrid({
     }
   }, [snapToGrid, gridSize.width, gridSize.height])
 
-  const getGridTranslate = useCallback(() => ({
-    x: gridOffset.x + GRID_PADDING / zoom,
-    y: gridOffset.y + GRID_PADDING / zoom,
-  }), [gridOffset, zoom])
+  /** Map screen coords → grid cell using the rendered grid layer as the anchor (cell 0,0 = layer top-left). */
+  const screenToGridCoords = useCallback((clientX: number, clientY: number, mode: 'cell' | 'wire' = 'cell') => {
+    const layer = gridLayerRef.current
+    if (!layer || gridSize.width <= 0 || gridSize.height <= 0) return null
 
-  const screenToLocal = useCallback((clientX: number, clientY: number) => {
-    const rect = gridRef.current?.getBoundingClientRect()
-    if (!rect) return null
+    const rect = layer.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return null
 
-    const { x: translateX, y: translateY } = getGridTranslate()
-    const mouseX = clientX - rect.left
-    const mouseY = clientY - rect.top
+    const cellW = rect.width / gridSize.width
+    const cellH = rect.height / gridSize.height
+    const relX = clientX - rect.left
+    const relY = clientY - rect.top
+
+    if (mode === 'wire') {
+      return snapToGridCoords(
+        (relX - cellW / 2) / cellW,
+        (relY - cellH / 2) / cellH
+      )
+    }
+
+    if (!snapToGrid) {
+      return { x: relX / cellW, y: relY / cellH }
+    }
 
     return {
-      x: (mouseX - translateX) / zoom,
-      y: (mouseY - translateY) / zoom,
+      x: Math.max(0, Math.min(gridSize.width - 1, Math.floor(relX / cellW))),
+      y: Math.max(0, Math.min(gridSize.height - 1, Math.floor(relY / cellH))),
     }
-  }, [getGridTranslate, zoom])
-
-  const localToGridCoords = useCallback((localX: number, localY: number, mode: 'cell' | 'wire' = 'cell') => {
-    const offset = mode === 'wire' ? cellSizePx / 2 : 0
-    return snapToGridCoords(
-      (localX - offset) / cellSizePx,
-      (localY - offset) / cellSizePx
-    )
-  }, [cellSizePx, snapToGridCoords])
-
-  const screenToGridCoords = useCallback((clientX: number, clientY: number, mode: 'cell' | 'wire' = 'cell') => {
-    const local = screenToLocal(clientX, clientY)
-    if (!local) return null
-    return localToGridCoords(local.x, local.y, mode)
-  }, [screenToLocal, localToGridCoords])
+  }, [gridSize.width, gridSize.height, snapToGridCoords, snapToGrid])
 
   const zoomAtPoint = useCallback((newZoom: number, clientX: number, clientY: number) => {
     const rect = gridRef.current?.getBoundingClientRect()
@@ -492,25 +495,29 @@ export function ProjectGrid({
     updateZoom(newZoom)
   }, [gridOffset, zoom, updateZoom])
   
-  // Virtualization: Calculate visible grid bounds
+  // Virtualization: Calculate visible grid bounds from rendered layer vs viewport
   const visibleBounds = useMemo(() => {
-    if (!gridRef.current) return { startX: 0, endX: 50, startY: 0, endY: 50 }
-    
-    const rect = gridRef.current.getBoundingClientRect()
+    const layer = gridLayerRef.current
+    const container = gridRef.current
+    if (!layer || !container || gridSize.width <= 0 || gridSize.height <= 0) {
+      return { startX: 0, endX: gridSize.width, startY: 0, endY: gridSize.height }
+    }
+
+    const layerRect = layer.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    if (layerRect.width <= 0 || layerRect.height <= 0) {
+      return { startX: 0, endX: gridSize.width, startY: 0, endY: gridSize.height }
+    }
+
+    const cellW = layerRect.width / gridSize.width
+    const cellH = layerRect.height / gridSize.height
     const buffer = 5
-    const translateX = gridOffset.x + GRID_PADDING / zoom
-    const translateY = gridOffset.y + GRID_PADDING / zoom
-    
-    const visibleLeft = -translateX / zoom
-    const visibleTop = -translateY / zoom
-    const visibleRight = (rect.width - translateX) / zoom
-    const visibleBottom = (rect.height - translateY) / zoom
-    
-    const startX = Math.max(0, Math.floor(visibleLeft / cellSizePx) - buffer)
-    const endX = Math.min(gridSize.width, Math.ceil(visibleRight / cellSizePx) + buffer)
-    const startY = Math.max(0, Math.floor(visibleTop / cellSizePx) - buffer)
-    const endY = Math.min(gridSize.height, Math.ceil(visibleBottom / cellSizePx) + buffer)
-    
+
+    const startX = Math.max(0, Math.floor((containerRect.left - layerRect.left) / cellW) - buffer)
+    const endX = Math.min(gridSize.width, Math.ceil((containerRect.right - layerRect.left) / cellW) + buffer)
+    const startY = Math.max(0, Math.floor((containerRect.top - layerRect.top) / cellH) - buffer)
+    const endY = Math.min(gridSize.height, Math.ceil((containerRect.bottom - layerRect.top) / cellH) + buffer)
+
     return { startX, endX, startY, endY }
   }, [gridOffset, zoom, gridSize.width, gridSize.height, cellSizePx])
 
@@ -987,6 +994,7 @@ export function ProjectGrid({
       onHoverStatsChange?.(buildHoverStats(x, y, gridData, wires, componentStates))
     } else {
       setHoveredTile(null)
+      setHoverState(null)
       onHoveredPositionChange?.(null)
       onHoverStatsChange?.(null)
     }
@@ -2061,12 +2069,35 @@ export function ProjectGrid({
     )
   }
 
-  // Memoized collision check
-  const isCollisionPreview = useMemo(() => {
+  // Memoized collision check for placement preview
+  const isPlacementInvalid = useMemo(() => {
     if (!hoverState || !selectedModule || selectedModule.module === 'Group Box') return false
-    return wouldCollide(hoverState.x, hoverState.y, selectedModule.gridX, selectedModule.gridY) ||
-           wouldCollideWithWire(hoverState.x, hoverState.y, selectedModule.gridX, selectedModule.gridY)
-  }, [hoverState, selectedModule, gridData, wires])
+    const { x, y } = hoverState
+    if (
+      x < 0 ||
+      y < 0 ||
+      x + selectedModule.gridX > gridSize.width ||
+      y + selectedModule.gridY > gridSize.height
+    ) {
+      return true
+    }
+    return (
+      wouldCollide(hoverState.x, hoverState.y, selectedModule.gridX, selectedModule.gridY) ||
+      wouldCollideWithWire(hoverState.x, hoverState.y, selectedModule.gridX, selectedModule.gridY)
+    )
+  }, [hoverState, selectedModule, gridData, wires, gridSize.width, gridSize.height])
+
+  const showCursorHover =
+    Boolean(hoveredTile) &&
+    !deleteMode &&
+    !wiringState.isWiring &&
+    !isGroupBoxMode &&
+    !selectedModule
+
+  const showPlacementPreview =
+    Boolean(hoverState && selectedModule) &&
+    !wiringState.isWiring &&
+    selectedModule?.module !== 'Group Box'
 
   // Render wire segment
   const renderWireSegment = (segment: WireSegment, wireId: string) => {
@@ -2235,64 +2266,7 @@ export function ProjectGrid({
 
   const getCellPin = (definition: any, x: number, y: number) => {
     const cell = getCellFromDefinition(definition, x, y)
-    return cell.pin || ''
-  }
-
-  // Calculate resistor color bands based on resistance value
-  const getResistorColorBands = (resistance: number) => {
-    if (!resistance || resistance <= 0) return []
-    
-    // Convert resistance to string to extract digits
-    const resistanceStr = resistance.toString()
-    const digits = resistanceStr.split('').map(Number)
-    
-    // Color code mapping
-    const colorMap: Record<number, string> = {
-      0: '#000000', // Black
-      1: '#8B4513', // Brown
-      2: '#FF0000', // Red
-      3: '#FF8C00', // Orange
-      4: '#FFFF00', // Yellow
-      5: '#00FF00', // Green
-      6: '#0000FF', // Blue
-      7: '#800080', // Violet
-      8: '#808080', // Gray
-      9: '#FFFFFF'  // White
-    }
-    
-    // For resistances like 1000, 2200, etc., we need to handle them differently
-    if (resistance >= 1000) {
-      const value = resistance / 1000
-      const valueStr = value.toString()
-      const valueDigits = valueStr.split('').map(Number)
-      
-      // First two significant digits
-      const band1 = valueDigits[0] || 0
-      const band2 = valueDigits[1] || 0
-      
-      // Multiplier (how many zeros)
-      const multiplier = Math.log10(resistance / (band1 * 10 + band2))
-      const multiplierBand = Math.round(multiplier)
-      
-      return [
-        colorMap[band1],
-        colorMap[band2],
-        colorMap[multiplierBand],
-        '#C0C0C0' // Silver tolerance (5%)
-      ]
-    } else {
-      // For values under 1000
-      const band1 = digits[0] || 0
-      const band2 = digits[1] || 0
-      const multiplier = digits.length - 2
-      
-      return [
-        colorMap[band1],
-        colorMap[band2],
-        colorMap[multiplier],
-        '#C0C0C0' // Silver tolerance (5%)
-      ]
-    }
+    return getDisplayPin(definition.module, cell.pin)
   }
 
   // Parse inline CSS (same as in DynamicModule)
@@ -2301,9 +2275,12 @@ export function ProjectGrid({
     
     const declarations = cssString.split(';').filter(decl => decl.trim())
     
-    declarations.forEach(decl => {
-      const [property, value] = decl.split(':').map(s => s.trim())
-      if (property && value) {
+  declarations.forEach(decl => {
+    const colonIndex = decl.indexOf(':')
+    if (colonIndex === -1) return
+    const property = decl.slice(0, colonIndex).trim()
+    const value = decl.slice(colonIndex + 1).trim()
+    if (property && value) {
         const camelProperty = property.replace(/-([a-z])/g, (g) => g[1].toUpperCase())
         
         switch (camelProperty) {
@@ -2311,14 +2288,7 @@ export function ProjectGrid({
             styles.borderRadius = value
             break
           case 'background':
-            if (value.includes('gradient')) {
-              const colorMatch = value.match(/#[0-9A-Fa-f]{6}/)
-              if (colorMatch) {
-                styles.background = colorMatch[0]
-              }
-            } else {
-              styles.background = value
-            }
+            styles.background = value
             break
           case 'color':
             styles.color = value
@@ -2381,7 +2351,6 @@ const GridCell = React.memo(({
   getCellBackground,
   getCellCSS,
   getCellPin,
-  getResistorColorBands,
   componentStates,
   highlightedMicrocontroller,
   deleteMode,
@@ -2400,7 +2369,6 @@ const GridCell = React.memo(({
   getCellBackground: (definition: any, x: number, y: number) => string
   getCellCSS: (definition: any, x: number, y: number) => React.CSSProperties
   getCellPin: (definition: any, x: number, y: number) => string
-  getResistorColorBands: (resistance: number) => string[]
   componentStates: Map<string, ComponentState>
   highlightedMicrocontroller: string | null
   deleteMode: boolean
@@ -2415,13 +2383,13 @@ const GridCell = React.memo(({
       data-grid-cell
       className={`
         absolute
-        ${occupied 
-          ? 'bg-transparent' 
-          : isHighlighted
+        ${isHighlighted
           ? hasCollision
-            ? 'bg-red-200 dark:bg-red-800/50'
-            : 'bg-green-200 dark:bg-green-800/50'
-          : 'bg-transparent hover:bg-gray-50/50 dark:hover:bg-gray-800/50'
+            ? 'bg-red-400/30 ring-2 ring-inset ring-red-500'
+            : 'bg-green-400/30 ring-2 ring-inset ring-green-500'
+          : occupied
+          ? 'bg-transparent'
+          : 'bg-transparent'
         }
         transition-colors duration-150
       `}
@@ -2430,6 +2398,7 @@ const GridCell = React.memo(({
         top: `${y * 2.5}vw`,
         width: '2.5vw',
         height: '2.5vw',
+        aspectRatio: '1 / 1',
         cursor: occupied && (cell.isClickable || (cell.moduleDefinition?.grid[cell.cellIndex || 0]?.isConnectable)) ? 'pointer' : 'default'
       }}
       onClick={(e) => {
@@ -2527,50 +2496,12 @@ const GridCell = React.memo(({
               </div>
             )}
             
-            {/* Show resistor color bands for resistor components */}
-            {cell.moduleDefinition.module === 'Resistor' && relativeX === 1 && relativeY === 0 && (() => {
-              const resistance = cell.moduleDefinition.properties?.resistance?.default || 1000
-              const colorBands = getResistorColorBands(resistance)
-              
-              return (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="flex gap-0.5">
-                    {colorBands.map((color, index) => (
-                      <div
-                        key={index}
-                        className="w-1 h-3 rounded-sm"
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )
-            })()}
-            
-            {/* Show resistance value for resistor components */}
-            {cell.moduleDefinition.module === 'Resistor' && relativeX === 1 && relativeY === 0 && (() => {
-              const resistance = cell?.resistance || cell.moduleDefinition.properties?.resistance?.default || 1000
-              const displayValue = resistance >= 1000 ? `${resistance / 1000}kΩ` : `${resistance}Ω`
-              
-              return (
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  {/* Color bands */}
-                  <div className="flex space-x-0.5 mb-1">
-                    {getResistorColorBands(resistance).map((color, index) => (
-                      <div
-                        key={index}
-                        className="w-1 h-3 border border-gray-600"
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
-                  </div>
-                  {/* Resistance value */}
-                  <span className="text-white text-xs font-bold bg-black bg-opacity-70 px-1 rounded">
-                    {displayValue}
-                  </span>
-                </div>
-              )
-            })()}
+            {/* SMD resistor: color bands + value on body cell */}
+            {cell.moduleDefinition.module === 'Resistor' && relativeX === 1 && relativeY === 0 && (
+              <ResistorBodyLabel
+                resistance={resolveCellResistance(cell.resistance, cell.moduleDefinition.properties)}
+              />
+            )}
             
             {/* Show Motor RPM indicator and values */}
             {cell.moduleDefinition.module === 'Motor' && relativeX === 3 && relativeY === 2 && (() => {
@@ -2620,28 +2551,22 @@ const GridCell = React.memo(({
               )
             })()}
 
-            {cell.moduleDefinition.module === 'Capacitor' && relativeX === 1 && relativeY === 0 && (() => {
-              const capacitance =
-                cell.capacitance ??
-                getModuleNumericProperty(cell.moduleDefinition.properties, 'capacitance', 0.0001)
-              return (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-[9px] font-bold text-white pointer-events-none leading-tight">
-                  <span>C</span>
-                  <span className="text-[8px] font-normal opacity-90">{formatCapacitance(capacitance)}</span>
-                </div>
-              )
-            })()}
-            {cell.moduleDefinition.module === 'Inductor' && relativeX === 1 && relativeY === 0 && (() => {
-              const inductance =
-                cell.inductance ??
-                getModuleNumericProperty(cell.moduleDefinition.properties, 'inductance', 0.001)
-              return (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-[9px] font-bold text-white pointer-events-none leading-tight">
-                  <span>L</span>
-                  <span className="text-[8px] font-normal opacity-90">{formatInductance(inductance)}</span>
-                </div>
-              )
-            })()}
+            {cell.moduleDefinition.module === 'Capacitor' && relativeX === 1 && relativeY === 0 && (
+              <CapacitorBodyLabel
+                capacitance={
+                  cell.capacitance ??
+                  getModuleNumericProperty(cell.moduleDefinition.properties, 'capacitance', 0.0001)
+                }
+              />
+            )}
+            {cell.moduleDefinition.module === 'Inductor' && relativeX === 1 && relativeY === 0 && (
+              <InductorBodyLabel
+                inductance={
+                  cell.inductance ??
+                  getModuleNumericProperty(cell.moduleDefinition.properties, 'inductance', 0.001)
+                }
+              />
+            )}
 
             {/* Output V / I / P stats (Buzzer, Speaker, Servo, Potentiometer) */}
             {(() => {
@@ -2660,76 +2585,22 @@ const GridCell = React.memo(({
             
             {/* Show LED state indicator */}
             {cell.moduleDefinition.module === 'LED' && relativeX === 1 && relativeY === 0 && (() => {
-              // Get LED state from component states using the correct cell-specific key
               const cellComponentId = `${cell.componentId}-${cell.cellIndex || 0}`
               const ledState = componentStates.get(cellComponentId)
               const isOn = ledState?.isOn || false
-              const forwardVoltage = ledState?.forwardVoltage || cell.moduleDefinition.properties?.forwardVoltage?.default || 2.0
-              const ledColor = cell.moduleDefinition.properties?.color?.default || 'Red'
               const isPWM = ledState?.status === 'pwm'
-              
-              // Calculate LED brightness based on LED state
-              const getLEDColor = (color: string, isOn: boolean) => {
-                if (!isOn) return 'bg-gray-600 border-gray-400'
-                
-                const colorMap: {[key: string]: string} = {
-                  'Red': 'bg-red-400 border-red-500',
-                  'Green': 'bg-green-400 border-green-500', 
-                  'Blue': 'bg-blue-400 border-blue-500',
-                  'Yellow': 'bg-yellow-300 border-yellow-400',
-                  'White': 'bg-white border-gray-200',
-                  'Orange': 'bg-orange-400 border-orange-500'
-                }
-                
-                return colorMap[color] || 'bg-yellow-300 border-yellow-400'
-              }
-              
-              const getLEDBrightness = (isOn: boolean) => {
-                if (!isOn) return 'opacity-30'
-                return 'opacity-100'
-              }
-              
-              const ledClass = getLEDColor(ledColor, isOn)
-              const brightnessClass = getLEDBrightness(isOn)
-              const shouldGlow = isOn
-              const isPWMSignal = isPWM
-              
+              const ledColor = resolveLedColor(
+                cell.moduleDefinition.properties,
+                (cell as { properties?: Record<string, unknown> }).properties
+              )
+
               return (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  
-                  {/* Main LED */}
-                  <div className={`w-6 h-6 rounded-full border-3 ${ledClass} ${brightnessClass} ${
-                    shouldGlow ? (isPWMSignal ? 'animate-ping shadow-lg' : 'animate-pulse shadow-lg') : ''
-                  }`} 
-                    style={{
-                      boxShadow: shouldGlow ? `0 0 15px ${ledColor.toLowerCase()}, 0 0 30px ${ledColor.toLowerCase()}, 0 0 45px ${ledColor.toLowerCase()}` : 'none',
-                      borderWidth: '3px'
-                    }}
-                  />
-                  
-                  {/* PWM indicator */}
-                  {isPWMSignal && (
-                    <div className="absolute -top-2 -right-2 w-3 h-3 bg-purple-500 rounded-full animate-pulse border border-white">
-                      <div className="absolute inset-0 bg-purple-400 rounded-full animate-ping"></div>
-                    </div>
-                  )}
-                  
-                  {/* Voltage and Current indicators */}
-                  {isOn && (
-                    <ComponentStatsBadge
-                      state={ledState ?? null}
-                      compact
-                    />
-                  )}
-                  
-                  {/* Brightness indicator rings */}
-                  {isOn && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className={`w-8 h-8 rounded-full border-2 ${ledClass} opacity-30 animate-ping`} />
-                      <div className={`w-10 h-10 rounded-full border ${ledClass} opacity-20 animate-ping`} style={{ animationDelay: '0.5s' }} />
-                    </div>
-                  )}
-                </div>
+                <LedBodyIndicator
+                  color={ledColor}
+                  isOn={isOn}
+                  isPWM={isPWM}
+                  state={ledState ?? null}
+                />
               )
             })()}
             
@@ -2939,7 +2810,7 @@ const GridCell = React.memo(({
             const x = visibleBounds.startX + colIndex
             const cell = gridData[y]?.[x]
             const isHighlighted = isCellHighlighted(x, y)
-            const hasCollision = isCollisionPreview
+            const hasCollision = isPlacementInvalid
             
             return (
               <GridCell
@@ -2957,7 +2828,6 @@ const GridCell = React.memo(({
                 getCellBackground={getCellBackground}
                 getCellCSS={getCellCSS}
                 getCellPin={getCellPin}
-                getResistorColorBands={getResistorColorBands}
                 componentStates={componentStates}
                 highlightedMicrocontroller={highlightedMicrocontroller}
                 deleteMode={deleteMode}
@@ -2968,20 +2838,67 @@ const GridCell = React.memo(({
         })}
       </div>
 
-      {/* Device Panel */}
-      <DevicePanel
-        gridData={gridData}
-        wires={wires}
-        componentStates={componentStates}
-        projectPrograms={projectPrograms}
-        onMicrocontrollerHighlight={setHighlightedMicrocontroller}
-        onMicrocontrollerClick={(microcontroller) => {
-          console.log('Microcontroller clicked:', microcontroller)
+      {/* Hover highlights — above cells, below wires */}
+      <div
+        className="pointer-events-none absolute inset-0 z-[15]"
+        style={{
+          transform: gridTransform,
+          transformOrigin: 'top left',
+          width: `${gridSize.width * 2.5}vw`,
+          height: `${gridSize.height * 2.5}vw`,
         }}
-        onModalStateChange={setIsModalOpen}
-        onSimulationStateChange={setSimulationState}
-        onWiresChange={setWires}
-      />
+      >
+        {showCursorHover && hoveredTile && (
+          <div
+            data-hover-tile
+            className="absolute border-2 border-green-500 bg-green-400/20 shadow-[inset_0_0_0_1px_rgb(34,197,94,0.35)]"
+            style={{
+              left: `${hoveredTile.x * 2.5}vw`,
+              top: `${hoveredTile.y * 2.5}vw`,
+              width: '2.5vw',
+              height: '2.5vw',
+            }}
+          />
+        )}
+        {showPlacementPreview && hoverState && selectedModule && (
+          <div
+            className={`absolute border-2 ${
+              isPlacementInvalid
+                ? 'border-red-500 bg-red-400/25 shadow-[inset_0_0_0_1px_rgb(239,68,68,0.4)]'
+                : 'border-green-500 bg-green-400/25 shadow-[inset_0_0_0_1px_rgb(34,197,94,0.4)]'
+            }`}
+            style={{
+              left: `${hoverState.x * 2.5}vw`,
+              top: `${hoverState.y * 2.5}vw`,
+              width: `${selectedModule.gridX * 2.5}vw`,
+              height: `${selectedModule.gridY * 2.5}vw`,
+            }}
+          />
+        )}
+      </div>
+
+      {/* Device Panel — portaled into right rail when slot exists */}
+      {(() => {
+        const slot =
+          typeof document !== 'undefined' ? document.getElementById(DEVICE_PANEL_SLOT_ID) : null
+        const panel = (
+          <DevicePanel
+            embedded={Boolean(slot)}
+            gridData={gridData}
+            wires={wires}
+            componentStates={componentStates}
+            projectPrograms={projectPrograms}
+            onMicrocontrollerHighlight={setHighlightedMicrocontroller}
+            onMicrocontrollerClick={(microcontroller) => {
+              console.log('Microcontroller clicked:', microcontroller)
+            }}
+            onModalStateChange={setIsModalOpen}
+            onSimulationStateChange={setSimulationState}
+            onWiresChange={setWires}
+          />
+        )
+        return slot ? createPortal(panel, slot) : panel
+      })()}
 
 
 

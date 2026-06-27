@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Bot,
   ChevronDown,
@@ -8,61 +8,44 @@ import {
   Sparkles,
   X,
 } from 'lucide-react'
-import type { AgentProjectContext } from '../agent/types'
-import type { ProjectFolder } from '../types/workspace'
-import { runAgentTurn } from '../agent/claude/runTurn'
-import { ClaudeApiError, type ClaudeMessage } from '../agent/claude/types'
+import { useAgent } from '../contexts/AgentContext'
 import { useAgentApiKey } from '../hooks/useAgentApiKey'
 import {
   getAgentBackendOfflineHint,
   getAnthropicApiKeySetupHint,
 } from '../services/anthropicEnv'
 
-type RevealPhase = 'hidden' | 'header' | 'expanded'
+export function AgentPanel({
+  embedded = false,
+  onHeaderToggle,
+  className = '',
+}: {
+  embedded?: boolean
+  onHeaderToggle?: () => void
+  className?: string
+}) {
+  const {
+    revealPhase,
+    isExpanded,
+    toggleExpanded,
+    ensureExpanded,
+    chat,
+    isLoading,
+    isStreaming,
+    streamingMessageId,
+    statusHint,
+    error,
+    setError,
+    sendMessage,
+    projectContext,
+  } = useAgent()
 
-export interface AgentPanelProps {
-  projectContext?: AgentProjectContext | null
-  onProjectUpdate?: (folder: ProjectFolder) => void
-}
-
-interface ChatEntry {
-  id: string
-  role: 'user' | 'assistant' | 'error'
-  text: string
-}
-
-function makeId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-}
-
-export function AgentPanel({ projectContext = null, onProjectUpdate }: AgentPanelProps) {
-  const [revealPhase, setRevealPhase] = useState<RevealPhase>('hidden')
-  const [isExpanded, setIsExpanded] = useState(false)
   const [input, setInput] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [chat, setChat] = useState<ChatEntry[]>([])
-  const [error, setError] = useState<string | null>(null)
-
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
-  const claudeHistoryRef = useRef<ClaudeMessage[]>([])
 
   const { hasApiKey, model, loading: statusLoading, backendOnline } = useAgentApiKey()
   const agentReady = backendOnline && hasApiKey
-
-  useEffect(() => {
-    const headerTimer = window.setTimeout(() => setRevealPhase('header'), 80)
-    const expandTimer = window.setTimeout(() => {
-      setRevealPhase('expanded')
-      setIsExpanded(true)
-    }, 520)
-
-    return () => {
-      window.clearTimeout(headerTimer)
-      window.clearTimeout(expandTimer)
-    }
-  }, [])
 
   useEffect(() => {
     if (revealPhase === 'expanded' && isExpanded && agentReady) {
@@ -74,80 +57,25 @@ export function AgentPanel({ projectContext = null, onProjectUpdate }: AgentPane
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chat, isLoading])
 
-  useEffect(() => {
-    return () => abortRef.current?.abort()
-  }, [])
-
-  const toggleExpanded = useCallback(() => {
-    setIsExpanded((v) => !v)
-    if (revealPhase !== 'expanded') setRevealPhase('expanded')
-  }, [revealPhase])
-
-  const handleSend = useCallback(async () => {
+  const handleSend = async () => {
     const text = input.trim()
     if (!text || isLoading) return
 
     if (!backendOnline) {
       setError(getAgentBackendOfflineHint())
-      setRevealPhase('expanded')
-      setIsExpanded(true)
+      ensureExpanded()
       return
     }
 
     if (!hasApiKey) {
       setError(getAnthropicApiKeySetupHint())
-      setRevealPhase('expanded')
-      setIsExpanded(true)
+      ensureExpanded()
       return
     }
 
-    setError(null)
     setInput('')
-    setChat((prev) => [...prev, { id: makeId(), role: 'user', text }])
-    setIsLoading(true)
-
-    const controller = new AbortController()
-    abortRef.current = controller
-
-    try {
-      const result = await runAgentTurn({
-        history: claudeHistoryRef.current,
-        userMessage: text,
-        projectContext,
-        signal: controller.signal,
-      })
-
-      claudeHistoryRef.current = result.messages
-
-      if (result.updatedContext?.folder && onProjectUpdate) {
-        onProjectUpdate(result.updatedContext.folder)
-      }
-
-      setChat((prev) => [
-        ...prev,
-        {
-          id: makeId(),
-          role: 'assistant',
-          text: result.assistantText || '(No response)',
-        },
-      ])
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return
-
-      const message =
-        err instanceof ClaudeApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Something went wrong'
-
-      setChat((prev) => [...prev, { id: makeId(), role: 'error', text: message }])
-      setError(message)
-    } finally {
-      setIsLoading(false)
-      abortRef.current = null
-    }
-  }, [backendOnline, hasApiKey, input, isLoading, onProjectUpdate, projectContext])
+    await sendMessage(text)
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -159,6 +87,11 @@ export function AgentPanel({ projectContext = null, onProjectUpdate }: AgentPane
   const showBody = revealPhase === 'expanded' && isExpanded
   const headerVisible = revealPhase !== 'hidden'
 
+  const handleHeaderToggle = () => {
+    if (onHeaderToggle) onHeaderToggle()
+    else toggleExpanded()
+  }
+
   const statusLabel = statusLoading
     ? 'Claude · connecting…'
     : !backendOnline
@@ -169,20 +102,20 @@ export function AgentPanel({ projectContext = null, onProjectUpdate }: AgentPane
 
   return (
     <aside
-      className={`agent-panel flex h-full min-h-0 w-full flex-col p-4 ${
-        headerVisible ? 'agent-panel--visible' : ''
-      }`}
+      className={`agent-panel flex min-h-0 w-full flex-col ${
+        embedded ? 'h-full flex-1 p-0' : 'h-full p-4'
+      } ${headerVisible ? 'agent-panel--visible' : ''} ${className}`}
       aria-label="Carbon Agent"
     >
-      <div className="carbon-card flex min-h-0 flex-1 flex-col overflow-hidden border-primary-400/15 shadow-xl shadow-black/40">
+      <div className={`carbon-card flex min-h-0 flex-col overflow-hidden border-primary-400/15 shadow-xl shadow-black/40 dark:bg-dark-card ${embedded && showBody ? 'h-full flex-1' : embedded ? '' : 'flex-1'}`}>
         <div
           role="button"
           tabIndex={0}
-          onClick={toggleExpanded}
+          onClick={handleHeaderToggle}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
-              toggleExpanded()
+              handleHeaderToggle()
             }
           }}
           className="flex w-full shrink-0 cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.03]"
@@ -246,14 +179,17 @@ export function AgentPanel({ projectContext = null, onProjectUpdate }: AgentPane
                         : 'mr-6 bg-carbon-elevated text-zinc-300'
                   }`}
                 >
-                  {entry.text}
+                  <span className="whitespace-pre-wrap break-words">{entry.text}</span>
+                  {entry.id === streamingMessageId && isStreaming && (
+                    <span className="agent-stream-cursor ml-0.5 inline-block text-primary-400" />
+                  )}
                 </div>
               ))}
 
-              {isLoading && (
+              {isLoading && !isStreaming && (
                 <div className="mr-6 flex items-center gap-2 rounded-lg bg-carbon-elevated px-3 py-2 text-sm text-zinc-400">
                   <Loader2 className="h-4 w-4 animate-spin text-primary-400" />
-                  Thinking…
+                  {statusHint ?? 'Thinking…'}
                 </div>
               )}
 
@@ -284,9 +220,7 @@ export function AgentPanel({ projectContext = null, onProjectUpdate }: AgentPane
                   rows={2}
                   disabled={isLoading || !agentReady}
                   placeholder={
-                    agentReady
-                      ? 'Message Carbon Agent…'
-                      : 'Waiting for agent backend…'
+                    agentReady ? 'Message Carbon Agent…' : 'Waiting for agent backend…'
                   }
                   className="input-field min-h-[2.75rem] flex-1 resize-none rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
                 />

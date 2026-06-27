@@ -176,6 +176,49 @@ export interface ProjectRequirements {
   custom?: Record<string, unknown>
 }
 
+export type ProductSuiteQuestionKind = 'choice' | 'text'
+
+export interface ProductSuiteQuestion {
+  id: string
+  prompt: string
+  kind: ProductSuiteQuestionKind
+  options?: string[]
+  /** When true, an "I don't know" option is always shown for choice questions */
+  technical?: boolean
+  suggestedAnswer?: string
+  category?: string
+}
+
+export type ProductSuitePhase = 'blank' | 'questions'
+
+export interface ProductSuiteSession {
+  id: string
+  phase: ProductSuitePhase
+  idea: string
+  prefill: Record<string, string>
+  questions: ProductSuiteQuestion[]
+  createdAt: string
+}
+
+export interface ProductDefinitionAnswer {
+  questionId: string
+  prompt: string
+  answer: string
+  category?: string
+}
+
+export interface ProductDefinition {
+  id: string
+  idea: string
+  summary: string
+  answers: ProductDefinitionAnswer[]
+  metadata: {
+    createdAt: string
+    updatedAt: string
+    completedAt?: string
+  }
+}
+
 export interface BOMLineItem {
   id: string
   description: string
@@ -257,6 +300,8 @@ export interface ProjectFolder {
   programs: Program[]
   planSpace: PlanSpace
   requirements?: ProjectRequirements
+  productDefinition?: ProductDefinition
+  productSuiteSession?: ProductSuiteSession
   bom?: BOM
   assembly?: AssemblyGuide
   metadata: {

@@ -110,7 +110,7 @@ export const componentCalculators = {
   led: (component: any, inputVoltage: number, inputCurrent: number) => {
     const forwardVoltage = component.forwardVoltage || component.properties?.forwardVoltage || component.voltage || component.properties?.voltage || 2.0
     const outputVoltage = Math.max(0, inputVoltage - forwardVoltage)
-    const isOn = inputVoltage >= forwardVoltage && inputCurrent > 0
+    const isOn = inputVoltage > 0.01 && inputVoltage >= forwardVoltage && inputCurrent > 1e-6
     
     // LED power is forward voltage × current (this is the power the LED consumes)
     const ledPower = forwardVoltage * inputCurrent
@@ -1590,7 +1590,7 @@ export function calculateSystematicVoltageFlow(
                 outputCurrent: result.outputCurrent,
                 power: result.power,
                 status: result.status,
-                isPowered: result.outputVoltage > 0,
+                isPowered: (result as any).isOn ?? false,
                 isOn: (result as any).isOn,
                 forwardVoltage: (result as any).forwardVoltage
               })

@@ -1,39 +1,50 @@
 {
   "module": "Inductor",
-  "description": "Fixed inductor — low impedance at DC (short for steady state)",
+  "description": "SMD inductor — low impedance at DC (short for steady state)",
   "category": "passives",
   "gridX": 3,
   "gridY": 1,
-  "background": "#422006",
-  "css": "border-radius: 8px; border: 2px solid #B45309;",
+  "background": "#141414",
+  "css": "border-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.35);",
   "grid": [
     {
       "x": 0,
       "y": 0,
+      "background": "#141414",
+      "css": "border-radius: 2px 0 0 2px; border: 1px solid #333; border-right: none; background: linear-gradient(90deg, #c0c0c0 0%, #c0c0c0 50%, #141414 50%, #141414 100%);",
+      "pin": "",
       "type": "LEAD",
-      "pin": "1",
       "isConnectable": true,
       "isPowerable": true,
       "isGroundable": true,
-      "css": "border-radius: 8px 0 0 8px; background: #94A3B8; border: 2px solid #64748B; border-right: none;"
+      "inductance": 0.001,
+      "isClickable": false
     },
     {
       "x": 1,
       "y": 0,
+      "background": "#141414",
+      "css": "border-radius: 0; border: 1px solid #333; border-left: none; border-right: none; background: linear-gradient(180deg, #222 0%, #141414 28%, #141414 100%); cursor: pointer;",
+      "pin": "",
       "type": "BODY",
-      "pin": "L",
       "isConnectable": false,
-      "css": "background: linear-gradient(180deg, #D97706 0%, #92400E 100%); border: 2px solid #B45309; border-left: none; border-right: none; color: white; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+      "isPowerable": false,
+      "isGroundable": false,
+      "inductance": 0.001,
+      "isClickable": true
     },
     {
       "x": 2,
       "y": 0,
+      "background": "#141414",
+      "css": "border-radius: 0 2px 2px 0; border: 1px solid #333; border-left: none; background: linear-gradient(90deg, #141414 0%, #141414 50%, #c0c0c0 50%, #c0c0c0 100%);",
+      "pin": "",
       "type": "LEAD",
-      "pin": "2",
       "isConnectable": true,
       "isPowerable": true,
       "isGroundable": true,
-      "css": "border-radius: 0 8px 8px 0; background: #94A3B8; border: 2px solid #64748B; border-left: none;"
+      "inductance": 0.001,
+      "isClickable": false
     }
   ],
   "properties": {

@@ -52,6 +52,14 @@ export function placeModule(
     const pinName = cell.pin || cell.type
     if (cell.isConnectable) {
       pinMap.set(pinName, { x, y })
+      if (moduleName === 'LED') {
+        if (cell.type === 'LED_POSITIVE' || cell.pin === '+') pinMap.set('+', { x, y })
+        if (cell.type === 'LED_NEGATIVE' || cell.pin === '-') pinMap.set('-', { x, y })
+      }
+      if (moduleName === 'Capacitor') {
+        if (cell.x === 0) pinMap.set('1', { x, y })
+        if (cell.x === 2) pinMap.set('2', { x, y })
+      }
     }
 
     const entry: OccupiedComponent = {

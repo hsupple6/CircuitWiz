@@ -1249,7 +1249,7 @@ app.post('/api/agent/messages', async (req, res) => {
     });
   }
 
-  const { messages, system, tools, max_tokens: maxTokens } = req.body;
+  const { messages, system, tools, max_tokens: maxTokens, stream } = req.body;
 
   if (!Array.isArray(messages) || typeof system !== 'string') {
     return res.status(400).json({
@@ -1266,6 +1266,7 @@ app.post('/api/agent/messages', async (req, res) => {
     max_tokens: maxTokens ?? 4096,
     system,
     messages,
+    stream: Boolean(stream),
   };
 
   if (Array.isArray(tools) && tools.length > 0) {
@@ -1282,6 +1283,34 @@ app.post('/api/agent/messages', async (req, res) => {
       },
       body: JSON.stringify(body),
     });
+
+    if (body.stream) {
+      if (!response.ok) {
+        const errText = await response.text();
+        res.status(response.status);
+        res.setHeader('Content-Type', response.headers.get('content-type') || 'application/json');
+        res.send(errText);
+        return;
+      }
+
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders?.();
+
+      const reader = response.body.getReader();
+      req.on('close', () => {
+        reader.cancel().catch(() => {});
+      });
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+      res.end();
+      return;
+    }
 
     const payload = await response.json();
     res.status(response.status).json(payload);

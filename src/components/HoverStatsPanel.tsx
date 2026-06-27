@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import {
   Activity,
   Battery,
   Cable,
+  ChevronLeft,
   CircleDot,
   Cpu,
   Gauge,
@@ -86,8 +88,46 @@ function DetailRow({ row }: { row: HoverStatRow }) {
 }
 
 export function HoverStatsPanel({ stats }: HoverStatsPanelProps) {
+  const [expanded, setExpanded] = useState(false)
   const Icon = stats ? pickIcon(stats) : Activity
   const visible = stats !== null
+
+  if (!expanded) {
+    return (
+      <aside
+        className="relative flex w-11 shrink-0 flex-col border-l border-white/[0.06] bg-carbon-card/95 backdrop-blur-md"
+        aria-label="Live circuit stats"
+      >
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="flex h-full min-h-0 flex-col items-center gap-3 px-2 py-4 text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-primary-300"
+          title="Open Live Stats"
+        >
+          <Activity className="h-5 w-5 shrink-0" />
+          <span
+            className="text-[10px] font-semibold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180"
+          >
+            Live Stats
+          </span>
+          {stats?.status && (
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ring-2 ring-carbon-card ${
+                stats.status.tone === 'active'
+                  ? 'bg-emerald-400'
+                  : stats.status.tone === 'warn'
+                    ? 'bg-orange-400'
+                    : stats.status.tone === 'error'
+                      ? 'bg-red-400'
+                      : 'bg-zinc-500'
+              }`}
+              title={stats.status.label}
+            />
+          )}
+        </button>
+      </aside>
+    )
+  }
 
   return (
     <aside
@@ -97,6 +137,14 @@ export function HoverStatsPanel({ stats }: HoverStatsPanelProps) {
       <div className="pointer-events-none absolute -left-20 top-1/4 h-40 w-40 rounded-full carbon-orb-sm opacity-40" aria-hidden />
 
       <div className="relative flex items-center gap-3 border-b border-white/[0.06] px-5 py-4">
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/[0.06] hover:text-zinc-300"
+          title="Retract Live Stats"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
         <div
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-300 ${
             visible

@@ -1,5 +1,11 @@
 import React from 'react'
 import { ModuleDefinition } from '../modules/types'
+import { InductorBodyLabel } from './InductorBodyLabel'
+import { CapacitorBodyLabel } from './CapacitorBodyLabel'
+import { ResistorBodyLabel } from './ResistorBodyLabel'
+import { LedBodyIndicator, resolveLedColor } from './LedBodyIndicator'
+import { getDisplayPin } from '../utils/smdVisual'
+import { resolveCellResistance } from '../utils/resistorVisual'
 
 interface DynamicModuleProps {
   definition: ModuleDefinition
@@ -50,9 +56,9 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
             `}
           >
             {/* Pin Label */}
-            {cell.pin && (
+            {getDisplayPin(definition.module, cell.pin) && (
               <span className="text-white font-bold text-xs leading-none">
-                {cell.pin}
+                {getDisplayPin(definition.module, cell.pin)}
               </span>
             )}
             
@@ -66,6 +72,44 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
               <div className="absolute top-0.5 left-1 text-[8px] font-semibold text-indigo-600 bg-white/70 px-1 rounded">
                 Region
               </div>
+            )}
+            
+            {/* SMD resistor label on body */}
+            {definition.module === 'Resistor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
+              <ResistorBodyLabel
+                compact
+                resistance={resolveCellResistance(
+                  (cell as { resistance?: number }).resistance
+                )}
+              />
+            )}
+            
+            {/* SMD capacitor label on body */}
+            {definition.module === 'Capacitor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
+              <CapacitorBodyLabel
+                compact
+                capacitance={(cell as { capacitance?: number }).capacitance ?? 0.0001}
+              />
+            )}
+            
+            {/* SMD inductor label on body */}
+            {definition.module === 'Inductor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
+              <InductorBodyLabel
+                compact
+                inductance={(cell as { inductance?: number }).inductance ?? 0.001}
+              />
+            )}
+            
+            {/* SMD LED indicator on body */}
+            {definition.module === 'LED' && cell.type === 'LED_BODY' && cell.x === 1 && cell.y === 0 && (
+              <LedBodyIndicator
+                compact
+                color={resolveLedColor(
+                  definition.properties as Record<string, unknown> | undefined,
+                  cell.properties
+                )}
+                isOn={false}
+              />
             )}
             
             {/* Motor label (for preview) */}
@@ -98,7 +142,10 @@ function parseInlineCSS(cssString: string): React.CSSProperties {
   const declarations = cssString.split(';').filter(decl => decl.trim())
   
   declarations.forEach(decl => {
-    const [property, value] = decl.split(':').map(s => s.trim())
+    const colonIndex = decl.indexOf(':')
+    if (colonIndex === -1) return
+    const property = decl.slice(0, colonIndex).trim()
+    const value = decl.slice(colonIndex + 1).trim()
     if (property && value) {
       const camelProperty = property.replace(/-([a-z])/g, (g) => g[1].toUpperCase())
       
@@ -108,15 +155,7 @@ function parseInlineCSS(cssString: string): React.CSSProperties {
           styles.borderRadius = value
           break
         case 'background':
-          if (value.includes('gradient')) {
-            // For gradients, we'll use a fallback color
-            const colorMatch = value.match(/#[0-9A-Fa-f]{6}/)
-            if (colorMatch) {
-              styles.background = colorMatch[0]
-            }
-          } else {
-            styles.background = value
-          }
+          styles.background = value
           break
         case 'color':
           styles.color = value

@@ -1,6 +1,6 @@
 import { executeAgentTool } from '../registry'
-import type { AgentProjectContext } from '../types'
-import { sendClaudeMessage } from './client'
+import type { AgentProjectContext, AgentUiAction } from '../types'
+import { streamClaudeMessage } from './client'
 import { getAnthropicToolDefinitions } from './convertTools'
 import { AGENT_SYSTEM_PROMPT } from './systemPrompt'
 import type { ClaudeContentBlock, ClaudeMessage } from './types'
@@ -12,6 +12,7 @@ export interface AgentTurnResult {
   assistantText: string
   toolCallsExecuted: number
   updatedContext?: AgentProjectContext
+  uiActions?: AgentUiAction[]
 }
 
 function extractText(blocks: ClaudeContentBlock[]): string {
@@ -33,8 +34,10 @@ export async function runAgentTurn(params: {
   userMessage: string
   projectContext: AgentProjectContext | null
   signal?: AbortSignal
+  onTextDelta?: (text: string) => void
+  onToolUseStart?: (toolName: string) => void
 }): Promise<AgentTurnResult> {
-  const { history, userMessage, signal } = params
+  const { history, userMessage, signal, onTextDelta, onToolUseStart } = params
   let { projectContext } = params
 
   const toolsEnabled = Boolean(projectContext)
@@ -47,13 +50,16 @@ export async function runAgentTurn(params: {
 
   let toolCallsExecuted = 0
   let assistantText = ''
+  const uiActions: AgentUiAction[] = []
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const response = await sendClaudeMessage({
+    const response = await streamClaudeMessage({
       messages: conversation,
       system: AGENT_SYSTEM_PROMPT,
       tools,
       signal,
+      onTextDelta,
+      onToolUseStart,
     })
 
     conversation.push({ role: 'assistant', content: response.content })
@@ -88,6 +94,9 @@ export async function runAgentTurn(params: {
           folder: result.folder,
         }
       }
+      if (result.uiAction) {
+        uiActions.push(result.uiAction)
+      }
 
       toolResults.push({
         type: 'tool_result',
@@ -109,5 +118,6 @@ export async function runAgentTurn(params: {
     assistantText: assistantText.trim(),
     toolCallsExecuted,
     updatedContext: projectContext ?? undefined,
+    uiActions: uiActions.length > 0 ? uiActions : undefined,
   }
 }

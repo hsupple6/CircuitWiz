@@ -40,12 +40,16 @@ export interface AgentProjectContext {
 /** @deprecated Use AgentProjectContext */
 export type AgentPlanSpaceContext = AgentProjectContext
 
+export type AgentUiAction =
+  | { type: 'open_product_suite' }
+
 export interface AgentToolResult {
   success: boolean
   message: string
   folder?: ProjectFolder
   planSpace?: PlanSpace
   data?: unknown
+  uiAction?: AgentUiAction
 }
 
 export type AgentToolHandler<TArgs = Record<string, unknown>> = (
@@ -81,7 +85,7 @@ export const PIPELINE_STAGES: PipelineStage[] = [
 
 /** Suggested tool categories per pipeline stage for orchestrators */
 export const PIPELINE_STAGE_TOOL_CATEGORIES: Record<PipelineStage, string[]> = {
-  elicitation: ['requirements', 'document', 'plan_space', 'project'],
+  elicitation: ['requirements', 'product', 'document', 'plan_space', 'project'],
   system_design: ['plan_space', 'document', 'catalog', 'project'],
   schematic: ['schematic', 'catalog', 'validation', 'project'],
   code_architecture: ['firmware', 'schematic', 'document', 'validation', 'project'],

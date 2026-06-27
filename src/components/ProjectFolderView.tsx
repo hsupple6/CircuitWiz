@@ -8,8 +8,10 @@ import {
   Code,
   Check,
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { ProjectFolder } from '../types/workspace'
 import { ProjectPreview } from './ProjectPreview'
+import { ProductDefinitionCard, ProductDefinitionModal } from './ProductDefinitionView'
 
 interface ProjectFolderViewProps {
   folder: ProjectFolder
@@ -23,6 +25,8 @@ interface ProjectFolderViewProps {
   onDeleteSchematic: (schematicId: string) => void
   onDeleteDocument: (documentId: string) => void
   onDeleteProgram: (programId: string) => void
+  onNameChange?: (name: string) => void
+  onDescriptionChange?: (description: string) => void
 }
 
 export function ProjectFolderView({
@@ -37,7 +41,18 @@ export function ProjectFolderView({
   onDeleteSchematic,
   onDeleteDocument,
   onDeleteProgram,
+  onNameChange,
+  onDescriptionChange,
 }: ProjectFolderViewProps) {
+  const [localName, setLocalName] = useState(folder.name)
+  const [localDescription, setLocalDescription] = useState(folder.description ?? '')
+  const [productDefOpen, setProductDefOpen] = useState(false)
+
+  useEffect(() => {
+    setLocalName(folder.name)
+    setLocalDescription(folder.description ?? '')
+  }, [folder.name, folder.description])
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     const now = new Date()
@@ -52,15 +67,40 @@ export function ProjectFolderView({
     <div className="py-8">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-dark-text-primary">
-            {folder.name}
-          </h1>
-          {folder.description && (
-            <p className="mt-2 text-gray-600 dark:text-dark-text-secondary">
-              {folder.description}
-            </p>
+          <input
+            type="text"
+            value={localName}
+            onChange={(e) => {
+              setLocalName(e.target.value)
+              onNameChange?.(e.target.value)
+            }}
+            className="w-full bg-transparent text-3xl font-bold text-gray-900 outline-none placeholder-gray-400 dark:text-dark-text-primary dark:placeholder-dark-text-muted"
+            placeholder="Project name"
+          />
+          <textarea
+            value={localDescription}
+            onChange={(e) => {
+              setLocalDescription(e.target.value)
+              onDescriptionChange?.(e.target.value)
+            }}
+            rows={2}
+            className="mt-2 w-full resize-none bg-transparent text-gray-600 outline-none placeholder-gray-400 dark:text-dark-text-secondary dark:placeholder-dark-text-muted"
+            placeholder="Add a project description…"
+          />
+          {folder.productDefinition && (
+            <ProductDefinitionCard
+              definition={folder.productDefinition}
+              onOpen={() => setProductDefOpen(true)}
+            />
           )}
         </div>
+
+        {productDefOpen && folder.productDefinition && (
+          <ProductDefinitionModal
+            definition={folder.productDefinition}
+            onClose={() => setProductDefOpen(false)}
+          />
+        )}
 
         {/* Plan Space — always present */}
         <section className="mb-10">

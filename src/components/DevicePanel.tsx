@@ -55,10 +55,11 @@ interface DevicePanelProps {
   onModalStateChange?: (isOpen: boolean) => void
   onSimulationStateChange?: (state: SimulationState) => void
   onWiresChange?: (wires: WireConnection[]) => void
+  embedded?: boolean
 }
 
-export function DevicePanel({ gridData, wires, componentStates, projectPrograms, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange, onWiresChange }: DevicePanelProps) {
-  const [isExpanded, setIsExpanded] = useState(true)
+export function DevicePanel({ gridData, wires, componentStates, projectPrograms, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange, onWiresChange, embedded = false }: DevicePanelProps) {
+  const [isExpanded, setIsExpanded] = useState(!embedded)
   const [activeTab, setActiveTab] = useState<'microcontrollers' | 'wires' | 'simulation'>('microcontrollers')
   const [expandedMicrocontroller, setExpandedMicrocontroller] = useState<string | null>(null)
   const [showCodingModal, setShowCodingModal] = useState(false)
@@ -938,21 +939,31 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
   return (
     <>
       {/* Main Panel */}
-      <div className="absolute top-4 left-4 bg-white dark:bg-dark-surface rounded-lg shadow-lg border border-gray-200 dark:border-dark-border z-50 min-w-[300px] max-w-[400px]">
+      <div
+        className={
+          embedded
+            ? 'flex w-full flex-col overflow-hidden bg-carbon-card/80 dark:bg-dark-surface'
+            : 'absolute top-4 left-4 bg-white dark:bg-dark-surface rounded-lg shadow-lg border border-gray-200 dark:border-dark-border z-50 min-w-[300px] max-w-[400px]'
+        }
+      >
         {/* Header */}
-        <div 
-          className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-card transition-colors"
+        <div
+          className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-white/[0.03] dark:hover:bg-dark-card transition-colors shrink-0"
           onClick={() => setIsExpanded(!isExpanded)}
         >
           <div className="flex items-center gap-2">
             <Cpu className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            <span className="font-medium text-gray-900 dark:text-dark-text-primary">Device Panel</span>
+            <span className="font-medium text-sm text-gray-900 dark:text-dark-text-primary">Device Panel</span>
           </div>
           {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </div>
 
         {isExpanded && (
-          <div className="border-t border-gray-200 dark:border-dark-border">
+          <div
+            className={`border-t border-gray-200 dark:border-dark-border overflow-y-auto ${
+              embedded ? 'max-h-[min(40vh,320px)]' : ''
+            }`}
+          >
             {/* Global MCU Stats and Run All Button */}
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border-b border-gray-200 dark:border-dark-border">
               {/* Run All Button - Show when multiple MCUs have compiled code */}

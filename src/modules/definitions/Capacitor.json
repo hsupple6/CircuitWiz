@@ -1,39 +1,43 @@
 {
   "module": "Capacitor",
-  "description": "Ceramic capacitor — open at DC, blocks steady current",
+  "description": "SMD ceramic capacitor — open at DC, blocks steady current",
   "category": "passives",
   "gridX": 3,
   "gridY": 1,
-  "background": "#1E3A5F",
-  "css": "border-radius: 8px; border: 2px solid #2563EB;",
+  "background": "#141414",
+  "css": "border-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.35);",
   "grid": [
     {
       "x": 0,
       "y": 0,
+      "background": "#141414",
       "type": "LEAD",
       "pin": "1",
       "isConnectable": true,
       "isPowerable": true,
       "isGroundable": true,
-      "css": "border-radius: 8px 0 0 8px; background: #94A3B8; border: 2px solid #64748B; border-right: none;"
+      "css": "border-radius: 2px 0 0 2px; border: 1px solid #dcdcdc; border-right: none; background: #141414;"
     },
     {
       "x": 1,
       "y": 0,
+      "background": "#141414",
       "type": "BODY",
-      "pin": "C",
+      "pin": "",
       "isConnectable": false,
-      "css": "background: linear-gradient(180deg, #3B82F6 0%, #1D4ED8 100%); border: 2px solid #1E40AF; border-left: none; border-right: none; color: white; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+      "isClickable": true,
+      "css": "border-radius: 0; border-top: 1px solid #dcdcdc; border-bottom: 1px solid #dcdcdc; border-left: none; border-right: none; background: #141414; cursor: pointer;"
     },
     {
       "x": 2,
       "y": 0,
+      "background": "#141414",
       "type": "LEAD",
       "pin": "2",
       "isConnectable": true,
       "isPowerable": true,
       "isGroundable": true,
-      "css": "border-radius: 0 8px 8px 0; background: #94A3B8; border: 2px solid #64748B; border-left: none;"
+      "css": "border-radius: 0 2px 2px 0; border: 1px solid #dcdcdc; border-left: none; background: #141414;"
     }
   ],
   "properties": {

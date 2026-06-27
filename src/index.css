@@ -107,13 +107,7 @@
   }
 
   .agent-slot {
-    max-height: min(40vh, 22rem);
-  }
-
-  @media (min-width: 1024px) {
-    .agent-slot {
-      max-height: none;
-    }
+    height: 100%;
   }
 
   .agent-panel-body {
@@ -129,6 +123,148 @@
   .agent-panel-body-inner {
     overflow: hidden;
     min-height: 0;
+  }
+
+  .agent-stream-cursor::after {
+    content: '▋';
+    animation: agentCursorBlink 1s step-end infinite;
+  }
+
+  @keyframes agentCursorBlink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+
+  .carbon-weave-loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.25rem;
+    padding: 2rem;
+  }
+
+  .carbon-weave-svg {
+    overflow: visible;
+  }
+
+  .carbon-weave-fiber {
+    stroke: rgb(var(--accent-glow) / 0.85);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    opacity: 0;
+  }
+
+  .carbon-weave-fiber-h {
+    stroke-dasharray: 120;
+    animation: carbonWeaveH 2.8s ease-in-out infinite;
+    animation-delay: calc(var(--fiber-i) * 0.07s);
+  }
+
+  .carbon-weave-fiber-v {
+    stroke-dasharray: 120;
+    animation: carbonWeaveV 2.8s ease-in-out infinite;
+    animation-delay: calc(var(--fiber-i) * 0.07s + 0.04s);
+  }
+
+  .carbon-weave-core {
+    fill: rgb(var(--accent-glow) / 0.08);
+    stroke: rgb(var(--accent-glow) / 0.45);
+    stroke-width: 1;
+    opacity: 0;
+    transform-origin: center;
+    animation: carbonWeaveCore 2.8s ease-in-out infinite;
+  }
+
+  .carbon-weave-label {
+    font-size: 0.875rem;
+    color: rgb(161 161 170);
+    letter-spacing: 0.02em;
+  }
+
+  @keyframes carbonWeaveH {
+    0% {
+      opacity: 0;
+      stroke-dashoffset: 120;
+      transform: scaleX(0.3);
+    }
+    22% {
+      opacity: 1;
+      stroke-dashoffset: 0;
+      transform: scaleX(1);
+    }
+    45% {
+      opacity: 1;
+      stroke-dashoffset: 0;
+      transform: scaleX(1);
+    }
+    70% {
+      opacity: 0.6;
+      stroke-dashoffset: -60;
+      transform: scaleX(1.35);
+    }
+    100% {
+      opacity: 0;
+      stroke-dashoffset: -120;
+      transform: scaleX(0.3);
+    }
+  }
+
+  @keyframes carbonWeaveV {
+    0% {
+      opacity: 0;
+      stroke-dashoffset: -120;
+      transform: scaleY(0.3);
+    }
+    22% {
+      opacity: 1;
+      stroke-dashoffset: 0;
+      transform: scaleY(1);
+    }
+    45% {
+      opacity: 1;
+      stroke-dashoffset: 0;
+      transform: scaleY(1);
+    }
+    70% {
+      opacity: 0.6;
+      stroke-dashoffset: 60;
+      transform: scaleY(1.35);
+    }
+    100% {
+      opacity: 0;
+      stroke-dashoffset: 120;
+      transform: scaleY(0.3);
+    }
+  }
+
+  @keyframes carbonWeaveCore {
+    0%,
+    18% {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    35% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.9;
+      transform: scale(1.02);
+    }
+    72% {
+      opacity: 0;
+      transform: scale(1.5);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(0.4);
+    }
   }
   
   .drag-handle {
