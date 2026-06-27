@@ -73,3 +73,4 @@ export function VerticalSplitPane({
 }
 
 export const DEVICE_PANEL_SLOT_ID = 'device-panel-slot'
+export const POWER_PANEL_SLOT_ID = 'power-panel-slot'

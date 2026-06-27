@@ -33,6 +33,7 @@ import { PlanSpaceEditor } from './components/PlanSpaceEditor'
 import { ResistanceSelector } from './components/ResistanceSelector'
 import { CapacitanceSelector } from './components/CapacitanceSelector'
 import { InductanceSelector } from './components/InductanceSelector'
+import { BatterySelector } from './components/BatterySelector'
 import { HoverStatsPanel } from './components/HoverStatsPanel'
 import { ResizableSidebar } from './components/ResizableSidebar'
 import type { HoverStats } from './utils/hoverStats'
@@ -139,10 +140,14 @@ function AppContent() {
   const [searchQuery, setSearchQuery] = useState('')
 
   const [selectedModule, setSelectedModule] = useState<ModuleDefinition | null>(null)
-  const [passiveValueSelector, setPassiveValueSelector] = useState<'resistor' | 'capacitor' | 'inductor' | null>(null)
+  const [passiveValueSelector, setPassiveValueSelector] = useState<
+    'resistor' | 'capacitor' | 'inductor' | 'battery' | null
+  >(null)
   const [selectedResistance, setSelectedResistance] = useState(1000)
   const [selectedCapacitance, setSelectedCapacitance] = useState(0.0001)
   const [selectedInductance, setSelectedInductance] = useState(0.001)
+  const [selectedBatteryVoltage, setSelectedBatteryVoltage] = useState(3.7)
+  const [selectedBatteryCapacity, setSelectedBatteryCapacity] = useState(2000)
   const [componentStates, setComponentStates] = useState<Map<string, ComponentState>>(new Map())
   const [zoom, setZoom] = useState(1)
   const [hoveredPosition, setHoveredPosition] = useState<{ x: number; y: number } | null>(null)
@@ -576,6 +581,7 @@ function AppContent() {
     if (module?.module === 'Resistor') setPassiveValueSelector('resistor')
     else if (module?.module === 'Capacitor') setPassiveValueSelector('capacitor')
     else if (module?.module === 'Inductor') setPassiveValueSelector('inductor')
+    else if (module?.module === 'Battery') setPassiveValueSelector('battery')
     else setPassiveValueSelector(null)
   }
 
@@ -600,6 +606,22 @@ function AppContent() {
     setPassiveValueSelector(null)
     if (selectedModule?.module === 'Inductor') {
       setSelectedModule({ ...selectedModule, properties: { ...(selectedModule as any).properties, inductance } } as ModuleDefinition)
+    }
+  }
+
+  const handleBatterySelect = (voltage: number, capacityMah: number) => {
+    setSelectedBatteryVoltage(voltage)
+    setSelectedBatteryCapacity(capacityMah)
+    setPassiveValueSelector(null)
+    if (selectedModule?.module === 'Battery') {
+      setSelectedModule({
+        ...selectedModule,
+        properties: {
+          ...(selectedModule as ModuleDefinition & { properties?: Record<string, unknown> }).properties,
+          voltage,
+          capacity: capacityMah,
+        },
+      } as ModuleDefinition)
     }
   }
 
@@ -871,7 +893,7 @@ function AppContent() {
 
   const wrapWorkspaceLayout = (
     content: React.ReactNode,
-    options?: { carbonHeader?: React.ReactNode; showDevicePanel?: boolean }
+    options?: { carbonHeader?: React.ReactNode; showDevicePanel?: boolean; showPowerPanel?: boolean }
   ) =>
     options?.carbonHeader ? (
       <div className="grid h-screen grid-rows-[auto_1fr] overflow-hidden bg-black">
@@ -880,19 +902,26 @@ function AppContent() {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {content}
           </div>
-          <RightWorkspaceRail showDevicePanel={options.showDevicePanel} />
+          <RightWorkspaceRail
+            showDevicePanel={options.showDevicePanel}
+            showPowerPanel={options.showPowerPanel}
+          />
         </div>
       </div>
     ) : (
       <div className="flex h-screen overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{content}</div>
-        <RightWorkspaceRail showDevicePanel={options?.showDevicePanel} />
+        <RightWorkspaceRail
+          showDevicePanel={options?.showDevicePanel}
+          showPowerPanel={options?.showPowerPanel}
+        />
       </div>
     )
 
   let workspaceContent: React.ReactNode
   let carbonHeader: React.ReactNode | undefined
   let showDevicePanel = false
+  let showPowerPanel = false
 
   const editorTopBar = (title: string, backLabel: string, onBack: () => void, showSave = false) => (
     <div className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-white/[0.06] bg-black px-4">
@@ -957,6 +986,7 @@ function AppContent() {
   // Schematic editor
   if (activeView === 'schematic' && selectedFolder && selectedSchematic) {
     showDevicePanel = true
+    showPowerPanel = true
 
     workspaceContent = (
       <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-dark-bg">
@@ -1019,6 +1049,7 @@ function AppContent() {
                 {passiveValueSelector === 'resistor' && 'Select Resistor Value'}
                 {passiveValueSelector === 'capacitor' && 'Select Capacitance'}
                 {passiveValueSelector === 'inductor' && 'Select Inductance'}
+                {passiveValueSelector === 'battery' && 'Select Battery'}
               </h3>
               {passiveValueSelector === 'resistor' && (
                 <ResistanceSelector currentResistance={selectedResistance} onResistanceChange={handleResistanceSelect} onClose={() => setPassiveValueSelector(null)} />
@@ -1028,6 +1059,14 @@ function AppContent() {
               )}
               {passiveValueSelector === 'inductor' && (
                 <InductanceSelector currentInductance={selectedInductance} onInductanceChange={handleInductanceSelect} onClose={() => setPassiveValueSelector(null)} />
+              )}
+              {passiveValueSelector === 'battery' && (
+                <BatterySelector
+                  currentVoltage={selectedBatteryVoltage}
+                  currentCapacity={selectedBatteryCapacity}
+                  onApply={handleBatterySelect}
+                  onClose={() => setPassiveValueSelector(null)}
+                />
               )}
             </div>
           </div>
@@ -1215,7 +1254,7 @@ function AppContent() {
       projectContext={agentProjectContext}
       onProjectUpdate={handleAgentProjectUpdate}
     >
-      {wrapWorkspaceLayout(workspaceContent, { carbonHeader, showDevicePanel })}
+      {wrapWorkspaceLayout(workspaceContent, { carbonHeader, showDevicePanel, showPowerPanel })}
       <ProductSuiteHost onProjectUpdate={handleAgentProjectUpdate} />
       {deleteModal?.isOpen && (
         <DeleteModal modal={deleteModal} onClose={() => setDeleteModal(null)} onConfirm={confirmDelete} />

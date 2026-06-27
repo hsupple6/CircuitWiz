@@ -7,7 +7,8 @@ import { useTheme } from '../contexts/ThemeContext'
 import { calculateElectricalFlow, ComponentState } from '../systems/ElectricalSystem'
 import { ElectricalValidator } from './ElectricalValidator'
 import { DevicePanel } from './DevicePanel'
-import { DEVICE_PANEL_SLOT_ID } from './VerticalSplitPane'
+import { PowerPanel } from './PowerPanel'
+import { DEVICE_PANEL_SLOT_ID, POWER_PANEL_SLOT_ID } from './VerticalSplitPane'
 import { ElectricalNotifications } from './ElectricalNotifications'
 import { CircuitTutorial } from './CircuitTutorial'
 import { logger } from '../services/Logger'
@@ -21,10 +22,23 @@ import { SchematicGroupBoxLayer } from './SchematicGroupBoxLayer'
 import { createSchematicGroupBox, type SchematicGroupBox, type Program } from '../types/workspace'
 import { ResistorBodyLabel } from './ResistorBodyLabel'
 import { CapacitorBodyLabel } from './CapacitorBodyLabel'
+import { BatteryBodyLabel } from './BatteryBodyLabel'
 import { LedBodyIndicator, resolveLedColor } from './LedBodyIndicator'
+import { MotorBodyLabel } from './MotorBodyLabel'
+import { MotorPhasePad } from './MotorPhasePad'
+import { ServoBodyLabel } from './ServoBodyLabel'
+import { ServoPinPad } from './ServoPinPad'
 import { getDisplayPin } from '../utils/smdVisual'
 import { resolveCellResistance } from '../utils/resistorVisual'
 import { buildHoverStats, type HoverStats } from '../utils/hoverStats'
+import { applyBatteryProperties, readBatteryCapacity } from '../utils/batteryVisual'
+import {
+  assignPowerSupplyIdToDefinition,
+  ensurePowerSupplyIdsInGrid,
+  nextPowerSupplyId,
+  updatePowerSupplyInGrid,
+} from '../utils/powerSupplies'
+import { PowerSupplyLabelsLayer } from './PowerSupplyLabelsLayer'
 
 const GRID_PADDING = 4
 const DEFAULT_CELL_SIZE_PX = () => (window.innerWidth * 2.5) / 100
@@ -146,6 +160,11 @@ function buildPlacedModuleDefinition(module: ModuleDefinition): ModuleDefinition
         inductance: getModuleNumericProperty(props, 'inductance', 0.001),
       },
     } as ModuleDefinition
+  }
+  if (module.module === 'Battery') {
+    const voltage = getModuleNumericProperty(props, 'voltage', 3.7)
+    const capacity = getModuleNumericProperty(props, 'capacity', 2000)
+    return applyBatteryProperties(module, voltage, capacity)
   }
   return module
 }
@@ -276,7 +295,7 @@ export function ProjectGrid({
   const [gridData, setGridData] = useState<GridCell[][]>(() => {
     // Use initial data if provided, otherwise create empty grid
     if (initialGridData && initialGridData.length > 0) {
-      return initialGridData as GridCell[][]
+      return ensurePowerSupplyIdsInGrid(initialGridData as GridCell[][])
     }
     
     // Initialize with a much smaller grid for better memory usage
@@ -1274,6 +1293,13 @@ export function ProjectGrid({
     }
   }, [wiringState.isWiring, cancelWiring, selectedModule, onModuleSelect])
 
+  const handlePowerSupplyUpdate = useCallback(
+    (componentId: string, patch: { voltage: number; current: number }) => {
+      setGridData((prev) => updatePowerSupplyInGrid(prev, componentId, patch))
+    },
+    []
+  )
+
   const deleteComponent = useCallback((componentId: string) => {
     setGridData(prev => {
       const newGrid = [...prev]
@@ -1836,7 +1862,18 @@ export function ProjectGrid({
           // More memory-efficient update - only update cells that change
           const newGrid = [...prev] // Shallow copy of rows
           const componentId = `${selectedModule.module}-${Date.now()}`
-          const placedModuleDefinition = buildPlacedModuleDefinition(selectedModule)
+          let placedModuleDefinition = buildPlacedModuleDefinition(selectedModule)
+          if (selectedModule.module === 'PowerSupply') {
+            const props = (placedModuleDefinition as ModuleDefinition & { properties?: Record<string, unknown> }).properties
+            const voltage = getModuleNumericProperty(props, 'voltage', 5)
+            const current = getModuleNumericProperty(props, 'current', 1)
+            placedModuleDefinition = assignPowerSupplyIdToDefinition(
+              placedModuleDefinition,
+              nextPowerSupplyId(prev),
+              voltage,
+              current
+            )
+          }
           const placedProps = (placedModuleDefinition as ModuleDefinition & { properties?: Record<string, unknown> }).properties
           
           // Create CRDT operation for component placement
@@ -2336,6 +2373,17 @@ export function ProjectGrid({
   return styles
 }
 
+function findMotorComponentState(
+  componentId: string,
+  componentStates: Map<string, ComponentState>
+): ComponentState | null {
+  for (const [key, state] of componentStates) {
+    if (!key.startsWith(`${componentId}-`)) continue
+    if (state.motorRPM !== undefined || state.instantaneousRPM !== undefined) return state
+  }
+  return null
+}
+
 // Memoized Grid Cell Component for performance
 const GridCell = React.memo(({ 
   x, 
@@ -2487,14 +2535,58 @@ const GridCell = React.memo(({
               <div className="absolute top-0 right-0 w-2 h-2 bg-green-400 rounded-full animate-pulse" />
             )}
             
-            {/* Show pin label if this cell has one */}
-            {getCellPin(cell.moduleDefinition, relativeX, relativeY) && (
+            {/* Show pin label if this cell has one (custom overlays handle Motor phase pads) */}
+            {getCellPin(cell.moduleDefinition, relativeX, relativeY) &&
+              !(
+                cell.moduleDefinition.module === 'Motor' && relativeY === 0
+              ) &&
+              !(
+                cell.moduleDefinition.module === 'Servo' && relativeY === 0
+              ) && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-white font-bold text-xs leading-none">
                   {getCellPin(cell.moduleDefinition, relativeX, relativeY)}
                 </span>
               </div>
             )}
+
+            {/* Brushless motor — phase wire pads */}
+            {cell.moduleDefinition.module === 'Motor' && relativeY === 0 && (
+              <MotorPhasePad
+                label={
+                  relativeX === 0 ? 'IN1' : relativeX === 1 ? 'IN2' : 'IN3'
+                }
+              />
+            )}
+
+            {/* Brushless motor body + shaft (center anchor) */}
+            {cell.moduleDefinition.module === 'Motor' &&
+              relativeX === 1 &&
+              relativeY === 1 && (
+                <MotorBodyLabel
+                  state={findMotorComponentState(cell.componentId, componentStates)}
+                />
+              )}
+
+            {/* Servo — pin pads + body */}
+            {cell.moduleDefinition.module === 'Servo' && relativeY === 0 && (
+              <ServoPinPad
+                label={
+                  relativeX === 0 ? 'VCC' : relativeX === 1 ? 'GND' : 'PWM'
+                }
+              />
+            )}
+            {cell.moduleDefinition.module === 'Servo' &&
+              relativeX === 1 &&
+              relativeY === 1 && (
+                <ServoBodyLabel
+                  state={
+                    componentStates.get(`${cell.componentId}-${cell.cellIndex ?? 0}`) ??
+                    componentStates.get(`${cell.componentId}-4`) ??
+                    null
+                  }
+                />
+              )}
             
             {/* SMD resistor: color bands + value on body cell */}
             {cell.moduleDefinition.module === 'Resistor' && relativeX === 1 && relativeY === 0 && (
@@ -2502,55 +2594,16 @@ const GridCell = React.memo(({
                 resistance={resolveCellResistance(cell.resistance, cell.moduleDefinition.properties)}
               />
             )}
-            
-            {/* Show Motor RPM indicator and values */}
-            {cell.moduleDefinition.module === 'Motor' && relativeX === 3 && relativeY === 2 && (() => {
-              console.log('🔧 Motor display triggered for cell:', {
-                componentId: cell.componentId,
-                cellIndex: cell.cellIndex,
-                relativeX,
-                relativeY,
-                calculatedCellId: `${cell.componentId}-${cell.cellIndex || 0}`
-              })
-              // Get motor state from component states using the correct cell-specific key
-              const cellComponentId = `${cell.componentId}-1`
-              const motorState = componentStates.get(cellComponentId)
-              const rpm = motorState?.instantaneousRPM || motorState?.motorRPM || 0
-              const torque = motorState?.instantaneousTorque || motorState?.motorTorque || 0
-              const isActive = motorState?.isPowered || false
-              
-              return (
-                <div className="absolute inset-0 flex flex-col items-center justify-end pb-1">
-                  {/* RPM and Torque values - aligned to bottom */}
-                  <div className="text-center">
-                    <div className="text-white text-xs font-bold bg-black bg-opacity-70 px-1 rounded mb-0.5">
-                      {rpm.toFixed(0)} RPM
-                    </div>
-                    <div className="text-white text-xs font-bold bg-black bg-opacity-70 px-1 rounded">
-                      {torque.toFixed(2)} N⋅m
-                    </div>
-                  </div>
-                  <ComponentStatsBadge state={motorState ?? null} compact />
-                  
-                  {/* Active indicator */}
-                  {isActive && (
-                    <div className="absolute top-0 right-0 w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                  )}
-                  
-                  {/* Motor tooltip */}
-                  <div className="absolute -top-16 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-90 text-white text-xs p-2 rounded shadow-lg opacity-0 hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                    <div className="font-bold mb-1">Motor Status</div>
-                    <div>RPM: {rpm.toFixed(0)}</div>
-                    <div>Torque: {torque.toFixed(3)} N⋅m</div>
-                    <div>Power: {(motorState?.power || 0).toFixed(2)}W</div>
-                    <div>Current: {((motorState?.outputCurrent || 0) * 1000).toFixed(1)}mA</div>
-                    <div>Back EMF: {(motorState?.backEMF || 0).toFixed(2)}V</div>
-                    <div>Status: {isActive ? 'Active' : 'Inactive'}</div>
-                  </div>
-                </div>
-              )
-            })()}
 
+            {cell.moduleDefinition.module === 'Battery' && relativeX === 0 && relativeY === 0 && (
+              <BatteryBodyLabel
+                voltage={getModuleNumericProperty(cell.moduleDefinition.properties, 'voltage', 3.7)}
+                capacityMah={readBatteryCapacity(
+                  cell.moduleDefinition.properties as Record<string, unknown> | undefined
+                )}
+              />
+            )}
+            
             {cell.moduleDefinition.module === 'Capacitor' && relativeX === 1 && relativeY === 0 && (
               <CapacitorBodyLabel
                 capacitance={
@@ -2836,6 +2889,8 @@ const GridCell = React.memo(({
             )
           })
         })}
+
+        <PowerSupplyLabelsLayer gridData={gridData} />
       </div>
 
       {/* Hover highlights — above cells, below wires */}
@@ -2900,7 +2955,19 @@ const GridCell = React.memo(({
         return slot ? createPortal(panel, slot) : panel
       })()}
 
-
+      {/* Power Panel — above agent in right rail */}
+      {(() => {
+        const slot =
+          typeof document !== 'undefined' ? document.getElementById(POWER_PANEL_SLOT_ID) : null
+        const panel = (
+          <PowerPanel
+            embedded={Boolean(slot)}
+            gridData={gridData}
+            onUpdatePowerSupply={handlePowerSupplyUpdate}
+          />
+        )
+        return slot ? createPortal(panel, slot) : null
+      })()}
 
       {/* Control Buttons */}
       <div className="absolute top-4 right-4 flex gap-2 z-[100]" data-control-buttons>

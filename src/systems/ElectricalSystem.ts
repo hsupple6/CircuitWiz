@@ -13,6 +13,7 @@
 import { WireConnection } from '../modules/types'
 import { logger } from '../services/Logger'
 import { CalculateCircuit, convertGridToNodes, findCircuitPathways, checkContinuity } from '../services/EMPhysics'
+import { isActivePowerSourceTerminal } from '../utils/powerSupplies'
 import { solveCircuit } from '../services/CircuitSolver'
 import { extractOccupiedComponents } from '../utils/gridUtils'
 import { LEDVoltageFlow } from '../modules/definitions/Functions/LED'
@@ -168,7 +169,7 @@ export function findPowerSources(gridData: GridCell[][]): PowerSource[] {
         const isActualPowerSource = cell.moduleDefinition.module === 'PowerSupply' || 
                                    cell.moduleDefinition.module === 'Battery'
         
-        if (isActualPowerSource && moduleCell?.isPowerable && moduleCell?.voltage > 0 && 
+        if (isActualPowerSource && isActivePowerSourceTerminal(cell.moduleDefinition.module, moduleCell) &&
             (moduleCell.type === 'VCC' || moduleCell.type === 'POSITIVE')) {
           powerSources.push({
             id: cell.componentId,
@@ -760,8 +761,7 @@ function analyzeCircuit(
         const moduleCell = cell.moduleDefinition.grid[cell.cellIndex || 0]
         if (moduleCell) {
           // Check for power sources
-          if (moduleCell.isPowerable && moduleCell.voltage > 0 && 
-              (cell.moduleDefinition.module === 'PowerSupply' || cell.moduleDefinition.module === 'Battery')) {
+          if (isActivePowerSourceTerminal(cell.moduleDefinition.module, moduleCell)) {
             powerSources.push({ x, y, voltage: moduleCell.voltage, type: cell.moduleDefinition.module })
           }
           // Check for GPIO pin HIGH state
@@ -1144,7 +1144,7 @@ export function calculateSystematicVoltageFlow(
         // Set initial voltage for power sources (but not for GPIO pins)
         if (moduleType === 'PowerSupply' || moduleType === 'Battery') {
           const moduleCell = cell.moduleDefinition.grid[cell.cellIndex || 0]
-          if (moduleCell?.isPowerable && moduleCell.voltage > 0) {
+          if (isActivePowerSourceTerminal(moduleType, moduleCell)) {
             componentState.outputVoltage = moduleCell.voltage
             componentState.isPowered = true
             componentState.status = 'active'
@@ -1962,78 +1962,54 @@ function traceVoltageThroughComponent(
       console.log(`[MOTOR] Processing motor component: ${component.componentId} at (${component.x}, ${component.y})`)
       console.log(`[MOTOR] Component type: ${component.componentType}, Module: ${component.moduleDefinition?.module}`)
       logger.components(`[MOTOR] Processing motor component: ${component.componentId} at (${component.x}, ${component.y})`)
-      // Check for PWM from connected wires
-      let motorPWM: number | undefined = undefined
-      
-      // Look for PWM information from connected wires
-      // Get component position from grid data
       const componentPosition = { x: component.x || 0, y: component.y || 0 }
-      console.log(`[MOTOR] Looking for PWM wires for motor at position: (${componentPosition.x}, ${componentPosition.y})`)
-      console.log(`[MOTOR] Total wires available: ${wires.length}`)
-      logger.components(`[MOTOR] Looking for PWM wires for motor at position: (${componentPosition.x}, ${componentPosition.y})`)
+      console.log(`[MOTOR] Scanning IN1–IN3 at origin (${componentPosition.x}, ${componentPosition.y})`)
       logger.components(`[MOTOR] Total wires available: ${wires.length}`)
       
-      // Specifically look for wire connected to PWM pin at (2,0) of the motor
-      const pwmPinPosition = {
-        x: componentPosition.x + 2, // PWM pin is at x=2 in motor grid
-        y: componentPosition.y + 0  // PWM pin is at y=0 in motor grid
-      }
-      
-      console.log(`[MOTOR] Looking for PWM wire at motor PWM pin position: (${pwmPinPosition.x}, ${pwmPinPosition.y})`)
-      
-      const connectedWires = wires.filter(wire => {
-        const isConnected = wire.segments.some(segment => 
-          (segment.from.x === pwmPinPosition.x && segment.from.y === pwmPinPosition.y) ||
-          (segment.to.x === pwmPinPosition.x && segment.to.y === pwmPinPosition.y)
-        )
-        if (isConnected) {
-          console.log(`[MOTOR] Found PWM wire connected to PWM pin: ${wire.id} PWM: ${wire.pwm}`)
-          logger.components(`[MOTOR] Found PWM wire connected to PWM pin: ${wire.id} PWM: ${wire.pwm}`)
-        }
-        return isConnected
-      })
-      
-      console.log(`[MOTOR] Connected wires found: ${connectedWires.length}`)
-      logger.components(`[MOTOR] Connected wires found: ${connectedWires.length}`)
-      
-      // Find PWM and voltage from connected wires
-      let motorVoltage = inputVoltage // Default to input voltage
-      let vccVoltage = 0
+      // 3-phase brushless inputs IN1, IN2, IN3 along top row
+      const phaseOffsets = [
+        { dx: 0, dy: 0, name: 'IN1' },
+        { dx: 1, dy: 0, name: 'IN2' },
+        { dx: 2, dy: 0, name: 'IN3' },
+      ]
+
+      let motorPWM: number | undefined = undefined
+      let motorVoltage = inputVoltage
       let pwmVoltage = 0
-      
-      for (const wire of connectedWires) {
-        if (wire.pwm !== undefined) {
-          motorPWM = wire.pwm
-          pwmVoltage = wire.voltage
-          console.log(`🔧 [MOTOR] Found PWM from wire: ${motorPWM.toFixed(1)}% throttle, ${pwmVoltage}V`)
-          logger.components(`[MOTOR] Found PWM from wire: ${motorPWM.toFixed(1)}% throttle, ${pwmVoltage}V`)
+      const connectedWires: WireConnection[] = []
+
+      for (const phase of phaseOffsets) {
+        const pinPosition = {
+          x: componentPosition.x + phase.dx,
+          y: componentPosition.y + phase.dy,
         }
-        // Use the highest voltage from connected wires
-        if (wire.voltage > motorVoltage) {
-          motorVoltage = wire.voltage
-          console.log(`🔧 [MOTOR] Using voltage from wire: ${motorVoltage}V`)
-        }
-      }
-      
-      // Check for VCC connection (motor needs both VCC and PWM to be powered)
-      const vccPinPosition = { x: componentPosition.x + 0, y: componentPosition.y + 0 } // VCC is at (0,0) in motor grid
-      const vccWires = wires.filter(wire => 
-        wire.segments.some(segment => 
-          (segment.from.x === vccPinPosition.x && segment.from.y === vccPinPosition.y) ||
-          (segment.to.x === vccPinPosition.x && segment.to.y === vccPinPosition.y)
+
+        const phaseWires = wires.filter((wire) =>
+          wire.segments.some(
+            (segment) =>
+              (segment.from.x === pinPosition.x && segment.from.y === pinPosition.y) ||
+              (segment.to.x === pinPosition.x && segment.to.y === pinPosition.y)
+          )
         )
-      )
-      
-      for (const wire of vccWires) {
-        if (wire.voltage > vccVoltage) {
-          vccVoltage = wire.voltage
-          console.log(`🔧 [MOTOR] Found VCC voltage: ${vccVoltage}V`)
+
+        for (const wire of phaseWires) {
+          connectedWires.push(wire)
+          if (wire.pwm !== undefined && (motorPWM === undefined || wire.pwm > motorPWM)) {
+            motorPWM = wire.pwm
+          }
+          if (wire.voltage > pwmVoltage) pwmVoltage = wire.voltage
+          if (wire.voltage > motorVoltage) motorVoltage = wire.voltage
+          console.log(
+            `[MOTOR] Phase ${phase.name} wire ${wire.id}: PWM=${wire.pwm}, V=${wire.voltage}V`
+          )
         }
       }
-      
-      // BINARY: Motor is powered if it has PWM signal (ignore VCC for now)
+
+      console.log(`[MOTOR] Connected phase wires: ${connectedWires.length}`)
+      logger.components(`[MOTOR] Connected phase wires: ${connectedWires.length}`)
+
       const hasPWM = motorPWM !== undefined && motorPWM > 0
-      console.log(`🔧 [MOTOR] BINARY Power check: PWM=${motorPWM}% (${hasPWM})`)
+      console.log(`🔧 [MOTOR] Phase drive: PWM=${motorPWM ?? 0}% (${hasPWM})`)
       
       // Use PWM voltage as the voltage source
       if (pwmVoltage > 0) {

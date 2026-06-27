@@ -1,66 +1,97 @@
 {
   "module": "Servo",
   "gridX": 3,
-  "gridY": 2,
-  "background": "#0F172A",
-  "css": "border-radius: 6px; border: 2px solid #334155;",
+  "gridY": 3,
+  "background": "#0a0a0a",
+  "css": "border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.45);",
   "category": "output",
   "subcategory": "electromechanical",
-  "description": "RC hobby servo — VCC, GND, and PWM signal input",
+  "description": "RC hobby servo — VCC, GND, and PWM",
   "grid": [
     {
       "x": 0,
       "y": 0,
+      "background": "#0a0a0a",
       "type": "VCC",
       "pin": "VCC",
       "isConnectable": true,
       "isPowerable": true,
       "isGroundable": false,
       "voltage": 5,
-      "css": "background: #EF4444; border: 2px solid #DC2626; color: white; font-size: 9px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+      "current": 0.5
     },
     {
       "x": 1,
       "y": 0,
+      "background": "#0a0a0a",
       "type": "GND",
       "pin": "GND",
       "isConnectable": true,
       "isPowerable": false,
       "isGroundable": true,
-      "css": "background: #7C3AED; border: 2px solid #6D28D9; color: white; font-size: 9px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+      "voltage": 0,
+      "current": 0.5
     },
     {
       "x": 2,
       "y": 0,
+      "background": "#0a0a0a",
       "type": "PWM",
-      "pin": "SIG",
+      "pin": "PWM",
       "isConnectable": true,
       "isPowerable": true,
       "isGroundable": false,
       "voltage": 5,
-      "css": "background: #F59E0B; border: 2px solid #D97706; color: #111; font-size: 9px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+      "current": 0.02
     },
     {
       "x": 0,
       "y": 1,
+      "background": "#0a0a0a",
       "type": "BODY",
-      "isConnectable": false,
-      "css": "background: #1E293B; border: 2px solid #334155;"
+      "pin": "",
+      "isConnectable": false
     },
     {
       "x": 1,
       "y": 1,
+      "background": "#0a0a0a",
       "type": "BODY",
-      "pin": "SRV",
+      "pin": "",
       "isConnectable": false,
-      "css": "background: #334155; border: 2px solid #475569; color: white; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;"
+      "isClickable": true
     },
     {
       "x": 2,
       "y": 1,
+      "background": "#0a0a0a",
       "type": "BODY",
-      "isConnectable": false,
-      "css": "background: #1E293B; border: 2px solid #334155;"
+      "pin": "",
+      "isConnectable": false
+    },
+    {
+      "x": 0,
+      "y": 2,
+      "background": "#0a0a0a",
+      "type": "BODY",
+      "pin": "",
+      "isConnectable": false
+    },
+    {
+      "x": 1,
+      "y": 2,
+      "background": "#0a0a0a",
+      "type": "SHAFT",
+      "pin": "",
+      "isConnectable": false
+    },
+    {
+      "x": 2,
+      "y": 2,
+      "background": "#0a0a0a",
+      "type": "BODY",
+      "pin": "",
+      "isConnectable": false
     }
   ],
   "properties": {

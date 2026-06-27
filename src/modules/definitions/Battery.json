@@ -1,71 +1,55 @@
 {
   "module": "Battery",
   "gridX": 2,
-  "gridY": 2,
-  "background": "#F59E0B",
-  "css": "border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);",
+  "gridY": 1,
+  "background": "#141414",
+  "css": "border-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.35);",
   "category": "power",
-  "description": "Rechargeable Lithium Battery",
-  "manufacturer": "Generic",
+  "description": "Battery — nominal voltage and capacity",
+  "properties": {
+    "voltage": {
+      "default": 3.7,
+      "min": 1.0,
+      "max": 48.0,
+      "unit": "V",
+      "description": "Nominal voltage"
+    },
+    "capacity": {
+      "default": 2000,
+      "min": 100,
+      "max": 100000,
+      "unit": "mAh",
+      "description": "Capacity"
+    }
+  },
   "grid": [
     {
       "x": 0,
       "y": 0,
-      "css": "border-top-left-radius: 4px; background: linear-gradient(135deg, #DC2626 0%, #EF4444 100%); color: white; font-weight: bold; text-align: center;",
-      "background": "#DC2626",
+      "background": "#141414",
+      "css": "border-radius: 2px 0 0 2px; border: 1px solid #333; border-right: none; background: linear-gradient(90deg, #c0c0c0 0%, #c0c0c0 30%, #141414 30%, #141414 100%);",
+      "pin": "+",
+      "type": "POSITIVE",
       "isConnectable": true,
       "isPowerable": true,
       "isGroundable": false,
-      "type": "POSITIVE",
-      "pin": "+",
-      "voltage": 5.0,
+      "voltage": 3.7,
       "current": 1.0,
-      "properties": {
-        "voltage": "5.0V",
-        "current": "1A",
-        "capacity": "2000mAh",
-        "chemistry": "Li-ion",
-        "terminal": "positive"
-      }
+      "isClickable": false
     },
     {
       "x": 1,
       "y": 0,
-      "css": "border-top-right-radius: 4px; background: linear-gradient(135deg, #F59E0B 0%, #FCD34D 100%); color: #92400E; font-weight: bold; text-align: center;",
-      "background": "#F59E0B",
-      "isConnectable": false,
-      "type": "BODY",
-      "pin": "",
-      "properties": {}
-    },
-    {
-      "x": 0,
-      "y": 1,
-      "css": "border-bottom-left-radius: 4px; background: linear-gradient(135deg, #F59E0B 0%, #FCD34D 100%); color: #92400E; font-weight: bold; text-align: center;",
-      "background": "#F59E0B",
-      "isConnectable": false,
-      "type": "BODY",
-      "pin": "",
-      "properties": {}
-    },
-    {
-      "x": 1,
-      "y": 1,
-      "css": "border-bottom-right-radius: 4px; background: linear-gradient(135deg, #7C3AED 0%, #8B5CF6 100%); color: white; font-weight: bold; text-align: center;",
-      "background": "#7C3AED",
+      "background": "#141414",
+      "css": "border-radius: 0 2px 2px 0; border: 1px solid #333; border-left: none; background: linear-gradient(90deg, #141414 0%, #141414 70%, #c0c0c0 70%, #c0c0c0 100%);",
+      "pin": "-",
+      "type": "NEGATIVE",
       "isConnectable": true,
       "isPowerable": false,
       "isGroundable": true,
-      "type": "NEGATIVE",
-      "pin": "-",
       "voltage": 0,
       "current": 1.0,
-      "properties": {
-        "voltage": "0V",
-        "current": "1A",
-        "ground": true,
-        "terminal": "negative"
-      }
+      "isClickable": false
     }
   ]
 }

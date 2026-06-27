@@ -1,13 +1,17 @@
 import { useCallback } from 'react'
 import { useAgent } from '../contexts/AgentContext'
 import { AgentPanel } from './AgentPanel'
-import { DEVICE_PANEL_SLOT_ID } from './VerticalSplitPane'
+import { DEVICE_PANEL_SLOT_ID, POWER_PANEL_SLOT_ID } from './VerticalSplitPane'
 
 interface RightWorkspaceRailProps {
   showDevicePanel?: boolean
+  showPowerPanel?: boolean
 }
 
-export function RightWorkspaceRail({ showDevicePanel = false }: RightWorkspaceRailProps) {
+export function RightWorkspaceRail({
+  showDevicePanel = false,
+  showPowerPanel = false,
+}: RightWorkspaceRailProps) {
   const { isExpanded, toggleExpanded, ensureExpanded, revealPhase } = useAgent()
 
   const agentBodyVisible = revealPhase === 'expanded' && isExpanded
@@ -24,6 +28,10 @@ export function RightWorkspaceRail({ showDevicePanel = false }: RightWorkspaceRa
           id={DEVICE_PANEL_SLOT_ID}
           className="shrink-0 border-b border-white/[0.06] bg-carbon-card/40 dark:bg-dark-surface/60"
         />
+      )}
+
+      {showPowerPanel && (
+        <div id={POWER_PANEL_SLOT_ID} className="shrink-0 border-b border-white/[0.06] p-2" />
       )}
 
       <div className={`flex min-h-0 flex-col p-2 ${agentBodyVisible ? 'flex-1' : 'shrink-0'}`}>

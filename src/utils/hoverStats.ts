@@ -1,8 +1,10 @@
-import type { WireConnection, WireSegment } from '../modules/types'
+import type { WireConnection, WireSegment, ModuleDefinition } from '../modules/types'
 import type { ComponentState } from '../systems/ElectricalSystem'
 import { formatCapacitance } from '../components/CapacitanceSelector'
 import { formatInductance } from '../components/InductanceSelector'
 import { formatCurrent, formatPower, formatResistance, formatVoltage } from './electricalFormatting'
+import { readSupplyVoltageAndCurrent } from './powerSupplies'
+import { formatBatteryCapacity, readBatteryCapacity } from './batteryVisual'
 
 export type HoverStatAccent = 'voltage' | 'current' | 'power' | 'status' | 'info' | 'success' | 'warn' | 'idle'
 
@@ -300,11 +302,19 @@ function buildComponentStats(
     }
     case 'PowerSupply':
     case 'Battery': {
-      const nominal = getNumericProperty(cell.moduleDefinition?.properties, 'voltage', 5)
-      status = state?.isPowered ? { label: 'Supplying', tone: 'active' } : { label: 'Standby', tone: 'idle' }
+      const { voltage: nominal, current: maxA } = readSupplyVoltageAndCurrent(
+        cell.moduleDefinition as ModuleDefinition & { properties?: Record<string, unknown> }
+      )
+      status =
+        state?.isPowered || Math.abs(nominal) > 1e-6
+          ? { label: 'Supplying', tone: 'active' }
+          : { label: 'Standby', tone: 'idle' }
       details.push({ label: 'Nominal', value: formatVoltage(nominal), accent: 'info' })
-      if (state?.maxCurrent) {
-        details.push({ label: 'Max current', value: formatCurrent(state.maxCurrent), accent: 'current' })
+      if (moduleName === 'Battery') {
+        const capacity = readBatteryCapacity(cell.moduleDefinition?.properties as Record<string, unknown> | undefined)
+        details.push({ label: 'Capacity', value: formatBatteryCapacity(capacity), accent: 'info' })
+      } else {
+        details.push({ label: 'Max current', value: formatCurrent(maxA), accent: 'current' })
       }
       break
     }
