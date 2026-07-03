@@ -12,7 +12,8 @@
 // Import existing types from the modules
 import { WireConnection } from '../modules/types'
 import { logger } from '../services/Logger'
-import { CalculateCircuit, convertGridToNodes, findCircuitPathways, checkContinuity } from '../services/EMPhysics'
+import { findCircuitPathways, CalculateCircuit, convertGridToNodes } from '../services/EMPhysics'
+import { checkContinuity } from '../systems/chain/graph'
 import { isActivePowerSourceTerminal } from '../utils/powerSupplies'
 import { solveCircuit } from '../services/CircuitSolver'
 import { extractOccupiedComponents } from '../utils/gridUtils'
@@ -2412,21 +2413,31 @@ export function updateGridData(
       const currentCell = newGrid[position.y][position.x]
       const currentVoltage = currentCell.voltage || 0
       const currentIsPowered = currentCell.isPowered || false
+      const currentCapVoltage = currentCell.capacitorVoltage ?? 0
       
       // Check if voltage or power state has changed
       const voltageChanged = Math.abs(currentVoltage - state.outputVoltage) > 0.01
       const powerStateChanged = currentIsPowered !== state.isPowered
+      const capVoltageChanged =
+        typeof (state as { capacitorVoltage?: number }).capacitorVoltage === 'number' &&
+        Math.abs(currentCapVoltage - (state as { capacitorVoltage: number }).capacitorVoltage) > 0.001
       
-      if (voltageChanged || powerStateChanged) {
+      if (voltageChanged || powerStateChanged || capVoltageChanged) {
         if (!hasChanges) {
           newGrid[position.y] = [...newGrid[position.y]]
           hasChanges = true
         }
-        newGrid[position.y][position.x] = {
-          ...newGrid[position.y][position.x],
+        const updates: Partial<GridCell> = {
           voltage: state.outputVoltage,
           current: state.outputCurrent,
-          isPowered: state.isPowered
+          isPowered: state.isPowered,
+        }
+        if (typeof (state as { capacitorVoltage?: number }).capacitorVoltage === 'number') {
+          updates.capacitorVoltage = (state as { capacitorVoltage: number }).capacitorVoltage
+        }
+        newGrid[position.y][position.x] = {
+          ...newGrid[position.y][position.x],
+          ...updates,
         }
       }
     }
@@ -2436,9 +2447,8 @@ export function updateGridData(
 }
 
 /**
- * Main electrical calculation function
- * This is the entry point for the entire electrical system
- * Now uses EMPhysics.ts CalculateCircuit as the primary physics engine
+ * Main electrical calculation function.
+ * Uses the netlist MNA solver with chain-based continuity validation.
  */
 export function calculateElectricalFlow(
   gridData: GridCell[][],
@@ -2469,78 +2479,26 @@ export function calculateElectricalFlow(
   const pathways = circuitAnalysis.pathways
 
   const solverResult = solveCircuit(gridData, wires, effectiveGPIOStates)
-
-  if (solverResult.works) {
-    const componentStates = solverResult.componentStates as Map<string, ComponentState>
-    const updatedWires = solverResult.updatedWires
-    const updatedGridData = updateGridData(gridData, componentStates)
-
-    return {
-      componentStates,
-      updatedWires,
-      updatedGridData,
-      circuitInfo: {
-        totalVoltage: solverResult.totalVoltage,
-        totalCurrent: solverResult.totalCurrent,
-        totalResistance: solverResult.totalResistance,
-        totalPower: solverResult.totalPower,
-        errors: [...circuitAnalysis.errors, ...solverResult.errors],
-        pathways,
-      },
-    }
-  }
-
-  const circuitNodes = convertGridToNodes(gridData, wires)
-  const hasContinuity = checkContinuity(gridData, wires)
-  const physicsResult = CalculateCircuit(circuitNodes, wires, hasContinuity)
-
-  if (physicsResult.works) {
-    const connections = buildConnectionMap(wires)
-    const parallelBranches = findParallelResistors(gridData, connections, wires)
-    const systematicResult = calculateSystematicVoltageFlow(
-      gridData,
-      wires,
-      effectiveGPIOStates,
-      parallelBranches
-    )
-
-    const componentStates = systematicResult.componentStates
-    const updatedWires = systematicResult.updatedWires
-    const updatedGridData = updateGridData(gridData, componentStates)
-
-    return {
-      componentStates,
-      updatedWires,
-      updatedGridData,
-      circuitInfo: {
-        totalVoltage: physicsResult.batteryVoltage,
-        totalCurrent: physicsResult.current,
-        totalResistance: physicsResult.totalResistance,
-        totalPower: physicsResult.powerBattery || 0,
-        errors: physicsResult.errors || [],
-        pathways,
-      },
-    }
-  }
-
-  const emptyComponentStates = new Map<string, ComponentState>()
-  const updatedWires = updateWiresFromEMPhysics(wires, emptyComponentStates, physicsResult, gridData)
-  const updatedGridData = updateGridData(gridData, emptyComponentStates)
+  const componentStates = solverResult.componentStates as Map<string, ComponentState>
+  const updatedWires = solverResult.updatedWires
+  const updatedGridData = updateGridData(gridData, componentStates)
 
   return {
-    componentStates: emptyComponentStates,
+    componentStates,
     updatedWires,
     updatedGridData,
     circuitInfo: {
-      totalVoltage: 0,
-      totalCurrent: 0,
-      totalResistance: 0,
-      totalPower: 0,
-      errors: [
-        solverResult.reason || 'Circuit solve failed',
-        ...(physicsResult.errors || [physicsResult.reason || 'Unknown error']),
-        ...circuitAnalysis.errors,
-      ],
+      totalVoltage: solverResult.totalVoltage,
+      totalCurrent: solverResult.totalCurrent,
+      totalResistance: solverResult.totalResistance,
+      totalPower: solverResult.totalPower,
+      errors: solverResult.works
+        ? [...circuitAnalysis.errors, ...solverResult.errors]
+        : [
+            solverResult.reason || 'Circuit solve failed',
+            ...solverResult.errors,
+            ...circuitAnalysis.errors,
+          ],
       pathways,
     },
   }

@@ -4,6 +4,13 @@ import { InductorBodyLabel } from './InductorBodyLabel'
 import { CapacitorBodyLabel } from './CapacitorBodyLabel'
 import { ResistorBodyLabel } from './ResistorBodyLabel'
 import { LedBodyIndicator, resolveLedColor } from './LedBodyIndicator'
+import { ACSourceBodyLabel } from './ACSourceBodyLabel'
+import { DiodeBodyLabel } from './DiodeBodyLabel'
+import { ZenerDiodeBodyLabel } from './ZenerDiodeBodyLabel'
+import { TransistorBodyLabel } from './TransistorBodyLabel'
+import { OpAmpBodyLabel } from './OpAmpBodyLabel'
+import { BridgeRectifierBodyLabel } from './BridgeRectifierBodyLabel'
+import { SemiconductorPinPad } from './SemiconductorPinPad'
 import { getDisplayPin } from '../utils/smdVisual'
 import { resolveCellResistance } from '../utils/resistorVisual'
 
@@ -110,6 +117,69 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
                 )}
                 isOn={false}
               />
+            )}
+
+            {definition.module === 'Diode' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
+              <DiodeBodyLabel compact forwardVoltage={0.7} />
+            )}
+
+            {definition.module === 'ACSource' && cell.x === 0 && cell.y === 0 && (
+              <ACSourceBodyLabel
+                compact
+                properties={definition.properties as Record<string, unknown> | undefined}
+              />
+            )}
+
+            {definition.module === 'ZenerDiode' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
+              <ZenerDiodeBodyLabel compact zenerVoltage={5.1} />
+            )}
+
+            {definition.module === 'NPNTransistor' && cell.x === 1 && cell.y === 0 && (
+              <SemiconductorPinPad label="C" edge="top" />
+            )}
+            {definition.module === 'NPNTransistor' && cell.x === 0 && cell.y === 1 && (
+              <SemiconductorPinPad label="B" edge="left" />
+            )}
+            {definition.module === 'NPNTransistor' && cell.x === 1 && cell.y === 2 && (
+              <SemiconductorPinPad label="E" edge="bottom" />
+            )}
+            {definition.module === 'NPNTransistor' && cell.x === 1 && cell.y === 1 && (
+              <TransistorBodyLabel />
+            )}
+
+            {definition.module === 'OpAmp' && cell.x === 1 && cell.y === 0 && (
+              <SemiconductorPinPad label="V+" edge="top" />
+            )}
+            {definition.module === 'OpAmp' && cell.x === 0 && cell.y === 1 && (
+              <SemiconductorPinPad label="−" edge="left" />
+            )}
+            {definition.module === 'OpAmp' && cell.x === 2 && cell.y === 1 && (
+              <SemiconductorPinPad label="OUT" edge="right" />
+            )}
+            {definition.module === 'OpAmp' && cell.x === 0 && cell.y === 2 && (
+              <SemiconductorPinPad label="+" edge="left" />
+            )}
+            {definition.module === 'OpAmp' && cell.x === 1 && cell.y === 2 && (
+              <SemiconductorPinPad label="V−" edge="bottom" />
+            )}
+            {definition.module === 'OpAmp' && cell.x === 1 && cell.y === 1 && (
+              <OpAmpBodyLabel />
+            )}
+
+            {definition.module === 'BridgeRectifier' && cell.x === 0 && cell.y === 0 && (
+              <SemiconductorPinPad label="AC1" edge="top" />
+            )}
+            {definition.module === 'BridgeRectifier' && cell.x === 2 && cell.y === 0 && (
+              <SemiconductorPinPad label="AC2" edge="top" />
+            )}
+            {definition.module === 'BridgeRectifier' && cell.x === 0 && cell.y === 2 && (
+              <SemiconductorPinPad label="−" edge="bottom" />
+            )}
+            {definition.module === 'BridgeRectifier' && cell.x === 2 && cell.y === 2 && (
+              <SemiconductorPinPad label="+" edge="bottom" />
+            )}
+            {definition.module === 'BridgeRectifier' && cell.x === 1 && cell.y === 1 && (
+              <BridgeRectifierBodyLabel />
             )}
             
             {/* Motor label (for preview) */}

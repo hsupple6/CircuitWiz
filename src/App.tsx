@@ -34,6 +34,7 @@ import { ResistanceSelector } from './components/ResistanceSelector'
 import { CapacitanceSelector } from './components/CapacitanceSelector'
 import { InductanceSelector } from './components/InductanceSelector'
 import { BatterySelector } from './components/BatterySelector'
+import { ACSourceSelector } from './components/ACSourceSelector'
 import { HoverStatsPanel } from './components/HoverStatsPanel'
 import { ResizableSidebar } from './components/ResizableSidebar'
 import type { HoverStats } from './utils/hoverStats'
@@ -141,13 +142,18 @@ function AppContent() {
 
   const [selectedModule, setSelectedModule] = useState<ModuleDefinition | null>(null)
   const [passiveValueSelector, setPassiveValueSelector] = useState<
-    'resistor' | 'capacitor' | 'inductor' | 'battery' | null
+    'resistor' | 'capacitor' | 'inductor' | 'battery' | 'ac' | null
   >(null)
   const [selectedResistance, setSelectedResistance] = useState(1000)
   const [selectedCapacitance, setSelectedCapacitance] = useState(0.0001)
   const [selectedInductance, setSelectedInductance] = useState(0.001)
   const [selectedBatteryVoltage, setSelectedBatteryVoltage] = useState(3.7)
   const [selectedBatteryCapacity, setSelectedBatteryCapacity] = useState(2000)
+  const [selectedACVrms, setSelectedACVrms] = useState(12)
+  const [selectedACFrequency, setSelectedACFrequency] = useState(60)
+  const [selectedACWaveform, setSelectedACWaveform] = useState<
+    'sine' | 'square' | 'triangle' | 'sawtooth'
+  >('sine')
   const [componentStates, setComponentStates] = useState<Map<string, ComponentState>>(new Map())
   const [zoom, setZoom] = useState(1)
   const [hoveredPosition, setHoveredPosition] = useState<{ x: number; y: number } | null>(null)
@@ -582,6 +588,7 @@ function AppContent() {
     else if (module?.module === 'Capacitor') setPassiveValueSelector('capacitor')
     else if (module?.module === 'Inductor') setPassiveValueSelector('inductor')
     else if (module?.module === 'Battery') setPassiveValueSelector('battery')
+    else if (module?.module === 'ACSource') setPassiveValueSelector('ac')
     else setPassiveValueSelector(null)
   }
 
@@ -620,6 +627,28 @@ function AppContent() {
           ...(selectedModule as ModuleDefinition & { properties?: Record<string, unknown> }).properties,
           voltage,
           capacity: capacityMah,
+        },
+      } as ModuleDefinition)
+    }
+  }
+
+  const handleACSourceSelect = (
+    vrms: number,
+    frequency: number,
+    waveform: 'sine' | 'square' | 'triangle' | 'sawtooth'
+  ) => {
+    setSelectedACVrms(vrms)
+    setSelectedACFrequency(frequency)
+    setSelectedACWaveform(waveform)
+    setPassiveValueSelector(null)
+    if (selectedModule?.module === 'ACSource') {
+      setSelectedModule({
+        ...selectedModule,
+        properties: {
+          ...(selectedModule as ModuleDefinition & { properties?: Record<string, unknown> }).properties,
+          vrms,
+          frequency,
+          waveform,
         },
       } as ModuleDefinition)
     }
@@ -1044,12 +1073,13 @@ function AppContent() {
         </div>
         {passiveValueSelector && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-dark-surface rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="bg-white dark:bg-dark-surface rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4">
                 {passiveValueSelector === 'resistor' && 'Select Resistor Value'}
                 {passiveValueSelector === 'capacitor' && 'Select Capacitance'}
                 {passiveValueSelector === 'inductor' && 'Select Inductance'}
                 {passiveValueSelector === 'battery' && 'Select Battery'}
+                {passiveValueSelector === 'ac' && 'Configure AC Source'}
               </h3>
               {passiveValueSelector === 'resistor' && (
                 <ResistanceSelector currentResistance={selectedResistance} onResistanceChange={handleResistanceSelect} onClose={() => setPassiveValueSelector(null)} />
@@ -1065,6 +1095,19 @@ function AppContent() {
                   currentVoltage={selectedBatteryVoltage}
                   currentCapacity={selectedBatteryCapacity}
                   onApply={handleBatterySelect}
+                  onClose={() => setPassiveValueSelector(null)}
+                />
+              )}
+              {passiveValueSelector === 'ac' && (
+                <ACSourceSelector
+                  currentSettings={{
+                    vrms: selectedACVrms,
+                    frequency: selectedACFrequency,
+                    waveform: selectedACWaveform,
+                  }}
+                  onApply={({ vrms, frequency, waveform }) =>
+                    handleACSourceSelect(vrms, frequency, waveform)
+                  }
                   onClose={() => setPassiveValueSelector(null)}
                 />
               )}

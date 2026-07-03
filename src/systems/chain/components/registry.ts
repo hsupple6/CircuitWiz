@@ -1,0 +1,291 @@
+import type {
+  ComponentChainUnit,
+  GraphTerminal,
+  GridCellLike,
+  InternalEdge,
+  PlacedComponent,
+  TerminalInfo,
+} from '../types'
+import { classifyTerminalPolarity, isConnectable, isGroundReference, isPositiveTerminal } from '../terminals'
+import { parseNumericProperty, posKey } from '../utils'
+
+function pairBidirectional(keys: string[]): InternalEdge[] {
+  const edges: InternalEdge[] = []
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      edges.push({ from: keys[i], to: keys[j], bidirectional: true })
+    }
+  }
+  return edges
+}
+
+function directedEdge(from: string, to: string): InternalEdge {
+  return { from, to, bidirectional: false }
+}
+
+function isSwitchClosed(gridData: GridCellLike[][], componentId: string): boolean {
+  for (const row of gridData) {
+    if (!row) continue
+    for (const cell of row) {
+      if (cell?.componentId === componentId && cell.isOn) return true
+    }
+  }
+  return false
+}
+
+function collectTerminals(gridData: GridCellLike[][], componentId: string): GraphTerminal[] {
+  const terminals: GraphTerminal[] = []
+  gridData.forEach((row, y) => {
+    if (!row) return
+    row.forEach((cell, x) => {
+      if (cell?.componentId !== componentId || !cell.moduleDefinition) return
+      const moduleCell = cell.moduleDefinition.grid[cell.cellIndex ?? 0]
+      if (!isConnectable(moduleCell)) return
+      const moduleType = cell.moduleDefinition.module
+      terminals.push({
+        key: posKey(x, y),
+        x,
+        y,
+        componentId,
+        cellIndex: cell.cellIndex ?? 0,
+        moduleType,
+        moduleCell,
+        polarity: classifyTerminalPolarity(moduleCell, moduleType),
+      })
+    })
+  })
+  return terminals
+}
+
+/** Internal conductive paths for continuity traversal. */
+export function getComponentConductivity(
+  moduleType: string,
+  terminals: GraphTerminal[],
+  gridData: GridCellLike[][]
+): InternalEdge[] {
+  const byType = (type: string) => terminals.filter((t) => t.moduleCell.type === type).map((t) => t.key)
+  const byPolarity = (p: 'positive' | 'negative' | 'bidirectional') =>
+    terminals.filter((t) => t.polarity === p).map((t) => t.key)
+  const componentId = terminals[0]?.componentId ?? ''
+
+  switch (moduleType) {
+    case 'Resistor':
+    case 'Capacitor':
+    case 'Inductor':
+    case 'Potentiometer':
+      return pairBidirectional(byType('LEAD'))
+
+    case 'LED': {
+      const pos = byPolarity('positive')
+      const neg = byPolarity('negative')
+      if (pos.length && neg.length) return [directedEdge(pos[0], neg[0])]
+      return []
+    }
+
+    case 'ZenerDiode': {
+      const anode = byType('ANODE')
+      const cathode = byType('CATHODE')
+      if (anode.length && cathode.length) return pairBidirectional([...anode, ...cathode])
+      return []
+    }
+
+    case 'Diode': {
+      const anode = byType('ANODE')
+      const cathode = byType('CATHODE')
+      if (anode.length && cathode.length) return [directedEdge(anode[0], cathode[0])]
+      return []
+    }
+
+    case 'NPNTransistor': {
+      const c = byType('COLLECTOR')
+      const e = byType('EMITTER')
+      if (c.length && e.length) return pairBidirectional([c[0], e[0]])
+      return []
+    }
+
+    case 'BridgeRectifier': {
+      const ac = byType('AC')
+      const plus = terminals.filter((t) => t.moduleCell.type === 'POSITIVE').map((t) => t.key)
+      const minus = terminals.filter((t) => t.moduleCell.type === 'NEGATIVE').map((t) => t.key)
+      const edges: InternalEdge[] = []
+      for (const a of ac) {
+        for (const p of plus) edges.push(directedEdge(a, p))
+        for (const m of minus) edges.push(directedEdge(m, a))
+      }
+      if (plus.length && minus.length) edges.push(directedEdge(plus[0], minus[0]))
+      return edges
+    }
+
+    case 'ACSource':
+      return pairBidirectional(byType('AC'))
+
+    case 'Switch':
+    case 'Push Button':
+    case 'Limit Switch':
+      if (!isSwitchClosed(gridData, componentId)) return []
+      return pairBidirectional([...byType('INPUT'), ...byType('OUTPUT')])
+
+    case 'Buzzer':
+    case 'Speaker':
+    case 'Motor':
+    case 'Servo':
+      return pairBidirectional(terminals.map((t) => t.key))
+
+    case 'OpAmp':
+      return []
+
+    default:
+      return []
+  }
+}
+
+const BIDIRECTIONAL_MODULES = new Set([
+  'Resistor',
+  'Capacitor',
+  'Inductor',
+  'Potentiometer',
+  'ACSource',
+  'Switch',
+  'Push Button',
+  'Limit Switch',
+  'Buzzer',
+  'Speaker',
+  'Motor',
+  'Servo',
+])
+
+/** Chain unit metadata for a placed component. */
+export function getComponentChainUnit(
+  moduleType: string,
+  componentId: string,
+  gridData: GridCellLike[][]
+): ComponentChainUnit | null {
+  const terminals = collectTerminals(gridData, componentId)
+  if (terminals.length === 0) return null
+
+  const pinKeys = terminals.map((t) => t.key)
+  const bidirectional = BIDIRECTIONAL_MODULES.has(moduleType) || moduleType === 'ZenerDiode'
+
+  if (moduleType === 'LED' || moduleType === 'Diode') {
+    const pos = terminals.find((t) => t.polarity === 'positive')
+    const neg = terminals.find((t) => t.polarity === 'negative')
+    if (pos && neg) {
+      return { componentId, moduleType, pinKeys: [pos.key, neg.key], bidirectional: false }
+    }
+  }
+
+  return { componentId, moduleType, pinKeys, bidirectional }
+}
+
+export function getPlacedComponents(gridData: GridCellLike[][]): PlacedComponent[] {
+  const byId = new Map<string, PlacedComponent>()
+
+  gridData.forEach((row, y) => {
+    if (!row) return
+    row.forEach((cell, x) => {
+      if (!cell?.occupied || !cell.componentId || !cell.moduleDefinition) return
+
+      const existing = byId.get(cell.componentId)
+      if (!existing) {
+        byId.set(cell.componentId, {
+          componentId: cell.componentId,
+          baseX: x,
+          baseY: y,
+          moduleDefinition: cell.moduleDefinition,
+          resistance: cell.resistance,
+        })
+      } else {
+        if ((cell.cellIndex ?? 0) === 0) {
+          existing.baseX = x
+          existing.baseY = y
+        }
+        if (cell.resistance !== undefined) existing.resistance = cell.resistance
+        if (cell.capacitance !== undefined) existing.capacitance = cell.capacitance
+      }
+    })
+  })
+
+  return Array.from(byId.values())
+}
+
+export function getTerminals(component: PlacedComponent): TerminalInfo[] {
+  const terminals: TerminalInfo[] = []
+  component.moduleDefinition.grid.forEach((moduleCell: any, cellIndex: number) => {
+    if (!isConnectable(moduleCell)) return
+    terminals.push({
+      x: component.baseX + moduleCell.x,
+      y: component.baseY + moduleCell.y,
+      cellIndex,
+      moduleCell,
+    })
+  })
+  return terminals
+}
+
+export function findAnodeCathode(terminals: TerminalInfo[]): {
+  anode?: TerminalInfo
+  cathode?: TerminalInfo
+} {
+  const anode = terminals.find(
+    (t) =>
+      t.moduleCell.type === 'ANODE' ||
+      t.moduleCell.type === 'LED_POSITIVE' ||
+      t.moduleCell.pin === 'A' ||
+      t.moduleCell.pin === '+'
+  )
+  const cathode = terminals.find(
+    (t) =>
+      t.moduleCell.type === 'CATHODE' ||
+      t.moduleCell.type === 'LED_NEGATIVE' ||
+      t.moduleCell.pin === 'K' ||
+      t.moduleCell.pin === '-'
+  )
+  return { anode, cathode }
+}
+
+export function isSwitchClosedOnGrid(gridData: GridCellLike[][], componentId: string): boolean {
+  return isSwitchClosed(gridData, componentId)
+}
+
+export function gridCellAt(gridData: GridCellLike[][], x: number, y: number): GridCellLike | undefined {
+  return gridData[y]?.[x]
+}
+
+export function getWiperRatio(
+  gridData: GridCellLike[][],
+  wiperX: number,
+  wiperY: number,
+  fallback = 0.5
+): number {
+  const cell = gridCellAt(gridData, wiperX, wiperY)
+  const w = cell?.wiperPosition
+  if (typeof w === 'number') return Math.max(0.05, Math.min(0.95, w))
+  return fallback
+}
+
+export function gpioPinNumber(moduleCell: any): number | null {
+  const pin = moduleCell?.pin
+  if (!pin || typeof pin !== 'string') return null
+  if (pin.startsWith('GPIO')) return parseInt(pin.replace('GPIO', ''), 10)
+  if (pin.startsWith('D')) return parseInt(pin.replace('D', ''), 10)
+  if (pin.startsWith('A')) return parseInt(pin.replace('A', ''), 10) + 100
+  const parsed = parseInt(pin, 10)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+export function gpioOutputVoltage(
+  moduleType: string,
+  gpioState: any
+): { voltage: number; pwm?: number; active: boolean } {
+  const state = gpioState?.state ?? 'LOW'
+  const fullVoltage = moduleType.includes('ESP32') ? 3.3 : 5.0
+
+  if (state === 'HIGH') return { voltage: fullVoltage, active: true }
+  if (state === 'PULSING') {
+    const duty = typeof gpioState?.value === 'number' ? gpioState.value : 0.5
+    return { voltage: fullVoltage * duty, pwm: duty * 100, active: duty > 0 }
+  }
+  return { voltage: 0, active: false }
+}
+
+export { isPositiveTerminal, isGroundReference, parseNumericProperty }

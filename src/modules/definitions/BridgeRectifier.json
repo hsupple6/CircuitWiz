@@ -1,0 +1,111 @@
+{
+  "module": "BridgeRectifier",
+  "description": "Full-wave bridge rectifier — four internal diodes, AC in and DC out",
+  "category": "semiconductors",
+  "gridX": 3,
+  "gridY": 3,
+  "background": "#141414",
+  "css": "border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.35);",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "background": "#0a0a0a",
+      "type": "AC",
+      "pin": "AC1",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "border-radius: 4px 0 0 0; border: 1px solid #333; background: #0a0a0a;"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "background": "#161616",
+      "type": "BODY",
+      "pin": "",
+      "isConnectable": false,
+      "isClickable": true,
+      "css": "border: 1px solid #333; border-left: none; background: linear-gradient(180deg, #222 0%, #141414 40%, #141414 100%); cursor: pointer;"
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "background": "#0a0a0a",
+      "type": "AC",
+      "pin": "AC2",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "border-radius: 0 4px 0 0; border: 1px solid #333; border-left: none; background: #0a0a0a;"
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "background": "#161616",
+      "type": "BODY",
+      "pin": "",
+      "isConnectable": false,
+      "css": "border: 1px solid #333; border-top: none; background: linear-gradient(180deg, #222 0%, #141414 40%, #141414 100%);"
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "background": "#161616",
+      "type": "BODY",
+      "pin": "",
+      "isConnectable": false,
+      "css": "border: 1px solid #333; border-top: none; border-left: none; background: linear-gradient(180deg, #222 0%, #141414 40%, #141414 100%);"
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "background": "#161616",
+      "type": "BODY",
+      "pin": "",
+      "isConnectable": false,
+      "css": "border: 1px solid #333; border-top: none; border-left: none; background: linear-gradient(180deg, #222 0%, #141414 40%, #141414 100%);"
+    },
+    {
+      "x": 0,
+      "y": 2,
+      "background": "#0a0a0a",
+      "type": "NEGATIVE",
+      "pin": "-",
+      "isConnectable": true,
+      "isPowerable": false,
+      "isGroundable": true,
+      "css": "border-radius: 0 0 0 4px; border: 1px solid #333; border-top: none; background: #0a0a0a;"
+    },
+    {
+      "x": 1,
+      "y": 2,
+      "background": "#161616",
+      "type": "BODY",
+      "pin": "",
+      "isConnectable": false,
+      "css": "border: 1px solid #333; border-top: none; border-left: none; background: linear-gradient(180deg, #222 0%, #141414 40%, #141414 100%);"
+    },
+    {
+      "x": 2,
+      "y": 2,
+      "background": "#0a0a0a",
+      "type": "POSITIVE",
+      "pin": "+",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "css": "border-radius: 0 0 4px 0; border: 1px solid #333; border-top: none; border-left: none; background: #0a0a0a;"
+    }
+  ],
+  "properties": {
+    "forwardVoltage": {
+      "type": "number",
+      "default": 0.7,
+      "min": 0.3,
+      "max": 1.5,
+      "unit": "V",
+      "description": "Per-diode forward drop"
+    }
+  }
+}

@@ -60,6 +60,32 @@ export function placeModule(
         if (cell.x === 0) pinMap.set('1', { x, y })
         if (cell.x === 2) pinMap.set('2', { x, y })
       }
+      if (moduleName === 'Diode' || moduleName === 'ZenerDiode') {
+        if (cell.type === 'ANODE' || cell.pin === 'A') pinMap.set('A', { x, y })
+        if (cell.type === 'CATHODE' || cell.pin === 'K') pinMap.set('K', { x, y })
+      }
+      if (moduleName === 'NPNTransistor') {
+        if (cell.pin === 'B') pinMap.set('B', { x, y })
+        if (cell.pin === 'C') pinMap.set('C', { x, y })
+        if (cell.pin === 'E') pinMap.set('E', { x, y })
+      }
+      if (moduleName === 'OpAmp') {
+        if (cell.pin === '+') pinMap.set('+', { x, y })
+        if (cell.pin === '-') pinMap.set('-', { x, y })
+        if (cell.pin === 'OUT') pinMap.set('OUT', { x, y })
+        if (cell.pin === 'V+') pinMap.set('V+', { x, y })
+        if (cell.pin === 'V-') pinMap.set('V-', { x, y })
+      }
+      if (moduleName === 'BridgeRectifier') {
+        if (cell.pin === 'AC1') pinMap.set('AC1', { x, y })
+        if (cell.pin === 'AC2') pinMap.set('AC2', { x, y })
+        if (cell.pin === '+') pinMap.set('+', { x, y })
+        if (cell.pin === '-') pinMap.set('-', { x, y })
+      }
+      if (moduleName === 'ACSource') {
+        if (cell.pin === 'AC1') pinMap.set('AC1', { x, y })
+        if (cell.pin === 'AC2') pinMap.set('AC2', { x, y })
+      }
     }
 
     const entry: OccupiedComponent = {
@@ -78,6 +104,20 @@ export function placeModule(
     }
     if (moduleName === 'Capacitor' && props.capacitance != null) {
       ;(entry as OccupiedComponent & { capacitance: number }).capacitance = props.capacitance as number
+    }
+    if (moduleName === 'ZenerDiode' && props.zenerVoltage != null) {
+      moduleDefinition.properties = {
+        ...(moduleDefinition.properties as Record<string, unknown>),
+        zenerVoltage: props.zenerVoltage,
+      }
+    }
+    if (moduleName === 'ACSource') {
+      moduleDefinition.properties = {
+        ...(moduleDefinition.properties as Record<string, unknown>),
+        ...(props.vrms != null ? { vrms: props.vrms } : {}),
+        ...(props.frequency != null ? { frequency: props.frequency } : {}),
+        ...(props.waveform != null ? { waveform: props.waveform } : {}),
+      }
     }
 
     components.push(entry)

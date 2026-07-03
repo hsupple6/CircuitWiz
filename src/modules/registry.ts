@@ -23,6 +23,12 @@ import Speaker from './definitions/Speaker.json'
 import Servo from './definitions/Servo.json'
 import Potentiometer from './definitions/Potentiometer.json'
 import GroupBox from './definitions/GroupBox.json'
+import Diode from './definitions/Diode.json'
+import ZenerDiode from './definitions/ZenerDiode.json'
+import NPNTransistor from './definitions/NPNTransistor.json'
+import OpAmp from './definitions/OpAmp.json'
+import BridgeRectifier from './definitions/BridgeRectifier.json'
+import ACSource from './definitions/ACSource.json'
 
 import { getOrderedCategoryIds } from './componentCatalog'
 import type { OutputSubcategoryId } from './componentCatalog'
@@ -63,6 +69,12 @@ export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
     category: 'power',
     keywords: ['power supply', 'bench', '5v', 'barrel'],
   },
+  ACSource: {
+    definition: ACSource as ModuleDefinition,
+    type: PowerType,
+    category: 'power',
+    keywords: ['ac', 'alternating', 'sine', 'transformer', 'mains'],
+  },
   Resistor: {
     definition: Resistor as ModuleDefinition,
     category: 'passives',
@@ -77,6 +89,31 @@ export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
     definition: Inductor as ModuleDefinition,
     category: 'passives',
     keywords: ['inductor', 'coil', 'choke', 'ferrite'],
+  },
+  Diode: {
+    definition: Diode as ModuleDefinition,
+    category: 'semiconductors',
+    keywords: ['diode', 'rectifier', 'silicon', '1n4007'],
+  },
+  ZenerDiode: {
+    definition: ZenerDiode as ModuleDefinition,
+    category: 'semiconductors',
+    keywords: ['zener', 'clamp', 'regulator', 'breakdown'],
+  },
+  NPNTransistor: {
+    definition: NPNTransistor as ModuleDefinition,
+    category: 'semiconductors',
+    keywords: ['npn', 'transistor', 'bjt', '2n2222', 'switch'],
+  },
+  OpAmp: {
+    definition: OpAmp as ModuleDefinition,
+    category: 'semiconductors',
+    keywords: ['op-amp', 'opamp', 'amplifier', 'lm358', 'tl072'],
+  },
+  BridgeRectifier: {
+    definition: BridgeRectifier as ModuleDefinition,
+    category: 'semiconductors',
+    keywords: ['bridge', 'rectifier', 'full-wave', 'diode bridge'],
   },
   Switch: {
     definition: Switch as ModuleDefinition,

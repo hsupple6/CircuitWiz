@@ -5,6 +5,12 @@ import { formatInductance } from '../components/InductanceSelector'
 import { formatCurrent, formatPower, formatResistance, formatVoltage } from './electricalFormatting'
 import { readSupplyVoltageAndCurrent } from './powerSupplies'
 import { formatBatteryCapacity, readBatteryCapacity } from './batteryVisual'
+import {
+  AC_WAVEFORM_LABELS,
+  formatACFrequency,
+  readACSourceSettings,
+  vrmsToVpeak,
+} from './acSourceVisual'
 
 export type HoverStatAccent = 'voltage' | 'current' | 'power' | 'status' | 'info' | 'success' | 'warn' | 'idle'
 
@@ -270,6 +276,61 @@ function buildComponentStats(
       const l = cell.inductance ?? getNumericProperty(cell.moduleDefinition?.properties, 'inductance', 0.001)
       status = current > 1e-9 ? { label: 'Energized', tone: 'active' } : { label: 'Idle', tone: 'idle' }
       details.push({ label: 'Inductance', value: formatInductance(l), accent: 'info' })
+      break
+    }
+    case 'Diode': {
+      const vf = getNumericProperty(cell.moduleDefinition?.properties, 'forwardVoltage', 0.7)
+      const isOn = state?.isOn ?? state?.status === 'conducting'
+      status = isOn ? { label: 'Conducting', tone: 'active' } : { label: 'Off', tone: 'idle' }
+      details.push({ label: 'Vf', value: formatVoltage(vf), accent: 'info' })
+      break
+    }
+    case 'ZenerDiode': {
+      const vz = getNumericProperty(cell.moduleDefinition?.properties, 'zenerVoltage', 5.1)
+      const mode = state?.zenerMode ?? state?.status
+      status =
+        mode === 'clamping' || mode === 'zener'
+          ? { label: 'Clamping', tone: 'active' }
+          : mode === 'conducting'
+            ? { label: 'Forward', tone: 'active' }
+            : { label: 'Off', tone: 'idle' }
+      details.push({ label: 'Vz', value: formatVoltage(vz), accent: 'info' })
+      break
+    }
+    case 'NPNTransistor': {
+      const isOn = state?.isOn ?? state?.status === 'saturated'
+      status = isOn ? { label: 'Saturated', tone: 'active' } : { label: 'Off', tone: 'idle' }
+      details.push({
+        label: 'β',
+        value: String(getNumericProperty(cell.moduleDefinition?.properties, 'beta', 100)),
+        accent: 'info',
+      })
+      break
+    }
+    case 'OpAmp': {
+      status = state?.isPowered ? { label: 'Active', tone: 'active' } : { label: 'Idle', tone: 'idle' }
+      details.push({
+        label: 'Supply',
+        value: formatVoltage(getNumericProperty(cell.moduleDefinition?.properties, 'supplyVoltage', 5)),
+        accent: 'info',
+      })
+      break
+    }
+    case 'BridgeRectifier': {
+      status = state?.isPowered ? { label: 'Rectifying', tone: 'active' } : { label: 'Idle', tone: 'idle' }
+      break
+    }
+    case 'ACSource': {
+      const settings = readACSourceSettings(cell.moduleDefinition?.properties as Record<string, unknown> | undefined)
+      status = { label: 'AC', tone: 'active' }
+      details.push({ label: 'Waveform', value: AC_WAVEFORM_LABELS[settings.waveform], accent: 'info' })
+      details.push({ label: 'Vrms', value: formatVoltage(settings.vrms), accent: 'info' })
+      details.push({
+        label: 'Vpeak',
+        value: formatVoltage(vrmsToVpeak(settings.vrms, settings.waveform)),
+        accent: 'voltage',
+      })
+      details.push({ label: 'Frequency', value: formatACFrequency(settings.frequency), accent: 'info' })
       break
     }
     case 'Switch':

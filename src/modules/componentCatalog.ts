@@ -13,6 +13,7 @@ export const COMPONENT_CATEGORIES = [
   { id: 'microcontrollers', label: 'Microcontrollers' },
   { id: 'power', label: 'Power' },
   { id: 'passives', label: 'Passives' },
+  { id: 'semiconductors', label: 'Semiconductors' },
   { id: 'switches', label: 'Switches' },
   { id: 'output', label: 'Output', nested: true },
   { id: 'sensors', label: 'Sensors' },

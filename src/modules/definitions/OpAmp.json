@@ -1,0 +1,24 @@
+{
+  "module": "OpAmp",
+  "description": "Ideal op-amp — high-gain differential amplifier with rail-limited output",
+  "category": "semiconductors",
+  "gridX": 3,
+  "gridY": 3,
+  "background": "#141414",
+  "css": "border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.35);",
+  "grid": [
+    { "x": 0, "y": 0, "type": "BODY", "pin": "", "isConnectable": false, "background": "#0a0a0a", "css": "background: transparent;" },
+    { "x": 1, "y": 0, "type": "VCC", "pin": "V+", "isConnectable": true, "isPowerable": true, "isGroundable": false, "voltage": 5, "background": "#0a0a0a", "css": "border-radius: 4px 4px 0 0; border: 1px solid #333; background: #0a0a0a;" },
+    { "x": 2, "y": 0, "type": "BODY", "pin": "", "isConnectable": false, "background": "#0a0a0a", "css": "background: transparent;" },
+    { "x": 0, "y": 1, "type": "IN_NEGATIVE", "pin": "-", "isConnectable": true, "isPowerable": true, "isGroundable": true, "background": "#0a0a0a", "css": "border-radius: 4px 0 0 0; border: 1px solid #333; background: #0a0a0a;" },
+    { "x": 1, "y": 1, "type": "BODY", "pin": "", "isConnectable": false, "isClickable": true, "background": "#161616", "css": "border: 1px solid #333; background: linear-gradient(180deg, #222 0%, #141414 40%, #141414 100%); cursor: pointer;" },
+    { "x": 2, "y": 1, "type": "OUTPUT", "pin": "OUT", "isConnectable": true, "isPowerable": true, "isGroundable": true, "background": "#0a0a0a", "css": "border-radius: 0 4px 0 0; border: 1px solid #333; background: #0a0a0a;" },
+    { "x": 0, "y": 2, "type": "IN_POSITIVE", "pin": "+", "isConnectable": true, "isPowerable": true, "isGroundable": true, "background": "#0a0a0a", "css": "border-radius: 0 0 0 4px; border: 1px solid #333; background: #0a0a0a;" },
+    { "x": 1, "y": 2, "type": "GND", "pin": "V-", "isConnectable": true, "isPowerable": false, "isGroundable": true, "background": "#0a0a0a", "css": "border-radius: 0 0 4px 4px; border: 1px solid #333; background: #0a0a0a;" },
+    { "x": 2, "y": 2, "type": "BODY", "pin": "", "isConnectable": false, "background": "#0a0a0a", "css": "background: transparent;" }
+  ],
+  "properties": {
+    "openLoopGain": { "type": "number", "default": 100000, "min": 1000, "max": 1000000, "description": "Open-loop voltage gain" },
+    "supplyVoltage": { "type": "number", "default": 5, "min": 3, "max": 15, "unit": "V", "description": "Positive supply rail" }
+  }
+}

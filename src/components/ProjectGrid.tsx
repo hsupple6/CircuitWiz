@@ -23,15 +23,23 @@ import { createSchematicGroupBox, type SchematicGroupBox, type Program } from '.
 import { ResistorBodyLabel } from './ResistorBodyLabel'
 import { CapacitorBodyLabel } from './CapacitorBodyLabel'
 import { BatteryBodyLabel } from './BatteryBodyLabel'
+import { ACSourceBodyLabel } from './ACSourceBodyLabel'
 import { LedBodyIndicator, resolveLedColor } from './LedBodyIndicator'
 import { MotorBodyLabel } from './MotorBodyLabel'
 import { MotorPhasePad } from './MotorPhasePad'
 import { ServoBodyLabel } from './ServoBodyLabel'
 import { ServoPinPad } from './ServoPinPad'
+import { SemiconductorPinPad } from './SemiconductorPinPad'
+import { DiodeBodyLabel } from './DiodeBodyLabel'
+import { ZenerDiodeBodyLabel } from './ZenerDiodeBodyLabel'
+import { TransistorBodyLabel } from './TransistorBodyLabel'
+import { OpAmpBodyLabel } from './OpAmpBodyLabel'
+import { BridgeRectifierBodyLabel } from './BridgeRectifierBodyLabel'
 import { getDisplayPin } from '../utils/smdVisual'
 import { resolveCellResistance } from '../utils/resistorVisual'
 import { buildHoverStats, type HoverStats } from '../utils/hoverStats'
 import { applyBatteryProperties, readBatteryCapacity } from '../utils/batteryVisual'
+import { applyACSourceProperties, readACSourceSettings } from '../utils/acSourceVisual'
 import {
   assignPowerSupplyIdToDefinition,
   ensurePowerSupplyIdsInGrid,
@@ -112,6 +120,7 @@ interface GridCell {
   current?: number // Current level for this cell
   resistance?: number // Resistance value for resistors
   capacitance?: number // Capacitance value for capacitors (farads)
+  capacitorVoltage?: number // Stored charge voltage for capacitor transient sim
   inductance?: number // Inductance value for inductors (henries)
   isOn?: boolean // Switch state
 }
@@ -165,6 +174,9 @@ function buildPlacedModuleDefinition(module: ModuleDefinition): ModuleDefinition
     const voltage = getModuleNumericProperty(props, 'voltage', 3.7)
     const capacity = getModuleNumericProperty(props, 'capacity', 2000)
     return applyBatteryProperties(module, voltage, capacity)
+  }
+  if (module.module === 'ACSource') {
+    return applyACSourceProperties(module, readACSourceSettings(props))
   }
   return module
 }
@@ -2603,6 +2615,12 @@ const GridCell = React.memo(({
                 )}
               />
             )}
+
+            {cell.moduleDefinition.module === 'ACSource' && relativeX === 0 && relativeY === 0 && (
+              <ACSourceBodyLabel
+                properties={cell.moduleDefinition.properties as Record<string, unknown> | undefined}
+              />
+            )}
             
             {cell.moduleDefinition.module === 'Capacitor' && relativeX === 1 && relativeY === 0 && (
               <CapacitorBodyLabel
@@ -2619,6 +2637,74 @@ const GridCell = React.memo(({
                   getModuleNumericProperty(cell.moduleDefinition.properties, 'inductance', 0.001)
                 }
               />
+            )}
+
+            {cell.moduleDefinition.module === 'Diode' && relativeX === 1 && relativeY === 0 && (
+              <DiodeBodyLabel
+                forwardVoltage={getModuleNumericProperty(
+                  cell.moduleDefinition.properties,
+                  'forwardVoltage',
+                  0.7
+                )}
+              />
+            )}
+
+            {cell.moduleDefinition.module === 'ZenerDiode' && relativeX === 1 && relativeY === 0 && (
+              <ZenerDiodeBodyLabel
+                zenerVoltage={getModuleNumericProperty(
+                  cell.moduleDefinition.properties,
+                  'zenerVoltage',
+                  5.1
+                )}
+              />
+            )}
+
+            {cell.moduleDefinition.module === 'NPNTransistor' && relativeX === 1 && relativeY === 0 && (
+              <SemiconductorPinPad label="C" edge="top" />
+            )}
+            {cell.moduleDefinition.module === 'NPNTransistor' && relativeX === 0 && relativeY === 1 && (
+              <SemiconductorPinPad label="B" edge="left" />
+            )}
+            {cell.moduleDefinition.module === 'NPNTransistor' && relativeX === 1 && relativeY === 2 && (
+              <SemiconductorPinPad label="E" edge="bottom" />
+            )}
+            {cell.moduleDefinition.module === 'NPNTransistor' && relativeX === 1 && relativeY === 1 && (
+              <TransistorBodyLabel />
+            )}
+
+            {cell.moduleDefinition.module === 'OpAmp' && relativeX === 1 && relativeY === 0 && (
+              <SemiconductorPinPad label="V+" edge="top" />
+            )}
+            {cell.moduleDefinition.module === 'OpAmp' && relativeX === 0 && relativeY === 1 && (
+              <SemiconductorPinPad label="−" edge="left" />
+            )}
+            {cell.moduleDefinition.module === 'OpAmp' && relativeX === 2 && relativeY === 1 && (
+              <SemiconductorPinPad label="OUT" edge="right" />
+            )}
+            {cell.moduleDefinition.module === 'OpAmp' && relativeX === 0 && relativeY === 2 && (
+              <SemiconductorPinPad label="+" edge="left" />
+            )}
+            {cell.moduleDefinition.module === 'OpAmp' && relativeX === 1 && relativeY === 2 && (
+              <SemiconductorPinPad label="V−" edge="bottom" />
+            )}
+            {cell.moduleDefinition.module === 'OpAmp' && relativeX === 1 && relativeY === 1 && (
+              <OpAmpBodyLabel />
+            )}
+
+            {cell.moduleDefinition.module === 'BridgeRectifier' && relativeX === 0 && relativeY === 0 && (
+              <SemiconductorPinPad label="AC1" edge="top" />
+            )}
+            {cell.moduleDefinition.module === 'BridgeRectifier' && relativeX === 2 && relativeY === 0 && (
+              <SemiconductorPinPad label="AC2" edge="top" />
+            )}
+            {cell.moduleDefinition.module === 'BridgeRectifier' && relativeX === 0 && relativeY === 2 && (
+              <SemiconductorPinPad label="−" edge="bottom" />
+            )}
+            {cell.moduleDefinition.module === 'BridgeRectifier' && relativeX === 2 && relativeY === 2 && (
+              <SemiconductorPinPad label="+" edge="bottom" />
+            )}
+            {cell.moduleDefinition.module === 'BridgeRectifier' && relativeX === 1 && relativeY === 1 && (
+              <BridgeRectifierBodyLabel />
             )}
 
             {/* Output V / I / P stats (Buzzer, Speaker, Servo, Potentiometer) */}

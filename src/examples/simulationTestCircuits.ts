@@ -6,41 +6,6 @@ import {
 } from '../types/workspace'
 import { buildSchematic } from './schematicBuilder'
 
-function placeholderSchematic(
-  name: string,
-  description: string,
-  note: string,
-  formula: string
-): Schematic {
-  return buildSchematic(
-    name,
-    `${description}\n\nExpected: ${formula}\n\n${note}`,
-    () => {},
-    {
-      groupBoxes: [
-        {
-          ...createSchematicGroupBox(4, 6, 28, 14, name, {
-            name: 'Amber',
-            fill: 'rgba(254, 243, 199, 0.55)',
-            border: '#FBBF24',
-          }),
-          title: name,
-        },
-        {
-          id: `ex-note-${name.replace(/\s+/g, '-')}`,
-          x: 6,
-          y: 8,
-          width: 24,
-          height: 10,
-          title: 'Pending component library',
-          color: 'rgba(255, 255, 255, 0.7)',
-          borderColor: '#94A3B8',
-        },
-      ],
-    }
-  )
-}
-
 /** Voltage divider — Vout = Vin × R2/(R1+R2) */
 export function voltageDividerSchematic(): Schematic {
   return buildSchematic(
@@ -170,39 +135,141 @@ export function rcCircuitSchematic(): Schematic {
   )
 }
 
+/** NPN transistor low-side switch */
 export function npnTransistorSchematic(): Schematic {
-  return placeholderSchematic(
+  return buildSchematic(
     'NPN Transistor Switch',
-    'Collector-emitter should saturate when base current is sufficient.',
-    'NPN transistor component is not yet in the library. Build this test once transistors are added.',
-    'Vce(sat) ≈ 0 when Ib × β > Ic'
+    'Verify: collector-emitter saturates when base current is sufficient. With 5V, R_load=1kΩ, R_base=10kΩ, Vce(sat) ≈ 0.2V.',
+    ({ place, wire }) => {
+      const ps = place('PowerSupply', 2, 8)
+      const rLoad = place('Resistor', 6, 8, { resistance: 1000 })
+      const q = place('NPNTransistor', 10, 7)
+      const rBase = place('Resistor', 6, 14, { resistance: 10000 })
+
+      wire([ps.pin('5V'), rLoad.at(0, 0)], { powered: true, color: '#00ff00' })
+      wire([rLoad.at(2, 0), q.pin('C')], { color: '#666666' })
+      wire([q.pin('E'), { x: 11, y: 9 }, { x: 11, y: 12 }, { x: 3, y: 12 }, { x: 3, y: 8 }, ps.pin('GND')], {
+        grounded: true,
+        color: '#ff0000',
+      })
+      wire([ps.pin('5V'), { x: 4, y: 14 }, rBase.at(0, 0)], { powered: true, color: '#00ff00' })
+      wire([rBase.at(2, 0), { x: 8, y: 14 }, { x: 8, y: 8 }, q.pin('B')], { color: '#666666' })
+    },
+    {
+      groupBoxes: [
+        {
+          ...createSchematicGroupBox(1, 6, 32, 12, 'NPN Transistor Switch', {
+            name: 'Amber',
+            fill: 'rgba(254, 243, 199, 0.55)',
+            border: '#FBBF24',
+          }),
+          title: 'Vce(sat) ≈ 0 when Ib × β > Ic',
+        },
+      ],
+    }
   )
 }
 
+/** Op-amp inverting amplifier */
 export function opAmpInvertingSchematic(): Schematic {
-  return placeholderSchematic(
+  return buildSchematic(
     'Op-Amp Inverting Amplifier',
-    'Inverting amplifier gain verification.',
-    'Op-amp component is not yet in the library. Use Rf and Rin to verify Vout = -(Rf/Rin)×Vin.',
-    'Vout = -(Rf/Rin) × Vin'
+    'Verify: Vout = −(Rf/Rin) × Vin. With Rin=1kΩ, Rf=10kΩ, Vin=0.5V → Vout ≈ −5V (clipped to rails).',
+    ({ place, wire }) => {
+      const ps = place('PowerSupply', 2, 10)
+      const rin = place('Resistor', 6, 12, { resistance: 1000 })
+      const rf = place('Resistor', 10, 8, { resistance: 10000 })
+      const op = place('OpAmp', 14, 9)
+
+      wire([ps.pin('5V'), op.pin('V+')], { powered: true, color: '#00ff00' })
+      wire([op.pin('V-'), { x: 15, y: 11 }, { x: 15, y: 14 }, { x: 3, y: 14 }, { x: 3, y: 10 }, ps.pin('GND')], {
+        grounded: true,
+        color: '#ff0000',
+      })
+      wire([op.pin('+'), { x: 14, y: 11 }, { x: 13, y: 11 }, { x: 13, y: 14 }, { x: 3, y: 14 }], {
+        grounded: true,
+        color: '#ff0000',
+      })
+      wire([ps.pin('5V'), { x: 4, y: 12 }, rin.at(0, 0)], { powered: true, color: '#00ff00' })
+      wire([rin.at(2, 0), { x: 8, y: 12 }, { x: 8, y: 10 }, op.pin('-')], { color: '#666666' })
+      wire([op.pin('-'), { x: 15, y: 10 }, { x: 12, y: 10 }, rf.at(0, 0)], { color: '#666666' })
+      wire([rf.at(2, 0), { x: 12, y: 8 }, { x: 12, y: 10 }, op.pin('OUT')], { color: '#666666' })
+    },
+    {
+      groupBoxes: [
+        {
+          ...createSchematicGroupBox(1, 7, 36, 12, 'Op-Amp Inverting Amplifier', {
+            name: 'Violet',
+            fill: 'rgba(237, 233, 254, 0.55)',
+            border: '#A78BFA',
+          }),
+          title: 'Vout = −(Rf/Rin) × Vin',
+        },
+      ],
+    }
   )
 }
 
+/** Zener voltage clamp */
 export function zenerClampSchematic(): Schematic {
-  return placeholderSchematic(
+  return buildSchematic(
     'Zener Voltage Clamp',
-    'Output should clamp at the Zener breakdown voltage.',
-    'Zener diode component is not yet in the library.',
-    'Vout clamps at Vz'
+    'Verify: output clamps at Zener voltage. With 5V input, R=1kΩ, 3.3V Zener → Vout ≈ 3.3V.',
+    ({ place, wire }) => {
+      const ps = place('PowerSupply', 2, 10)
+      const r = place('Resistor', 6, 10, { resistance: 1000 })
+      const z = place('ZenerDiode', 10, 10, { zenerVoltage: 3.3 })
+
+      wire([ps.pin('5V'), { x: 4, y: 8 }, { x: 4, y: 10 }, r.at(0, 0)], { powered: true, color: '#00ff00' })
+      wire([r.at(2, 0), z.pin('K')], { color: '#666666' })
+      wire([z.pin('A'), { x: 12, y: 10 }, { x: 12, y: 14 }, { x: 3, y: 14 }, { x: 3, y: 10 }, ps.pin('GND')], {
+        grounded: true,
+        color: '#ff0000',
+      })
+    },
+    {
+      groupBoxes: [
+        {
+          ...createSchematicGroupBox(1, 8, 32, 10, 'Zener Voltage Clamp', {
+            name: 'Cyan',
+            fill: 'rgba(207, 250, 254, 0.55)',
+            border: '#22D3EE',
+          }),
+          title: 'Vout clamps at Vz',
+        },
+      ],
+    }
   )
 }
 
+/** Bridge rectifier with AC source */
 export function bridgeRectifierSchematic(): Schematic {
-  return placeholderSchematic(
+  return buildSchematic(
     'Bridge Rectifier',
-    'Full-wave rectified DC output from AC input.',
-    'Bridge rectifier / diode components are not yet in the library.',
-    'Vdc ≈ 0.9 × Vrms'
+    'Verify: Vdc ≈ 0.9 × Vrms. With 12V RMS AC and a 1kΩ load, expect rectified DC across the load.',
+    ({ place, wire }) => {
+      const ac = place('ACSource', 2, 10, { vrms: 12 })
+      const bridge = place('BridgeRectifier', 8, 9)
+      const rLoad = place('Resistor', 14, 10, { resistance: 1000 })
+
+      wire([ac.pin('AC1'), bridge.pin('AC1')], { powered: true, color: '#00ff00' })
+      wire([ac.pin('AC2'), bridge.pin('AC2')], { grounded: true, color: '#ff0000' })
+      wire([bridge.pin('-'), ac.pin('AC2')], { grounded: true, color: '#ff0000' })
+      wire([bridge.pin('+'), rLoad.at(0, 0)], { powered: true, color: '#00ff00' })
+      wire([rLoad.at(2, 0), bridge.pin('-')], { color: '#666666' })
+    },
+    {
+      groupBoxes: [
+        {
+          ...createSchematicGroupBox(1, 8, 36, 10, 'Bridge Rectifier', {
+            name: 'Orange',
+            fill: 'rgba(255, 237, 213, 0.55)',
+            border: '#FB923C',
+          }),
+          title: 'Vdc ≈ 0.9 × Vrms',
+        },
+      ],
+    }
   )
 }
 
@@ -222,7 +289,7 @@ export function simulationTestReferenceDoc(): Document {
 | Zener voltage clamp | Output clamps at Zener voltage |
 | Bridge rectifier | Vdc ≈ 0.9 × Vrms |
 
-Open each schematic in this folder to run the preset layout. Circuits marked as pending need additional components in the library.
+Open each schematic in this folder to run the preset layout.
 `
   )
 }
