@@ -1,6 +1,7 @@
 import { AgentTool } from '../types'
 import { fail, makeTool, okRead } from '../helpers'
-import { moduleRegistry, getModule, getCategories } from '../../modules/registry'
+import { moduleRegistry, getModule, getCategories, resolveModuleName } from '../../modules/registry'
+import { listConnectablePins } from '../../utils/pinNames'
 
 export const catalogAgentTools: AgentTool[] = [
   makeTool(
@@ -35,13 +36,14 @@ export const catalogAgentTools: AgentTool[] = [
 
   makeTool(
     'catalog_get_module',
-    'Get full details for a module including pin definitions and properties.',
+    'Get full details for a module including pin definitions (relX/relY relative to placement origin) and properties.',
     'catalog',
     [{ name: 'moduleName', type: 'string', description: 'Module name', required: true }],
     (_ctx, args) => {
-      const def = getModule(args.moduleName as string)
+      const resolved = resolveModuleName(args.moduleName as string)
+      const def = getModule(resolved)
       if (!def) return fail(`Module not found: ${args.moduleName}`)
-      const entry = moduleRegistry[args.moduleName as string]
+      const entry = moduleRegistry[resolved]
       return okRead(_ctx, 'Module retrieved.', {
         module: {
           name: def.module,
@@ -50,9 +52,7 @@ export const catalogAgentTools: AgentTool[] = [
           disabled: entry?.disabled ?? false,
           gridX: def.gridX,
           gridY: def.gridY,
-          pins: def.grid
-            .filter((c) => c.isConnectable)
-            .map((c) => ({ name: c.pin || c.type, type: c.type, x: c.x, y: c.y })),
+          pins: listConnectablePins(def.module, def),
           properties: (def as { properties?: Record<string, unknown> }).properties,
         },
       })
@@ -68,17 +68,16 @@ export const catalogAgentTools: AgentTool[] = [
       { name: 'includeDisabled', type: 'boolean', description: 'Include disabled modules', required: false },
     ],
     (_ctx, args) => {
-      const q = (args.query as string).toLowerCase()
+      const q = (args.query as string).toLowerCase().trim()
+      const tokens = q.split(/[\s_-]+/).filter(Boolean)
       const includeDisabled = args.includeDisabled !== false
       const matches = Object.entries(moduleRegistry)
         .filter(([, e]) => includeDisabled || !e.disabled)
         .filter(([name, entry]) => {
           const kw = entry.keywords ?? []
-          return (
-            name.toLowerCase().includes(q) ||
-            entry.category.includes(q) ||
-            kw.some((k) => k.includes(q))
-          )
+          const haystack = [name.toLowerCase(), entry.category, ...kw].join(' ')
+          if (haystack.includes(q)) return true
+          return tokens.length > 0 && tokens.every((t) => haystack.includes(t))
         })
         .map(([name, entry]) => ({ name, category: entry.category, keywords: entry.keywords }))
 

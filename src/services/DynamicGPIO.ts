@@ -18,6 +18,44 @@ export interface GPIOAnimation {
   duration?: number // ms, undefined = infinite
 }
 
+const ARDUINO_BUILTIN_PINS: Record<string, number> = {
+  LED_BUILTIN: 13,
+}
+
+/** Strip // and block comments so regex analysis matches real sketch style. */
+function stripCppComments(code: string): string {
+  return code.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
+/** Resolve `#define`, `const int`, and Arduino built-ins like LED_BUILTIN. */
+export function extractPinConstants(code: string): Map<string, number> {
+  const constants = new Map<string, number>(Object.entries(ARDUINO_BUILTIN_PINS))
+  const cleaned = stripCppComments(code)
+
+  for (const match of cleaned.matchAll(/#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(\d+)/g)) {
+    constants.set(match[1], parseInt(match[2], 10))
+  }
+
+  for (const match of cleaned.matchAll(
+    /const\s+(?:unsigned\s+)?(?:int|char|byte|uint8_t)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)/g
+  )) {
+    constants.set(match[1], parseInt(match[2], 10))
+  }
+
+  return constants
+}
+
+export function resolvePinArg(arg: string, constants: Map<string, number>): number | null {
+  const trimmed = arg.trim()
+  if (/^\d+$/.test(trimmed)) return parseInt(trimmed, 10)
+  const resolved = constants.get(trimmed)
+  return resolved !== undefined ? resolved : null
+}
+
+const DIGITAL_WRITE_RE = /digitalWrite\s*\(\s*([^,\s)]+)\s*,\s*(HIGH|LOW)\s*\)/
+const ANALOG_WRITE_RE = /analogWrite\s*\(\s*([^,\s)]+)\s*,\s*(\d+)\s*\)/
+const DELAY_RE = /delay\s*\(\s*(\d+)\s*\)/
+
 export class DynamicGPIO {
   private animations: Map<number, GPIOAnimation> = new Map()
   private currentStates: Map<number, DynamicGPIOState> = new Map()
@@ -32,11 +70,12 @@ export class DynamicGPIO {
   analyzeCode(code: string): GPIOAnimation[] {
     const animations: GPIOAnimation[] = []
     const lines = code.split('\n')
+    const pinConstants = extractPinConstants(code)
     
     // Look for common patterns
-    const blinkPattern = this.detectBlinkPattern(lines)
-    const fadePattern = this.detectFadePattern(lines)
-    const staticPattern = this.detectStaticPattern(lines)
+    const blinkPattern = this.detectBlinkPattern(lines, pinConstants)
+    const fadePattern = this.detectFadePattern(lines, pinConstants)
+    const staticPattern = this.detectStaticPattern(lines, pinConstants)
     
     console.log(`🔧 [PWM_DEBUG] Code analysis results:`, {
       blinkPattern: blinkPattern.length,
@@ -53,14 +92,24 @@ export class DynamicGPIO {
     }
     
     animations.push(...blinkPattern, ...fadePattern, ...staticPattern)
-    
-    return animations
+
+    // Prefer animated patterns over static when the same pin appears more than once
+    const byPin = new Map<number, GPIOAnimation>()
+    const priority = { BLINK: 3, FADE: 2, STATIC: 1, RANDOM: 0 }
+    animations.forEach((animation) => {
+      const existing = byPin.get(animation.pin)
+      if (!existing || priority[animation.pattern] >= priority[existing.pattern]) {
+        byPin.set(animation.pin, animation)
+      }
+    })
+
+    return Array.from(byPin.values())
   }
 
   /**
    * Detect blinking patterns (digitalWrite in loop)
    */
-  private detectBlinkPattern(lines: string[]): GPIOAnimation[] {
+  private detectBlinkPattern(lines: string[], pinConstants: Map<string, number>): GPIOAnimation[] {
     const animations: GPIOAnimation[] = []
     let inLoop = false
     let loopStartLine = -1
@@ -68,37 +117,34 @@ export class DynamicGPIO {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim()
       
-      // Detect loop start
       if (line.includes('void loop()') || line.includes('void loop ()')) {
         inLoop = true
         loopStartLine = i
+        if (line.includes('}')) inLoop = false
         continue
       }
       
-      // Detect loop end
-      if (inLoop && (line.includes('}') && i > loopStartLine + 1)) {
+      if (inLoop && line.includes('}') && i > loopStartLine) {
         inLoop = false
         continue
       }
       
-      // Look for digitalWrite patterns in loop
       if (inLoop) {
-        const digitalWriteMatch = line.match(/digitalWrite\s*\(\s*(\d+)\s*,\s*(HIGH|LOW)\s*\)/)
+        const digitalWriteMatch = line.match(DIGITAL_WRITE_RE)
         if (digitalWriteMatch) {
-          const pin = parseInt(digitalWriteMatch[1])
-          const state = digitalWriteMatch[2]
-          
-          // Look for delay patterns
-          const delayMatch = lines[i + 1]?.match(/delay\s*\(\s*(\d+)\s*\)/)
+          const pin = resolvePinArg(digitalWriteMatch[1], pinConstants)
+          if (pin === null) continue
+
+          const delayMatch = lines[i + 1]?.match(DELAY_RE)
           if (delayMatch) {
             const delayMs = parseInt(delayMatch[1])
-            const frequency = 1000 / (delayMs * 2) // Convert to Hz (HIGH + LOW = 2 delays)
+            const frequency = 1000 / (delayMs * 2)
             
             animations.push({
               pin,
               pattern: 'BLINK',
               frequency,
-              dutyCycle: 0.5, // Assume 50% duty cycle for simple blink
+              dutyCycle: 0.5,
               startTime: 0
             })
           }
@@ -112,7 +158,7 @@ export class DynamicGPIO {
   /**
    * Detect fade patterns (analogWrite in loop)
    */
-  private detectFadePattern(lines: string[]): GPIOAnimation[] {
+  private detectFadePattern(lines: string[], pinConstants: Map<string, number>): GPIOAnimation[] {
     const animations: GPIOAnimation[] = []
     let inLoop = false
     
@@ -121,6 +167,7 @@ export class DynamicGPIO {
       
       if (line.includes('void loop()')) {
         inLoop = true
+        if (line.includes('}')) inLoop = false
         continue
       }
       
@@ -130,15 +177,16 @@ export class DynamicGPIO {
       }
       
       if (inLoop) {
-        const analogWriteMatch = line.match(/analogWrite\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/)
+        const analogWriteMatch = line.match(ANALOG_WRITE_RE)
         if (analogWriteMatch) {
-          const pin = parseInt(analogWriteMatch[1])
+          const pin = resolvePinArg(analogWriteMatch[1], pinConstants)
+          if (pin === null) continue
           const value = parseInt(analogWriteMatch[2])
           
           // Look for increment/decrement patterns
           const nextLine = lines[i + 1]?.trim()
           if (nextLine?.includes('delay')) {
-            const delayMatch = nextLine.match(/delay\s*\(\s*(\d+)\s*\)/)
+            const delayMatch = nextLine.match(DELAY_RE)
             if (delayMatch) {
               const delayMs = parseInt(delayMatch[1])
               
@@ -170,15 +218,21 @@ export class DynamicGPIO {
   /**
    * Detect static patterns (digitalWrite in setup)
    */
-  private detectStaticPattern(lines: string[]): GPIOAnimation[] {
+  private detectStaticPattern(lines: string[], pinConstants: Map<string, number>): GPIOAnimation[] {
     const animations: GPIOAnimation[] = []
     let inSetup = false
     
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim()
       
+      if (line.includes('void loop()')) {
+        inSetup = false
+        continue
+      }
+
       if (line.includes('void setup()')) {
         inSetup = true
+        if (line.includes('}')) inSetup = false
         continue
       }
       
@@ -188,9 +242,10 @@ export class DynamicGPIO {
       }
       
       if (inSetup) {
-        const digitalWriteMatch = line.match(/digitalWrite\s*\(\s*(\d+)\s*,\s*(HIGH|LOW)\s*\)/)
+        const digitalWriteMatch = line.match(DIGITAL_WRITE_RE)
         if (digitalWriteMatch) {
-          const pin = parseInt(digitalWriteMatch[1])
+          const pin = resolvePinArg(digitalWriteMatch[1], pinConstants)
+          if (pin === null) continue
           const state = digitalWriteMatch[2]
           
           animations.push({
@@ -203,9 +258,10 @@ export class DynamicGPIO {
         }
         
         // Also detect analogWrite in setup (static PWM)
-        const analogWriteMatch = line.match(/analogWrite\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/)
+        const analogWriteMatch = line.match(ANALOG_WRITE_RE)
         if (analogWriteMatch) {
-          const pin = parseInt(analogWriteMatch[1])
+          const pin = resolvePinArg(analogWriteMatch[1], pinConstants)
+          if (pin === null) continue
           const value = parseInt(analogWriteMatch[2])
           
           animations.push({

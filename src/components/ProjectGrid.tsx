@@ -4,6 +4,7 @@ import { ModuleDefinition, WireConnection, WireSegment, WiringState } from '../m
 import { GPIOState } from '../services/QEMUEmulatorReal'
 import { DynamicGPIOState } from '../services/DynamicGPIO'
 import { useTheme } from '../contexts/ThemeContext'
+import { useAgent } from '../contexts/AgentContext'
 import { calculateElectricalFlow, ComponentState } from '../systems/ElectricalSystem'
 import { ElectricalValidator } from './ElectricalValidator'
 import { DevicePanel } from './DevicePanel'
@@ -19,10 +20,10 @@ import { ComponentStatsBadge } from './ComponentStatsBadge'
 import { InductorBodyLabel } from './InductorBodyLabel'
 import { OUTPUT_MODULE_NAMES } from '../modules/registry'
 import { SchematicGroupBoxLayer } from './SchematicGroupBoxLayer'
-import { createSchematicGroupBox, type SchematicGroupBox, type Program } from '../types/workspace'
+import { SchematicLabelLayer } from './SchematicLabelLayer'
+import { createSchematicGroupBox, createSchematicCellLabel, type SchematicGroupBox, type SchematicCellLabel, type Program } from '../types/workspace'
 import { ResistorBodyLabel } from './ResistorBodyLabel'
 import { CapacitorBodyLabel } from './CapacitorBodyLabel'
-import { BatteryBodyLabel } from './BatteryBodyLabel'
 import { ACSourceBodyLabel } from './ACSourceBodyLabel'
 import { LedBodyIndicator, resolveLedColor } from './LedBodyIndicator'
 import { MotorBodyLabel } from './MotorBodyLabel'
@@ -33,12 +34,12 @@ import { SemiconductorPinPad } from './SemiconductorPinPad'
 import { DiodeBodyLabel } from './DiodeBodyLabel'
 import { ZenerDiodeBodyLabel } from './ZenerDiodeBodyLabel'
 import { TransistorBodyLabel } from './TransistorBodyLabel'
+import { MosfetBodyLabel } from './MosfetBodyLabel'
 import { OpAmpBodyLabel } from './OpAmpBodyLabel'
 import { BridgeRectifierBodyLabel } from './BridgeRectifierBodyLabel'
 import { getDisplayPin } from '../utils/smdVisual'
 import { resolveCellResistance } from '../utils/resistorVisual'
 import { buildHoverStats, type HoverStats } from '../utils/hoverStats'
-import { applyBatteryProperties, readBatteryCapacity } from '../utils/batteryVisual'
 import { applyACSourceProperties, readACSourceSettings } from '../utils/acSourceVisual'
 import {
   assignPowerSupplyIdToDefinition,
@@ -50,6 +51,8 @@ import { PowerSupplyLabelsLayer } from './PowerSupplyLabelsLayer'
 
 const GRID_PADDING = 4
 const DEFAULT_CELL_SIZE_PX = () => (window.innerWidth * 2.5) / 100
+/** Max schematic grid dimension — must exceed agent placement origin (≥50). */
+const GRID_MAX_SIZE = 200
 
 interface Project {
   id: number
@@ -77,6 +80,7 @@ interface ProjectGridProps {
   initialWires?: any[]
   initialComponentStates?: Record<string, any>
   initialGroupBoxes?: SchematicGroupBox[]
+  initialLabels?: SchematicCellLabel[]
   projectId?: string
   getAccessToken?: () => Promise<string>
   onProjectDataChange?: (data: {
@@ -84,6 +88,7 @@ interface ProjectGridProps {
     wires?: any[]
     componentStates?: Record<string, any>
     groupBoxes?: SchematicGroupBox[]
+    labels?: SchematicCellLabel[]
     hasUnsavedChanges?: boolean
     triggerUnsavedCheck?: boolean
   }) => void
@@ -103,7 +108,15 @@ interface ProjectGridProps {
   onSelectedGroupBoxIdChange?: (id: string | null) => void
   focusGroupBoxRequest?: SchematicGroupBox | null
   onFocusGroupBoxHandled?: () => void
+  labelMode?: boolean
+  onLabelModeChange?: (enabled: boolean) => void
+  labels?: SchematicCellLabel[]
+  onLabelsChange?: (labels: SchematicCellLabel[]) => void
+  selectedLabelId?: string | null
+  onSelectedLabelIdChange?: (id: string | null) => void
   projectPrograms?: Program[]
+  /** Bumps when schematic is updated externally (e.g. agent tools) — triggers grid resync. */
+  schematicUpdatedAt?: string
 }
 
 interface GridCell {
@@ -169,11 +182,6 @@ function buildPlacedModuleDefinition(module: ModuleDefinition): ModuleDefinition
         inductance: getModuleNumericProperty(props, 'inductance', 0.001),
       },
     } as ModuleDefinition
-  }
-  if (module.module === 'Battery') {
-    const voltage = getModuleNumericProperty(props, 'voltage', 3.7)
-    const capacity = getModuleNumericProperty(props, 'capacity', 2000)
-    return applyBatteryProperties(module, voltage, capacity)
   }
   if (module.module === 'ACSource') {
     return applyACSourceProperties(module, readACSourceSettings(props))
@@ -283,14 +291,31 @@ export function ProjectGrid({
   onSelectedGroupBoxIdChange,
   focusGroupBoxRequest,
   onFocusGroupBoxHandled,
+  labelMode = false,
+  onLabelModeChange,
+  initialLabels,
+  labels: controlledLabels,
+  onLabelsChange,
+  selectedLabelId: externalSelectedLabelId,
+  onSelectedLabelIdChange,
   projectPrograms,
+  schematicUpdatedAt,
 }: ProjectGridProps) {
   const { isDark } = useTheme()
+  const { isLoading: agentBusy } = useAgent()
   const gridRef = useRef<HTMLDivElement>(null)
   const gridLayerRef = useRef<HTMLDivElement>(null)
   const dragComponentRef = useRef<any>(null)
   const [cellSizePx, setCellSizePx] = useState(DEFAULT_CELL_SIZE_PX)
-  const [gridSize, setGridSize] = useState({ width: 50, height: 50 }) // Much smaller initial grid
+  const [gridSize, setGridSize] = useState(() => {
+    if (initialGridData && initialGridData.length > 0) {
+      return {
+        width: initialGridData[0]?.length ?? 50,
+        height: initialGridData.length,
+      }
+    }
+    return { width: 50, height: 50 }
+  })
   const [internalZoom, setInternalZoom] = useState(1)
   
   // Use external zoom if provided, otherwise use internal zoom
@@ -380,6 +405,40 @@ export function ProjectGrid({
   const [groupBoxDrawStart, setGroupBoxDrawStart] = useState<{ x: number; y: number } | null>(null)
   const [groupBoxDrawPreview, setGroupBoxDrawPreview] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   const justFinishedGroupBoxDraw = useRef(false)
+  const skipAutosaveRef = useRef(false)
+  const lastSyncedAtRef = useRef<string | null>(null)
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const syncGridFromProps = useCallback(() => {
+    if (initialGridData && initialGridData.length > 0) {
+      const synced = ensurePowerSupplyIdsInGrid(initialGridData as GridCell[][])
+      setGridData(synced)
+      setGridSize({ width: synced[0]?.length ?? 50, height: synced.length })
+      setLastPlacedObject(findLastPlacedFromGrid(synced))
+    }
+    if (initialWires) setWires(initialWires)
+    if (initialComponentStates) {
+      setComponentStates(new Map(Object.entries(initialComponentStates)))
+    }
+  }, [initialGridData, initialWires, initialComponentStates])
+
+  useEffect(() => {
+    if (!schematicUpdatedAt || schematicUpdatedAt === lastSyncedAtRef.current) return
+    lastSyncedAtRef.current = schematicUpdatedAt
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
+    }
+    skipAutosaveRef.current = true
+    syncGridFromProps()
+  }, [schematicUpdatedAt, syncGridFromProps])
+
+  const [internalLabels, setInternalLabels] = useState<SchematicCellLabel[]>(() => initialLabels ?? [])
+  const labels = controlledLabels ?? internalLabels
+  const [internalSelectedLabelId, setInternalSelectedLabelId] = useState<string | null>(null)
+  const selectedLabelId = externalSelectedLabelId !== undefined ? externalSelectedLabelId : internalSelectedLabelId
+  const setSelectedLabelId = onSelectedLabelIdChange ?? setInternalSelectedLabelId
+  const [editRequestLabelId, setEditRequestLabelId] = useState<string | null>(null)
 
   const isGroupBoxMode = selectedModule?.module === 'Group Box'
 
@@ -403,6 +462,22 @@ export function ProjectGrid({
     }
   }, [onGroupBoxesChange, controlledGroupBoxes])
 
+  const updateLabels = useCallback((updater: SchematicCellLabel[] | ((prev: SchematicCellLabel[]) => SchematicCellLabel[])) => {
+    const apply = (prev: SchematicCellLabel[]) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      onLabelsChange?.(next)
+      if (controlledLabels === undefined) {
+        setInternalLabels(next)
+      }
+      return next
+    }
+    if (controlledLabels !== undefined) {
+      apply(controlledLabels)
+    } else {
+      setInternalLabels((prev) => apply(prev))
+    }
+  }, [onLabelsChange, controlledLabels])
+
   useEffect(() => {
     if (controlledGroupBoxes === undefined) {
       setInternalGroupBoxes(initialGroupBoxes ?? [])
@@ -410,6 +485,11 @@ export function ProjectGrid({
     setSelectedGroupBoxId(null)
     setGroupBoxDrawStart(null)
     setGroupBoxDrawPreview(null)
+    if (controlledLabels === undefined) {
+      setInternalLabels(initialLabels ?? [])
+    }
+    setSelectedLabelId(null)
+    setEditRequestLabelId(null)
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
   
   // Simulation state for wire visual feedback
@@ -423,6 +503,11 @@ export function ProjectGrid({
   
   // Auto-save functionality - call onProjectDataChange when data changes (debounced)
   useEffect(() => {
+    if (agentBusy) return
+    if (skipAutosaveRef.current) {
+      skipAutosaveRef.current = false
+      return
+    }
     if (onProjectDataChange) {
       
       // First, notify that there are unsaved changes and trigger immediate check
@@ -431,23 +516,32 @@ export function ProjectGrid({
         wires,
         componentStates: Object.fromEntries(componentStates),
         groupBoxes,
+        labels,
         hasUnsavedChanges: true,
         triggerUnsavedCheck: true
       })
 
-      const timeoutId = setTimeout(() => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = setTimeout(() => {
+        autosaveTimerRef.current = null
         // After debounce, trigger the actual save (without hasUnsavedChanges flag)
         onProjectDataChange({
           gridData,
           wires,
           componentStates: Object.fromEntries(componentStates),
           groupBoxes,
+          labels,
         })
       }, 500) // 500ms debounce to prevent excessive saves
 
-      return () => clearTimeout(timeoutId)
+      return () => {
+        if (autosaveTimerRef.current) {
+          clearTimeout(autosaveTimerRef.current)
+          autosaveTimerRef.current = null
+        }
+      }
     }
-  }, [gridData, wires, componentStates, groupBoxes])
+  }, [gridData, wires, componentStates, groupBoxes, labels, agentBusy, onProjectDataChange])
 
   // Local (pre-transform) cell size for SVG wire geometry inside the transformed layer
   useEffect(() => {
@@ -601,7 +695,7 @@ export function ProjectGrid({
     
     // Much smaller buffer and max size to prevent memory issues
     const buffer = 10 // Reduced buffer
-    const maxSize = 50 // Much smaller maximum grid size
+    const maxSize = GRID_MAX_SIZE
     const newWidth = Math.min(maxSize, Math.max(gridSize.width, viewportWidth + buffer * 2))
     const newHeight = Math.min(maxSize, Math.max(gridSize.height, viewportHeight + buffer * 2))
     
@@ -647,7 +741,7 @@ export function ProjectGrid({
   const checkAndExpandForPlacement = useCallback((x: number, y: number, width: number, height: number) => {
     const boundaryThreshold = 5 // Reduced threshold
     const expansionAmount = 10 // Reduced expansion amount
-    const maxSize = 50 // Much smaller maximum size
+    const maxSize = GRID_MAX_SIZE
     let needsExpansion = false
     let newWidth = gridSize.width
     let newHeight = gridSize.height
@@ -1293,7 +1387,10 @@ export function ProjectGrid({
 
   // Delete mode functions
   const toggleDeleteMode = useCallback(() => {
-    setDeleteMode(prev => !prev)
+    setDeleteMode((prev) => {
+      if (!prev) onLabelModeChange?.(false)
+      return !prev
+    })
     setHoveredForDeletion(null)
     // Exit wiring mode when entering delete mode
     if (wiringState.isWiring) {
@@ -1303,7 +1400,7 @@ export function ProjectGrid({
     if (selectedModule) {
       onModuleSelect(null)
     }
-  }, [wiringState.isWiring, cancelWiring, selectedModule, onModuleSelect])
+  }, [wiringState.isWiring, cancelWiring, selectedModule, onModuleSelect, onLabelModeChange])
 
   const handlePowerSupplyUpdate = useCallback(
     (componentId: string, patch: { voltage: number; current: number }) => {
@@ -1489,81 +1586,8 @@ export function ProjectGrid({
     const endProps = getComponentProperties(x, y)
     const endWire = getWirePassingThrough(x, y)
     const startWire = getWirePassingThrough(wiringState.currentConnection.startX, wiringState.currentConnection.startY)
-    if (startProps && endProps) {
-      
-      // Check if trying to connect powerable to groundable
-      // Exception: Resistors can connect to both powerable and groundable components
-      // Exception: GND to GND connections are always allowed
-      const startIsResistor = startProps.componentType === 'Resistor'
-      const endIsResistor = endProps.componentType === 'Resistor'
-      const startIsGND = startProps.pinType === 'GND'
-      const endIsGND = endProps.pinType === 'GND'
-      const isGNDToGND = (startIsGND && endIsGND) || (startProps.isGroundable && endProps.isGroundable)
-      
-      if (startProps.isPowerable && endProps.isGroundable && !startIsResistor && !endIsResistor && !isGNDToGND) {
-        alert('❌ Cannot connect powerable terminal to groundable terminal!')
-        cancelWiring()
-        return
-      }
-      if (startProps.isGroundable && endProps.isPowerable && !startIsResistor && !endIsResistor && !isGNDToGND) {
-        alert('❌ Cannot connect groundable terminal to powerable terminal!')
-        cancelWiring()
-        return
-      }
-    } 
 
-    // Check for wire-to-wire conflicts
-    if (endWire) {
-      
-      if (startWire) {
-        // Wire to wire connection - check for conflicts
-        // Exception: GND to GND wire connections are always allowed
-        const isGNDToGNDWire = (startWire.isGroundable && endWire.isGroundable)
-        
-        if (startWire.isPowerable && endWire.isGroundable && !isGNDToGNDWire) {
-          alert('❌ Cannot connect powerable wire to groundable wire!')
-          cancelWiring()
-          return
-        }
-        if (startWire.isGroundable && endWire.isPowerable && !isGNDToGNDWire) {
-          alert('❌ Cannot connect groundable wire to powerable wire!')
-          cancelWiring()
-          return
-        }
-      } else if (startProps) {
-        
-        // Exception: Resistors can connect to both powerable and groundable wires
-        // Exception: GND to GND connections are always allowed
-        const startIsResistor = startProps.componentType === 'Resistor'
-        const isGNDToGNDWire = (startProps.isGroundable && endWire.isGroundable) || (startProps.pinType === 'GND' && endWire.isGroundable)
-        
-        if (startProps.isPowerable && endWire.isGroundable && !startIsResistor && !isGNDToGNDWire) {
-          alert('❌ Cannot connect powerable component to groundable wire!')
-          cancelWiring()
-          return
-        }
-        if (startProps.isGroundable && endWire.isPowerable && !startIsResistor && !isGNDToGNDWire) {
-          alert('❌ Cannot connect groundable component to powerable wire!')
-          cancelWiring()
-          return
-        }
-      }
-    }
-
-    // Check for wire-to-component conflicts (when starting from a wire)
-    if (startWire && endProps) {
-      // Exception: Resistors can connect to both powerable and groundable wires
-      const endIsResistor = endProps.componentType === 'Resistor'
-      
-      if (startWire.isPowerable && endProps.isGroundable && !endIsResistor) {
-        alert('❌ Cannot connect powerable wire to groundable component!')
-        cancelWiring()
-        return
-      }
-    }
-    
     // Determine wire properties from connected components and existing wires
-    
     const wireIsPowerable = (startProps?.isPowerable || false) || (endProps?.isPowerable || false) || 
                           (startWire?.isPowerable || false) || (endWire?.isPowerable || false)
     const wireIsGroundable = (startProps?.isGroundable || false) || (endProps?.isGroundable || false) || 
@@ -1792,9 +1816,29 @@ export function ProjectGrid({
     const gridCoords = screenToGridCoords(e.clientX, e.clientY, 'cell')
     if (!gridCoords) return
     const { x, y } = gridCoords
+
+    if (labelMode) {
+      const existing = labels.find((label) => label.x === x && label.y === y)
+      if (existing) {
+        setSelectedLabelId(existing.id)
+        setEditRequestLabelId(existing.id)
+      } else {
+        const newLabel = createSchematicCellLabel(x, y)
+        updateLabels((prev) => [...prev, newLabel])
+        setSelectedLabelId(newLabel.id)
+        setEditRequestLabelId(newLabel.id)
+      }
+      return
+    }
     
     // Handle delete mode
     if (deleteMode) {
+      const labelAt = labels.find((label) => label.x === x && label.y === y)
+      if (labelAt) {
+        updateLabels((prev) => prev.filter((label) => label.id !== labelAt.id))
+        if (selectedLabelId === labelAt.id) setSelectedLabelId(null)
+        return
+      }
       const cell = gridData[y]?.[x]
       if (cell?.occupied && cell.componentId) {
         deleteComponent(cell.componentId)
@@ -1978,10 +2022,10 @@ export function ProjectGrid({
         // Deselect the module after placing
         onModuleSelect(null)
       }
-    } else if (!wiringState.isWiring && !deleteMode) {
+    } else if (!wiringState.isWiring && !deleteMode && !labelMode) {
       setSelectedGroupBoxId(null)
     }
-  }, [selectedModule, gridSize.width, gridSize.height, onModuleSelect, wiringState, addWireSegment, finishWiringWithValidation, startWiring, isConnectionPoint, screenToGridCoords, checkAndExpandForPlacement, deleteMode, gridData, setSelectedGroupBoxId])
+  }, [selectedModule, gridSize.width, gridSize.height, onModuleSelect, wiringState, addWireSegment, finishWiringWithValidation, startWiring, isConnectionPoint, screenToGridCoords, checkAndExpandForPlacement, deleteMode, labelMode, gridData, setSelectedGroupBoxId, labels, updateLabels, setSelectedLabelId, selectedLabelId])
 
   // Handle mouse leave to clear hover state
   const handleMouseLeave = useCallback(() => {
@@ -2017,6 +2061,19 @@ export function ProjectGrid({
       setHoveredForDeletion(null)
     }
   }, [selectedModule, deleteMode])
+
+  useEffect(() => {
+    if (labelMode && deleteMode) {
+      setDeleteMode(false)
+      setHoveredForDeletion(null)
+    }
+  }, [labelMode, deleteMode])
+
+  useEffect(() => {
+    if (labelMode && selectedModule) {
+      onModuleSelect(null)
+    }
+  }, [labelMode, selectedModule, onModuleSelect])
 
   // Check if cell is occupied
   const isCellOccupied = (x: number, y: number) => {
@@ -2141,6 +2198,7 @@ export function ProjectGrid({
     !deleteMode &&
     !wiringState.isWiring &&
     !isGroupBoxMode &&
+    !labelMode &&
     !selectedModule
 
   const showPlacementPreview =
@@ -2607,15 +2665,6 @@ const GridCell = React.memo(({
               />
             )}
 
-            {cell.moduleDefinition.module === 'Battery' && relativeX === 0 && relativeY === 0 && (
-              <BatteryBodyLabel
-                voltage={getModuleNumericProperty(cell.moduleDefinition.properties, 'voltage', 3.7)}
-                capacityMah={readBatteryCapacity(
-                  cell.moduleDefinition.properties as Record<string, unknown> | undefined
-                )}
-              />
-            )}
-
             {cell.moduleDefinition.module === 'ACSource' && relativeX === 0 && relativeY === 0 && (
               <ACSourceBodyLabel
                 properties={cell.moduleDefinition.properties as Record<string, unknown> | undefined}
@@ -2670,6 +2719,19 @@ const GridCell = React.memo(({
             )}
             {cell.moduleDefinition.module === 'NPNTransistor' && relativeX === 1 && relativeY === 1 && (
               <TransistorBodyLabel />
+            )}
+
+            {cell.moduleDefinition.module === 'MOSFET' && relativeX === 1 && relativeY === 0 && (
+              <SemiconductorPinPad label="D" edge="top" />
+            )}
+            {cell.moduleDefinition.module === 'MOSFET' && relativeX === 0 && relativeY === 1 && (
+              <SemiconductorPinPad label="G" edge="left" />
+            )}
+            {cell.moduleDefinition.module === 'MOSFET' && relativeX === 1 && relativeY === 2 && (
+              <SemiconductorPinPad label="S" edge="bottom" />
+            )}
+            {cell.moduleDefinition.module === 'MOSFET' && relativeX === 1 && relativeY === 1 && (
+              <MosfetBodyLabel />
             )}
 
             {cell.moduleDefinition.module === 'OpAmp' && relativeX === 1 && relativeY === 0 && (
@@ -2790,6 +2852,7 @@ const GridCell = React.memo(({
         deleteMode ? 'cursor-pointer' :
         wiringState.isWiring ? 'cursor-crosshair' :
         isGroupBoxMode ? 'cursor-crosshair' :
+        labelMode ? 'cursor-text' :
         selectedModule ? 'cursor-crosshair' : 'cursor-grab'
       }`}
       onMouseMove={handleHoverMove}
@@ -2977,6 +3040,25 @@ const GridCell = React.memo(({
         })}
 
         <PowerSupplyLabelsLayer gridData={gridData} />
+
+        <SchematicLabelLayer
+          labels={labels}
+          selectedId={selectedLabelId}
+          isLabelMode={labelMode}
+          deleteMode={deleteMode}
+          editRequestId={editRequestLabelId}
+          onSelect={setSelectedLabelId}
+          onUpdate={(id, patch) => {
+            updateLabels((prev) =>
+              prev.map((label) => (label.id === id ? { ...label, ...patch } : label))
+            )
+          }}
+          onDelete={(id) => {
+            updateLabels((prev) => prev.filter((label) => label.id !== id))
+            if (selectedLabelId === id) setSelectedLabelId(null)
+          }}
+          onEditRequestHandled={() => setEditRequestLabelId(null)}
+        />
       </div>
 
       {/* Hover highlights — above cells, below wires */}

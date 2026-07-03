@@ -23,6 +23,47 @@ function directedEdge(from: string, to: string): InternalEdge {
   return { from, to, bidirectional: false }
 }
 
+const MCU_POWER_INPUT_PINS = new Set(['VIN', '5V', '3V3'])
+
+/** External power may be applied to VIN, 5V, or 3V3 (not IOREF / EN / RESET). */
+export function isMcuPowerInput(moduleCell: any): boolean {
+  if (!moduleCell?.isPowerable) return false
+  return MCU_POWER_INPUT_PINS.has(moduleCell.pin)
+}
+
+export function isMicrocontrollerModule(moduleDefinition: { category?: string; module?: string }): boolean {
+  if (moduleDefinition.category === 'microcontrollers') return true
+  const moduleType = moduleDefinition.module ?? ''
+  return moduleType.includes('Arduino') || moduleType.includes('ESP32')
+}
+
+function mcuInternalEdges(terminals: GraphTerminal[]): InternalEdge[] {
+  const powerKeys = terminals.filter((t) => isMcuPowerInput(t.moduleCell)).map((t) => t.key)
+  const gndKeys = terminals.filter((t) => isGroundReference(t.moduleCell)).map((t) => t.key)
+  if (powerKeys.length === 0 || gndKeys.length === 0) return []
+
+  const edges: InternalEdge[] = [...pairBidirectional(powerKeys)]
+  for (const p of powerKeys) {
+    for (const g of gndKeys) {
+      edges.push({ from: p, to: g, bidirectional: true })
+    }
+  }
+  return edges
+}
+
+/** High-Z signal pins that need a bleed resistor so the MNA matrix stays solvable. */
+export function isMcuFloatingPin(moduleCell: any): boolean {
+  if (!moduleCell) return false
+  const type = moduleCell.type
+  return (
+    type === 'GPIO' ||
+    type === 'ANALOG' ||
+    type === 'RESET' ||
+    type === 'EN' ||
+    moduleCell.pin === 'IOREF'
+  )
+}
+
 function isSwitchClosed(gridData: GridCellLike[][], componentId: string): boolean {
   for (const row of gridData) {
     if (!row) continue
@@ -61,8 +102,12 @@ function collectTerminals(gridData: GridCellLike[][], componentId: string): Grap
 export function getComponentConductivity(
   moduleType: string,
   terminals: GraphTerminal[],
-  gridData: GridCellLike[][]
+  gridData: GridCellLike[][],
+  category?: string
 ): InternalEdge[] {
+  if (category === 'microcontrollers' || isMicrocontrollerModule({ category, module: moduleType })) {
+    return mcuInternalEdges(terminals)
+  }
   const byType = (type: string) => terminals.filter((t) => t.moduleCell.type === type).map((t) => t.key)
   const byPolarity = (p: 'positive' | 'negative' | 'bidirectional') =>
     terminals.filter((t) => t.polarity === p).map((t) => t.key)
@@ -100,6 +145,13 @@ export function getComponentConductivity(
       const c = byType('COLLECTOR')
       const e = byType('EMITTER')
       if (c.length && e.length) return pairBidirectional([c[0], e[0]])
+      return []
+    }
+
+    case 'MOSFET': {
+      const d = byType('DRAIN')
+      const s = byType('SOURCE')
+      if (d.length && s.length) return pairBidirectional([d[0], s[0]])
       return []
     }
 
@@ -264,6 +316,15 @@ export function getWiperRatio(
 }
 
 export function gpioPinNumber(moduleCell: any): number | null {
+  const gpioProp = moduleCell?.properties?.gpio
+  if (gpioProp !== undefined && gpioProp !== null) {
+    const raw = String(gpioProp)
+    const fromProp = raw.startsWith('GPIO')
+      ? parseInt(raw.replace('GPIO', ''), 10)
+      : parseInt(raw, 10)
+    if (Number.isFinite(fromProp)) return fromProp
+  }
+
   const pin = moduleCell?.pin
   if (!pin || typeof pin !== 'string') return null
   if (pin.startsWith('GPIO')) return parseInt(pin.replace('GPIO', ''), 10)

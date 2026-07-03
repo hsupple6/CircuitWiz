@@ -53,7 +53,6 @@ function pickIcon(stats: HoverStats) {
     case 'Motor':
       return Gauge
     case 'PowerSupply':
-    case 'Battery':
       return Battery
     case 'Capacitor':
     case 'Inductor':

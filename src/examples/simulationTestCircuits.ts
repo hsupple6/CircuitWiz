@@ -16,9 +16,10 @@ export function voltageDividerSchematic(): Schematic {
       const r1 = place('Resistor', 6, 10, { resistance: 10000 })
       const r2 = place('Resistor', 6, 14, { resistance: 10000 })
 
-      wire([ps.pin('5V'), r1.at(0, 0)], { powered: true, color: '#00ff00' })
-      wire([r1.at(2, 0), { x: 8, y: 10 }, { x: 8, y: 14 }, r2.at(0, 0)], { color: '#666666' })
-      wire([r2.at(2, 0), { x: 8, y: 14 }, { x: 3, y: 14 }, { x: 3, y: 10 }, ps.pin('GND')], {
+      wire([ps.pin('5V'), { x: 2, y: 9 }, { x: 6, y: 9 }, r1.at(0, 0)], { powered: true, color: '#00ff00' })
+      wire([r1.at(2, 0), { x: 8, y: 10 }, { x: 8, y: 14 }], { color: '#666666' })
+      wire([{ x: 8, y: 10 }, { x: 10, y: 10 }], { color: '#666666' })
+      wire([r2.at(0, 0), { x: 3, y: 14 }, { x: 3, y: 10 }, ps.pin('GND')], {
         grounded: true,
         color: '#ff0000',
       })
@@ -48,9 +49,9 @@ export function ledResistorSchematic(): Schematic {
       const r = place('Resistor', 6, 12, { resistance: 220 })
       const led = place('LED', 10, 12)
 
-      wire([ps.pin('5V'), r.at(0, 0)], { powered: true, color: '#00ff00' })
+      wire([ps.pin('5V'), { x: 2, y: 11 }, { x: 6, y: 11 }, r.at(0, 0)], { powered: true, color: '#00ff00' })
       wire([r.at(2, 0), led.pin('+')], { color: '#666666' })
-      wire([led.pin('-'), { x: 12, y: 12 }, { x: 12, y: 16 }, { x: 3, y: 16 }, { x: 3, y: 10 }, ps.pin('GND')], {
+      wire([led.pin('-'), { x: 12, y: 16 }, { x: 3, y: 16 }, ps.pin('GND')], {
         grounded: true,
         color: '#ff0000',
       })
@@ -80,9 +81,13 @@ export function parallelResistorsSchematic(): Schematic {
       const r1 = place('Resistor', 6, 8, { resistance: 1000 })
       const r2 = place('Resistor', 6, 12, { resistance: 2000 })
 
-      wire([ps.pin('5V'), { x: 4, y: 8 }, r1.at(0, 0)], { powered: true, color: '#00ff00' })
+      wire([ps.pin('5V'), { x: 2, y: 7 }, { x: 4, y: 7 }, { x: 4, y: 8 }, r1.at(0, 0)], {
+        powered: true,
+        color: '#00ff00',
+      })
       wire([{ x: 4, y: 8 }, { x: 4, y: 12 }, r2.at(0, 0)], { powered: true, color: '#00ff00' })
       wire([r1.at(2, 0), { x: 10, y: 8 }, { x: 10, y: 12 }, r2.at(2, 0)], { color: '#666666' })
+      wire([{ x: 10, y: 8 }, { x: 12, y: 8 }], { color: '#666666' })
       wire(
         [r1.at(2, 0), { x: 10, y: 8 }, { x: 10, y: 16 }, { x: 3, y: 16 }, { x: 3, y: 8 }, ps.pin('GND')],
         { grounded: true, color: '#ff0000' }
@@ -113,9 +118,13 @@ export function rcCircuitSchematic(): Schematic {
       const r = place('Resistor', 6, 10, { resistance: 1000 })
       const c = place('Capacitor', 10, 10, { capacitance: 0.0001 })
 
-      wire([ps.pin('5V'), r.at(0, 0)], { powered: true, color: '#00ff00' })
+      wire([ps.pin('5V'), { x: 2, y: 9 }, { x: 6, y: 9 }, r.at(0, 0)], {
+        powered: true,
+        color: '#00ff00',
+      })
       wire([r.at(2, 0), c.pin('1')], { color: '#666666' })
-      wire([c.pin('2'), { x: 12, y: 10 }, { x: 12, y: 14 }, { x: 3, y: 14 }, { x: 3, y: 10 }, ps.pin('GND')], {
+      wire([{ x: 12, y: 10 }, { x: 14, y: 10 }], { color: '#666666' })
+      wire([c.pin('2'), { x: 12, y: 14 }, { x: 3, y: 14 }, ps.pin('GND')], {
         grounded: true,
         color: '#ff0000',
       })
@@ -146,14 +155,17 @@ export function npnTransistorSchematic(): Schematic {
       const q = place('NPNTransistor', 10, 7)
       const rBase = place('Resistor', 6, 14, { resistance: 10000 })
 
-      wire([ps.pin('5V'), rLoad.at(0, 0)], { powered: true, color: '#00ff00' })
-      wire([rLoad.at(2, 0), q.pin('C')], { color: '#666666' })
-      wire([q.pin('E'), { x: 11, y: 9 }, { x: 11, y: 12 }, { x: 3, y: 12 }, { x: 3, y: 8 }, ps.pin('GND')], {
+      wire([ps.pin('5V'), { x: 2, y: 7 }, { x: 6, y: 7 }, rLoad.at(0, 0)], { powered: true, color: '#00ff00' })
+      wire([rLoad.at(2, 0), { x: 8, y: 8 }, { x: 8, y: 7 }, { x: 11, y: 7 }, q.pin('C')], { color: '#666666' })
+      wire([q.pin('E'), { x: 11, y: 10 }, { x: 3, y: 10 }, { x: 3, y: 8 }, ps.pin('GND')], {
         grounded: true,
         color: '#ff0000',
       })
-      wire([ps.pin('5V'), { x: 4, y: 14 }, rBase.at(0, 0)], { powered: true, color: '#00ff00' })
-      wire([rBase.at(2, 0), { x: 8, y: 14 }, { x: 8, y: 8 }, q.pin('B')], { color: '#666666' })
+      wire([ps.pin('5V'), { x: 2, y: 13 }, { x: 4, y: 13 }, { x: 4, y: 14 }, rBase.at(0, 0)], {
+        powered: true,
+        color: '#00ff00',
+      })
+      wire([rBase.at(2, 0), { x: 8, y: 14 }, { x: 8, y: 8 }, { x: 10, y: 8 }, q.pin('B')], { color: '#666666' })
     },
     {
       groupBoxes: [
@@ -181,19 +193,22 @@ export function opAmpInvertingSchematic(): Schematic {
       const rf = place('Resistor', 10, 8, { resistance: 10000 })
       const op = place('OpAmp', 14, 9)
 
-      wire([ps.pin('5V'), op.pin('V+')], { powered: true, color: '#00ff00' })
-      wire([op.pin('V-'), { x: 15, y: 11 }, { x: 15, y: 14 }, { x: 3, y: 14 }, { x: 3, y: 10 }, ps.pin('GND')], {
+      wire([ps.pin('5V'), { x: 2, y: 9 }, { x: 15, y: 9 }, op.pin('V+')], { powered: true, color: '#00ff00' })
+      wire([ps.pin('GND'), { x: 3, y: 12 }, { x: 3, y: 11 }, { x: 15, y: 11 }, op.pin('V-')], {
         grounded: true,
         color: '#ff0000',
       })
-      wire([op.pin('+'), { x: 14, y: 11 }, { x: 13, y: 11 }, { x: 13, y: 14 }, { x: 3, y: 14 }], {
+      wire([op.pin('+'), { x: 14, y: 12 }, { x: 3, y: 12 }, ps.pin('GND')], {
         grounded: true,
         color: '#ff0000',
       })
-      wire([ps.pin('5V'), { x: 4, y: 12 }, rin.at(0, 0)], { powered: true, color: '#00ff00' })
-      wire([rin.at(2, 0), { x: 8, y: 12 }, { x: 8, y: 10 }, op.pin('-')], { color: '#666666' })
-      wire([op.pin('-'), { x: 15, y: 10 }, { x: 12, y: 10 }, rf.at(0, 0)], { color: '#666666' })
-      wire([rf.at(2, 0), { x: 12, y: 8 }, { x: 12, y: 10 }, op.pin('OUT')], { color: '#666666' })
+      wire([ps.pin('5V'), { x: 2, y: 11 }, { x: 4, y: 11 }, { x: 4, y: 12 }, rin.at(0, 0)], {
+        powered: true,
+        color: '#00ff00',
+      })
+      wire([rin.at(2, 0), { x: 8, y: 12 }, { x: 8, y: 10 }, { x: 14, y: 10 }, op.pin('-')], { color: '#666666' })
+      wire([op.pin('-'), { x: 13, y: 10 }, { x: 13, y: 8 }, rf.at(0, 0)], { color: '#666666' })
+      wire([rf.at(2, 0), { x: 12, y: 8 }, { x: 12, y: 10 }, { x: 16, y: 10 }, op.pin('OUT')], { color: '#666666' })
     },
     {
       groupBoxes: [
@@ -220,9 +235,12 @@ export function zenerClampSchematic(): Schematic {
       const r = place('Resistor', 6, 10, { resistance: 1000 })
       const z = place('ZenerDiode', 10, 10, { zenerVoltage: 3.3 })
 
-      wire([ps.pin('5V'), { x: 4, y: 8 }, { x: 4, y: 10 }, r.at(0, 0)], { powered: true, color: '#00ff00' })
-      wire([r.at(2, 0), z.pin('K')], { color: '#666666' })
-      wire([z.pin('A'), { x: 12, y: 10 }, { x: 12, y: 14 }, { x: 3, y: 14 }, { x: 3, y: 10 }, ps.pin('GND')], {
+      wire([ps.pin('5V'), { x: 2, y: 9 }, { x: 6, y: 9 }, r.at(0, 0)], {
+        powered: true,
+        color: '#00ff00',
+      })
+      wire([r.at(2, 0), { x: 8, y: 10 }, z.pin('K')], { color: '#666666' })
+      wire([z.pin('A'), { x: 10, y: 14 }, { x: 12, y: 14 }, { x: 3, y: 14 }, { x: 3, y: 10 }, ps.pin('GND')], {
         grounded: true,
         color: '#ff0000',
       })
@@ -252,11 +270,22 @@ export function bridgeRectifierSchematic(): Schematic {
       const bridge = place('BridgeRectifier', 8, 9)
       const rLoad = place('Resistor', 14, 10, { resistance: 1000 })
 
-      wire([ac.pin('AC1'), bridge.pin('AC1')], { powered: true, color: '#00ff00' })
-      wire([ac.pin('AC2'), bridge.pin('AC2')], { grounded: true, color: '#ff0000' })
-      wire([bridge.pin('-'), ac.pin('AC2')], { grounded: true, color: '#ff0000' })
-      wire([bridge.pin('+'), rLoad.at(0, 0)], { powered: true, color: '#00ff00' })
-      wire([rLoad.at(2, 0), bridge.pin('-')], { color: '#666666' })
+      wire([ac.pin('AC1'), { x: 2, y: 9 }, { x: 8, y: 9 }, bridge.pin('AC1')], { powered: true, color: '#00ff00' })
+      wire([ac.pin('AC2'), { x: 3, y: 11 }, { x: 10, y: 11 }, { x: 10, y: 9 }, bridge.pin('AC2')], {
+        grounded: true,
+        color: '#ff0000',
+      })
+      wire([bridge.pin('-'), { x: 8, y: 12 }, { x: 3, y: 12 }, { x: 3, y: 10 }, ac.pin('AC2')], {
+        grounded: true,
+        color: '#ff0000',
+      })
+      wire([bridge.pin('+'), { x: 10, y: 8 }, { x: 14, y: 8 }, { x: 14, y: 10 }, rLoad.at(0, 0)], {
+        powered: true,
+        color: '#00ff00',
+      })
+      wire([rLoad.at(2, 0), { x: 16, y: 12 }, { x: 8, y: 12 }, { x: 8, y: 11 }, bridge.pin('-')], {
+        color: '#666666',
+      })
     },
     {
       groupBoxes: [

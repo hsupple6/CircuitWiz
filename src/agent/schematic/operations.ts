@@ -1,9 +1,12 @@
-import { getModule } from '../../modules/registry'
+import { getModule, resolveModuleName } from '../../modules/registry'
 import { ModuleDefinition, WireConnection } from '../../modules/types'
 import {
   Schematic,
   SchematicGroupBox,
+  SchematicCellLabel,
   createSchematicGroupBox,
+  createSchematicCellLabel,
+  GROUP_BOX_COLOR_PRESETS,
 } from '../../types/workspace'
 import {
   extractOccupiedComponents,
@@ -11,16 +14,33 @@ import {
   getGridSize,
   OccupiedComponent,
 } from '../../utils/gridUtils'
+import {
+  assignPowerSupplyIdToDefinition,
+  ensurePowerSupplyIdsInGrid,
+  nextPowerSupplyId,
+} from '../../utils/powerSupplies'
 import { placeModule, wireBetween } from '../../examples/schematicBuilder'
 import { validateConnection, PinInfo, checkForShortCircuit } from '../../utils/connectionValidator'
 import { solveCircuit } from '../../services/CircuitSolver'
+import { layoutGuidelinesForAgent } from './layoutGuidelines'
+import { cellMatchesPin, primaryPinName } from '../../utils/pinNames'
+import { buildWirePath } from '../../utils/wireRouting'
+
+function pinMatchesForCell(
+  moduleName: string,
+  cell: ModuleDefinition['grid'][number],
+  pinName: string,
+  gridWidth?: number
+): boolean {
+  return cellMatchesPin(moduleName, cell, pinName, gridWidth)
+}
 
 export interface ComponentSummary {
   id: string
   moduleName: string
   category: string
   origin: { x: number; y: number }
-  pins: Array<{ name: string; x: number; y: number; type: string }>
+  pins: Array<{ name: string; x: number; y: number; relX: number; relY: number; type: string }>
   properties: Record<string, unknown>
 }
 
@@ -28,6 +48,71 @@ function touchSchematic(schematic: Schematic): Schematic {
   return {
     ...schematic,
     metadata: { ...schematic.metadata, updatedAt: new Date().toISOString() },
+  }
+}
+
+function readNumeric(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  return fallback
+}
+
+function ensureGridFits(
+  schematic: Schematic,
+  originX: number,
+  originY: number,
+  width: number,
+  height: number
+): Schematic {
+  const gridSize = schematic.metadata.gridSize ?? getGridSize(schematic.gridData)
+  const requiredWidth = originX + width
+  const requiredHeight = originY + height
+  if (requiredWidth <= gridSize.width && requiredHeight <= gridSize.height) {
+    return schematic
+  }
+  return {
+    ...schematic,
+    metadata: {
+      ...schematic.metadata,
+      gridSize: {
+        width: Math.max(gridSize.width, requiredWidth),
+        height: Math.max(gridSize.height, requiredHeight),
+      },
+    },
+  }
+}
+
+function wouldCollide(
+  components: OccupiedComponent[],
+  originX: number,
+  originY: number,
+  def: ModuleDefinition
+): boolean {
+  for (const cell of def.grid) {
+    const x = originX + cell.x
+    const y = originY + cell.y
+    if (components.some((c) => c.x === x && c.y === y)) return true
+  }
+  return false
+}
+
+function applyPowerSupplyPlacement(
+  components: OccupiedComponent[],
+  componentId: string,
+  schematic: Schematic,
+  props: Record<string, unknown>
+): void {
+  const voltage = readNumeric(props.voltage, 5)
+  const current = readNumeric(props.current, 1)
+  const supplyId = nextPowerSupplyId(schematic.gridData)
+  for (const c of components) {
+    if (c.componentId === componentId && c.moduleDefinition) {
+      c.moduleDefinition = assignPowerSupplyIdToDefinition(
+        c.moduleDefinition as ModuleDefinition,
+        supplyId,
+        voltage,
+        current
+      )
+    }
   }
 }
 
@@ -76,10 +161,13 @@ export function listComponents(schematic: Schematic): ComponentSummary[] {
       .filter((c) => c.moduleDefinition?.grid?.[c.cellIndex ?? 0]?.isConnectable)
       .map((c) => {
         const mc = c.moduleDefinition.grid[c.cellIndex ?? 0]
+        const gridWidth = def?.gridX
         return {
-          name: mc.pin || mc.type,
+          name: primaryPinName(mc, moduleName, gridWidth),
           x: c.x,
           y: c.y,
+          relX: mc.x,
+          relY: mc.y,
           type: mc.type,
         }
       })
@@ -95,6 +183,9 @@ export function listComponents(schematic: Schematic): ComponentSummary[] {
         ...(cells.find((c) => c.resistance != null) ? { resistance: cells.find((c) => c.resistance != null)!.resistance } : {}),
         ...(cells.find((c) => (c as OccupiedComponent & { capacitance?: number }).capacitance != null)
           ? { capacitance: (cells.find((c) => (c as OccupiedComponent & { capacitance?: number }).capacitance != null) as OccupiedComponent & { capacitance?: number }).capacitance }
+          : {}),
+        ...(cells.find((c) => (c as OccupiedComponent & { inductance?: number }).inductance != null)
+          ? { inductance: (cells.find((c) => (c as OccupiedComponent & { inductance?: number }).inductance != null) as OccupiedComponent & { inductance?: number }).inductance }
           : {}),
       },
     })
@@ -112,18 +203,36 @@ function rebuildSchematic(
   components: OccupiedComponent[],
   wires: WireConnection[]
 ): Schematic {
-  const gridSize = schematic.metadata.gridSize ?? getGridSize(schematic.gridData)
-  const gridData = reconstructGridData(components, gridSize)
+  const gridSize =
+    schematic.metadata.gridSize ??
+    getGridSize(schematic.gridData)
+  const dataSize = getGridSize(schematic.gridData)
+  const effectiveSize = {
+    width: Math.max(gridSize.width, dataSize.width),
+    height: Math.max(gridSize.height, dataSize.height),
+  }
+  let gridData = reconstructGridData(components, effectiveSize)
 
   components.forEach((c) => {
     const cell = gridData[c.y]?.[c.x]
     if (!cell) return
     if (c.resistance != null) cell.resistance = c.resistance
-    const ext = c as OccupiedComponent & { capacitance?: number }
+    const ext = c as OccupiedComponent & { capacitance?: number; inductance?: number }
     if (ext.capacitance != null) cell.capacitance = ext.capacitance
+    if (ext.inductance != null) cell.inductance = ext.inductance
   })
 
-  return touchSchematic({ ...schematic, gridData, wires })
+  gridData = ensurePowerSupplyIdsInGrid(gridData)
+
+  return touchSchematic({
+    ...schematic,
+    gridData,
+    wires,
+    metadata: {
+      ...schematic.metadata,
+      gridSize: effectiveSize,
+    },
+  })
 }
 
 export function placeComponent(
@@ -134,11 +243,22 @@ export function placeComponent(
   props: Record<string, unknown> = {},
   componentId?: string
 ): { schematic: Schematic; componentId: string } | { error: string } {
-  const def = getModule(moduleName)
+  const canonical = resolveModuleName(moduleName)
+  const def = getModule(canonical)
   if (!def) return { error: `Unknown module: ${moduleName}` }
 
-  const components = getComponents(schematic)
-  const placed = placeModule(components, moduleName, originX, originY, props)
+  let nextSchematic = ensureGridFits(schematic, originX, originY, def.gridX, def.gridY)
+  const components = getComponents(nextSchematic)
+
+  if (wouldCollide(components, originX, originY, def)) {
+    return { error: `Placement at (${originX}, ${originY}) collides with an existing component` }
+  }
+
+  const placed = placeModule(components, canonical, originX, originY, props)
+  if (canonical === 'PowerSupply') {
+    applyPowerSupplyPlacement(components, placed.id, nextSchematic, props)
+  }
+
   if (componentId) {
     const oldId = placed.id
     components.forEach((c) => {
@@ -148,7 +268,7 @@ export function placeComponent(
   }
 
   return {
-    schematic: rebuildSchematic(schematic, components, schematic.wires),
+    schematic: rebuildSchematic(nextSchematic, components, nextSchematic.wires),
     componentId: placed.id,
   }
 }
@@ -218,6 +338,9 @@ export function setComponentProperty(
     if (properties.capacitance != null) {
       ;(c as OccupiedComponent & { capacitance?: number }).capacitance = properties.capacitance as number
     }
+    if (properties.inductance != null) {
+      ;(c as OccupiedComponent & { inductance?: number }).inductance = properties.inductance as number
+    }
   }
 
   return { schematic: rebuildSchematic(schematic, components, schematic.wires) }
@@ -238,26 +361,77 @@ export function replaceComponent(
   return placed
 }
 
+function findMatchingPins(
+  schematic: Schematic,
+  componentId: string,
+  pinName: string
+): PinInfo[] {
+  const components = getComponents(schematic)
+  const matches: PinInfo[] = []
+  for (const c of components) {
+    if (c.componentId !== componentId) continue
+    const mc = c.moduleDefinition?.grid?.[c.cellIndex ?? 0]
+    if (!mc?.isConnectable) continue
+    const moduleName = moduleNameFrom(c)
+    const gridWidth = c.moduleDefinition?.gridX
+    if (!pinMatchesForCell(moduleName, mc, pinName, gridWidth)) continue
+    matches.push({
+      type: mc.type,
+      componentId,
+      componentModule: moduleName,
+      position: { x: c.x, y: c.y },
+    })
+  }
+  return matches
+}
+
 function findPin(
   schematic: Schematic,
   componentId: string,
   pinName: string
 ): PinInfo | null {
-  const components = getComponents(schematic)
-  for (const c of components) {
-    if (c.componentId !== componentId) continue
-    const mc = c.moduleDefinition?.grid?.[c.cellIndex ?? 0]
-    if (!mc) continue
-    const name = mc.pin || mc.type
-    if (name !== pinName) continue
-    return {
-      type: mc.type,
-      componentId,
-      componentModule: moduleNameFrom(c),
-      position: { x: c.x, y: c.y },
-    }
-  }
+  const matches = findMatchingPins(schematic, componentId, pinName)
+  if (matches.length === 1) return matches[0]
   return null
+}
+
+function pinLookupError(
+  schematic: Schematic,
+  componentId: string,
+  pinName: string
+): string {
+  const comp = getComponent(schematic, componentId)
+  const available = comp?.pins.map((p) => `${p.name}@(${p.x},${p.y})`).join(', ') ?? 'none'
+  const matches = findMatchingPins(schematic, componentId, pinName)
+  if (matches.length > 1) {
+    const options = matches.map((m) => `(${m.position.x},${m.position.y})`).join(', ')
+    return `Pin "${pinName}" is ambiguous on ${componentId} — matches multiple terminals at ${options}. Use distinct pin names from list_components: ${available}`
+  }
+  return `Pin not found: ${componentId}.${pinName}. Connectable pins: ${available}`
+}
+
+function validateWirePoint(
+  schematic: Schematic,
+  point: { x: number; y: number }
+): { ok: true } | { ok: false; error: string } {
+  const cell = schematic.gridData[point.y]?.[point.x] as
+    | (OccupiedComponent & { occupied?: boolean })
+    | undefined
+  if (!cell?.occupied) return { ok: true }
+
+  const mc = cell.moduleDefinition?.grid?.[cell.cellIndex ?? 0]
+  if (mc?.isConnectable) return { ok: true }
+
+  const moduleName = cell.moduleDefinition?.module ?? cell.componentType ?? 'component'
+  const gridWidth = cell.moduleDefinition?.gridX
+  const terminalHint =
+    gridWidth === 3
+      ? ' Terminals are at origin+relX 0 and 2 (not the center body at relX 1).'
+      : ''
+  return {
+    ok: false,
+    error: `Wire point (${point.x},${point.y}) is inside ${moduleName} body — not a connectable pin.${terminalHint} Use pin x,y from schematic_list_components.`,
+  }
 }
 
 export function connectPins(
@@ -269,13 +443,18 @@ export function connectPins(
 ): { schematic: Schematic; wire: WireConnection } | { error: string; warning?: string } {
   const from = findPin(schematic, fromComponentId, fromPin)
   const to = findPin(schematic, toComponentId, toPin)
-  if (!from) return { error: `Pin not found: ${fromComponentId}.${fromPin}` }
-  if (!to) return { error: `Pin not found: ${toComponentId}.${toPin}` }
+  if (!from) {
+    return { error: pinLookupError(schematic, fromComponentId, fromPin) }
+  }
+  if (!to) {
+    return { error: pinLookupError(schematic, toComponentId, toPin) }
+  }
 
   const validation = validateConnection(from, to)
   if (!validation.isValid) return { error: validation.error ?? 'Invalid connection' }
 
-  const wire = wireBetween([from.position, to.position])
+  const path = buildWirePath(from.position, to.position, schematic.gridData)
+  const wire = wireBetween(path)
   const wires = [...schematic.wires, wire]
 
   const shortCheck = checkForShortCircuit([{ from, to }])
@@ -292,6 +471,12 @@ export function addWirePath(
   opts: { color?: string; powered?: boolean; grounded?: boolean } = {}
 ): { schematic: Schematic; wire: WireConnection } | { error: string } {
   if (points.length < 2) return { error: 'Wire requires at least 2 points' }
+
+  for (const point of points) {
+    const check = validateWirePoint(schematic, point)
+    if (!check.ok) return { error: check.error }
+  }
+
   const wire = wireBetween(points, opts)
   return {
     schematic: rebuildSchematic(schematic, getComponents(schematic), [...schematic.wires, wire]),
@@ -324,9 +509,15 @@ export function addGroupBox(
   y: number,
   width: number,
   height: number,
-  title: string
+  title: string,
+  opts: { color?: string; borderColor?: string; colorPreset?: string } = {}
 ): { schematic: Schematic; groupBox: SchematicGroupBox } {
-  const groupBox = createSchematicGroupBox(x, y, width, height, title)
+  const preset =
+    GROUP_BOX_COLOR_PRESETS.find((p) => p.name.toLowerCase() === opts.colorPreset?.toLowerCase()) ??
+    GROUP_BOX_COLOR_PRESETS[0]
+  const groupBox = createSchematicGroupBox(x, y, width, height, title, preset)
+  if (opts.color) groupBox.color = opts.color
+  if (opts.borderColor) groupBox.borderColor = opts.borderColor
   return {
     schematic: touchSchematic({
       ...schematic,
@@ -334,6 +525,19 @@ export function addGroupBox(
     }),
     groupBox,
   }
+}
+
+export function listGroupBoxes(schematic: Schematic) {
+  return (schematic.groupBoxes ?? []).map((g) => ({
+    id: g.id,
+    x: g.x,
+    y: g.y,
+    width: g.width,
+    height: g.height,
+    title: g.title,
+    color: g.color,
+    borderColor: g.borderColor,
+  }))
 }
 
 export function updateGroupBox(
@@ -355,6 +559,62 @@ export function removeGroupBox(schematic: Schematic, groupBoxId: string): Schema
   return touchSchematic({
     ...schematic,
     groupBoxes: (schematic.groupBoxes ?? []).filter((g) => g.id !== groupBoxId),
+  })
+}
+
+export function listLabels(schematic: Schematic) {
+  return (schematic.labels ?? []).map((label) => ({
+    id: label.id,
+    x: label.x,
+    y: label.y,
+    text: label.text,
+  }))
+}
+
+export function addLabel(
+  schematic: Schematic,
+  x: number,
+  y: number,
+  text: string,
+  labelId?: string
+): { schematic: Schematic; label: SchematicCellLabel } {
+  const label = createSchematicCellLabel(x, y, text)
+  if (labelId) label.id = labelId
+  return {
+    schematic: touchSchematic({
+      ...schematic,
+      labels: [...(schematic.labels ?? []), label],
+    }),
+    label,
+  }
+}
+
+export function updateLabel(
+  schematic: Schematic,
+  labelId: string,
+  patch: Partial<Omit<SchematicCellLabel, 'id'>>
+): { schematic: Schematic; label: SchematicCellLabel | null } {
+  let updated: SchematicCellLabel | null = null
+  const labels = (schematic.labels ?? []).map((label) => {
+    if (label.id !== labelId) return label
+    updated = { ...label, ...patch }
+    return updated
+  })
+  if (!updated) return { schematic, label: null }
+  return { schematic: touchSchematic({ ...schematic, labels }), label: updated }
+}
+
+export function removeLabel(schematic: Schematic, labelId: string): Schematic {
+  return touchSchematic({
+    ...schematic,
+    labels: (schematic.labels ?? []).filter((label) => label.id !== labelId),
+  })
+}
+
+export function removeLabelAt(schematic: Schematic, x: number, y: number): Schematic {
+  return touchSchematic({
+    ...schematic,
+    labels: (schematic.labels ?? []).filter((label) => !(label.x === x && label.y === y)),
   })
 }
 
@@ -417,9 +677,13 @@ export function getSchematicState(schematic: Schematic) {
     componentCount: listComponents(schematic).length,
     wireCount: schematic.wires.length,
     groupBoxCount: schematic.groupBoxes?.length ?? 0,
+    labelCount: schematic.labels?.length ?? 0,
+    groupBoxes: listGroupBoxes(schematic),
+    labels: listLabels(schematic),
     hasFirmware: !!schematic.arduinoProject,
     gridSize: schematic.metadata.gridSize,
     metadata: schematic.metadata,
+    layoutGuidelines: layoutGuidelinesForAgent(),
   }
 }
 
@@ -433,6 +697,8 @@ export function replaceSchematicContent(
     wires: source.wires,
     componentStates: source.componentStates,
     groupBoxes: source.groupBoxes,
+    labels: source.labels,
     arduinoProject: source.arduinoProject,
   })
 }
+

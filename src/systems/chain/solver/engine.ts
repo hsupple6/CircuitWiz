@@ -15,6 +15,9 @@ import {
   gpioPinNumber,
   gridCellAt,
   isGroundReference,
+  isMicrocontrollerModule,
+  isMcuFloatingPin,
+  isMcuPowerInput,
   isPositiveTerminal,
   isSwitchClosedOnGrid,
   parseNumericProperty,
@@ -91,6 +94,16 @@ interface NpnStamp {
   isOn: boolean
 }
 
+interface MosfetStamp {
+  netGate: number
+  netDrain: number
+  netSource: number
+  vth: number
+  rdsOn: number
+  componentId: string
+  isOn: boolean
+}
+
 interface OpAmpStamp {
   netNonInv: number
   netInv: number
@@ -112,6 +125,78 @@ interface BridgeStamp {
 }
 
 const CAP_CHARGE_DT = 0.05
+const CAP_CHARGE_STEPS = 12
+
+/** Series resistance feeding a capacitor terminal (parallel combination if multiple). */
+function seriesResistanceAtNet(net: number, resistors: ResistorStamp[]): number {
+  const incident = resistors.filter((r) => r.netA === net || r.netB === net)
+  if (incident.length === 0) return 1000
+  if (incident.length === 1) return incident[0].resistance
+  let conductance = 0
+  incident.forEach((r) => {
+    conductance += 1 / Math.max(r.resistance, 1e-9)
+  })
+  return conductance > 0 ? 1 / conductance : 1000
+}
+
+/** DC voltage across cap terminals when the cap is removed (open circuit). */
+function openCircuitCapTargets(
+  nodeCount: number,
+  groundNet: number,
+  resistors: ResistorStamp[],
+  voltageSources: VoltageSourceStamp[],
+  leds: LedStamp[],
+  diodes: DiodeStamp[],
+  zeners: ZenerStamp[],
+  npns: NpnStamp[],
+  mosfets: MosfetStamp[],
+  opAmps: OpAmpStamp[],
+  capacitors: CapacitorStamp[]
+): Map<string, number> {
+  const targets = new Map<string, number>()
+  if (capacitors.length === 0) return targets
+
+  const ocSolution = solveMNA(
+    nodeCount,
+    groundNet,
+    resistors,
+    voltageSources,
+    leds.filter((l) => l.isOn),
+    diodes.filter((d) => d.isOn),
+    zeners.filter((z) => z.mode !== 'off'),
+    [],
+    npns.filter((t) => t.isOn),
+    mosfets.filter((t) => t.isOn),
+    opAmps
+  )
+  if (!ocSolution) return targets
+
+  capacitors.forEach((cap) => {
+    const va = ocSolution.voltages[cap.netA] ?? 0
+    const vb = ocSolution.voltages[cap.netB] ?? 0
+    targets.set(cap.componentId, va - vb)
+  })
+  return targets
+}
+
+function advanceCapacitorStates(
+  capStates: CapacitorStamp[],
+  targets: Map<string, number>,
+  resistors: ResistorStamp[],
+  steps: number
+): CapacitorStamp[] {
+  let states = capStates.map((c) => ({ ...c }))
+  for (let step = 0; step < steps; step++) {
+    states = states.map((cap) => {
+      const target = targets.get(cap.componentId) ?? cap.storedVoltage
+      const rSeries = seriesResistanceAtNet(cap.netA, resistors)
+      const tau = Math.max(rSeries * cap.capacitance, 1e-9)
+      const alpha = 1 - Math.exp(-CAP_CHARGE_DT / tau)
+      return { ...cap, storedVoltage: cap.storedVoltage + (target - cap.storedVoltage) * alpha }
+    })
+  }
+  return states
+}
 
 function diodeHasForwardBias(
   anodeVoltage: number,
@@ -195,6 +280,7 @@ function solveMNA(
   zeners: ZenerStamp[] = [],
   capacitors: CapacitorStamp[] = [],
   npns: NpnStamp[] = [],
+  mosfets: MosfetStamp[] = [],
   opAmps: OpAmpStamp[] = []
 ): { voltages: number[]; sourceCurrents: number[] } | null {
   const nodeToUnknown = new Map<number, number>()
@@ -208,6 +294,7 @@ function solveMNA(
   const activeDiodes = diodes.filter((d) => d.isOn)
   const activeZeners = zeners.filter((z) => z.mode !== 'off')
   const activeNpns = npns.filter((t) => t.isOn)
+  const activeMosfets = mosfets.filter((t) => t.isOn)
 
   const ledAsSources: VoltageSourceStamp[] = activeLeds.map((led) => ({
     netPos: led.netAnode,
@@ -269,6 +356,12 @@ function solveMNA(
     resistance: 0.5,
     componentId: `${t.componentId}_ce_r`,
   }))
+  const mosfetResistors: ResistorStamp[] = activeMosfets.map((t) => ({
+    netA: t.netDrain,
+    netB: t.netSource,
+    resistance: Math.max(t.rdsOn, 1e-3),
+    componentId: `${t.componentId}_rds`,
+  }))
 
   const allVoltageSources = [
     ...voltageSources,
@@ -279,7 +372,14 @@ function solveMNA(
     ...npnAsSources,
     ...opAmpAsSources,
   ]
-  const allResistors = [...resistors, ...ledResistors, ...diodeResistors, ...zenerResistors, ...npnResistors]
+  const allResistors = [
+    ...resistors,
+    ...ledResistors,
+    ...diodeResistors,
+    ...zenerResistors,
+    ...npnResistors,
+    ...mosfetResistors,
+  ]
 
   const size = unknownNodeCount + allVoltageSources.length
   if (size === 0) {
@@ -366,6 +466,7 @@ function buildNets(
   zeners: ZenerStamp[]
   capacitors: CapacitorStamp[]
   npns: NpnStamp[]
+  mosfets: MosfetStamp[]
   opAmps: OpAmpStamp[]
   bridges: BridgeStamp[]
   components: PlacedComponent[]
@@ -448,6 +549,7 @@ function buildNets(
   const zeners: ZenerStamp[] = []
   const capacitors: CapacitorStamp[] = []
   const npns: NpnStamp[] = []
+  const mosfets: MosfetStamp[] = []
   const opAmps: OpAmpStamp[] = []
   const bridges: BridgeStamp[] = []
   const errors: string[] = []
@@ -621,6 +723,27 @@ function buildNets(
       return
     }
 
+    if (moduleType === 'MOSFET') {
+      const gate = terminals.find((t) => t.moduleCell.pin === 'G' || t.moduleCell.type === 'GATE')
+      const drain = terminals.find((t) => t.moduleCell.pin === 'D' || t.moduleCell.type === 'DRAIN')
+      const source = terminals.find((t) => t.moduleCell.pin === 'S' || t.moduleCell.type === 'SOURCE')
+      if (!gate || !drain || !source) return
+      const netGate = posToNet.get(posKey(gate.x, gate.y))
+      const netDrain = posToNet.get(posKey(drain.x, drain.y))
+      const netSource = posToNet.get(posKey(source.x, source.y))
+      if (netGate === undefined || netDrain === undefined || netSource === undefined) return
+      mosfets.push({
+        netGate,
+        netDrain,
+        netSource,
+        vth: parseNumericProperty(component.moduleDefinition.properties?.vth, 2.5),
+        rdsOn: parseNumericProperty(component.moduleDefinition.properties?.rdsOn, 0.05),
+        componentId: component.componentId,
+        isOn: false,
+      })
+      return
+    }
+
     if (moduleType === 'OpAmp') {
       const nonInv = terminals.find((t) => t.moduleCell.pin === '+' || t.moduleCell.type === 'IN_POSITIVE')
       const inv = terminals.find((t) => t.moduleCell.pin === '-' || t.moduleCell.type === 'IN_NEGATIVE')
@@ -764,28 +887,56 @@ function buildNets(
       return
     }
 
-    const mcuTypes = ['Arduino Uno R3', 'ESP32', 'ArduinoUno', 'ESP32DevKit']
-    if (mcuTypes.includes(moduleType)) {
+    if (isMicrocontrollerModule(component.moduleDefinition)) {
+      const powerInputs = terminals.filter((t) => isMcuPowerInput(t.moduleCell))
+      const gnds = terminals.filter((t) => isGroundReference(t.moduleCell))
+      const idleResistance = moduleType.includes('ESP32') ? 66 : 100
+      const stampedLoads = new Set<string>()
+
+      for (const power of powerInputs) {
+        for (const gnd of gnds) {
+          const netPos = posToNet.get(posKey(power.x, power.y))
+          const netNeg = posToNet.get(posKey(gnd.x, gnd.y))
+          if (netPos === undefined || netNeg === undefined || netPos === netNeg) continue
+          const loadKey = `${netPos}:${netNeg}`
+          if (stampedLoads.has(loadKey)) continue
+          stampedLoads.add(loadKey)
+          stampResistor(
+            resistors,
+            netPos,
+            netNeg,
+            idleResistance,
+            `${component.componentId}_mcuLoad`
+          )
+        }
+      }
+
       terminals.forEach((terminal) => {
         const moduleCell = terminal.moduleCell
+        const net = posToNet.get(posKey(terminal.x, terminal.y))
+        if (net === undefined || net === groundNet) return
+
         if (moduleCell.type === 'GPIO' || moduleCell.type === 'ANALOG') {
           const pin = gpioPinNumber(moduleCell)
-          if (pin === null) return
-          const gpioState = gpioStates?.get(pin)
-          const output = gpioOutputVoltage(moduleType, gpioState)
-          if (!output.active) return
+          if (pin !== null) {
+            const gpioState = gpioStates?.get(pin)
+            const output = gpioOutputVoltage(moduleType, gpioState)
+            if (output.active) {
+              voltageSources.push({
+                netPos: net,
+                netNeg: groundNet,
+                voltage: output.voltage,
+                componentId: component.componentId,
+                cellIndex: terminal.cellIndex,
+                pwm: output.pwm,
+              })
+              return
+            }
+          }
+        }
 
-          const netPos = posToNet.get(posKey(terminal.x, terminal.y))
-          if (netPos === undefined) return
-
-          voltageSources.push({
-            netPos,
-            netNeg: groundNet,
-            voltage: output.voltage,
-            componentId: component.componentId,
-            cellIndex: terminal.cellIndex,
-            pwm: output.pwm,
-          })
+        if (isMcuFloatingPin(moduleCell)) {
+          stampResistor(resistors, net, groundNet, 1e9, `${component.componentId}_pinBleed`)
         }
       })
     }
@@ -802,6 +953,7 @@ function buildNets(
     zeners,
     capacitors,
     npns,
+    mosfets,
     opAmps,
     bridges,
     components,
@@ -822,6 +974,7 @@ function buildNetAdjacency(
   diodes: DiodeStamp[] = [],
   zeners: ZenerStamp[] = [],
   npns: NpnStamp[] = [],
+  mosfets: MosfetStamp[] = [],
   capacitors: CapacitorStamp[] = [],
   bridges: BridgeStamp[] = []
 ): Map<number, Set<number>> {
@@ -838,6 +991,7 @@ function buildNetAdjacency(
   diodes.forEach((d) => addEdge(d.netAnode, d.netCathode))
   zeners.forEach((z) => addEdge(z.netAnode, z.netCathode))
   npns.forEach((t) => addEdge(t.netCollector, t.netEmitter))
+  mosfets.forEach((t) => addEdge(t.netDrain, t.netSource))
   capacitors.forEach((c) => addEdge(c.netA, c.netB))
   bridges.forEach((b) => {
     addEdge(b.netAc1, b.netPlus)
@@ -929,6 +1083,7 @@ export function solveCircuit(
     zeners: baseZeners,
     capacitors: baseCapacitors,
     npns: baseNpns,
+    mosfets: baseMosfets,
     opAmps: baseOpAmps,
     bridges,
     components,
@@ -965,6 +1120,7 @@ export function solveCircuit(
     baseDiodes,
     baseZeners,
     baseNpns,
+    baseMosfets,
     baseCapacitors,
     bridges
   )
@@ -976,6 +1132,7 @@ export function solveCircuit(
   let zenerStates = baseZeners.map((z) => ({ ...z }))
   let capStates = baseCapacitors.map((c) => ({ ...c }))
   let npnStates = baseNpns.map((t) => ({ ...t }))
+  let mosfetStates = baseMosfets.map((t) => ({ ...t }))
   let opAmpStates = baseOpAmps.map((op) => ({ ...op }))
   let solution: { voltages: number[]; sourceCurrents: number[] } | null = null
 
@@ -1038,6 +1195,7 @@ export function solveCircuit(
       zenerStates,
       capStates,
       npnStates,
+      mosfetStates,
       opAmpStates
     )
     if (!solution) {
@@ -1078,6 +1236,14 @@ export function solveCircuit(
       return { ...t, isOn: shouldBeOn }
     })
 
+    mosfetStates = mosfetStates.map((t) => {
+      const vg = solution!.voltages[t.netGate] ?? 0
+      const vs = solution!.voltages[t.netSource] ?? 0
+      const shouldBeOn = vg - vs >= t.vth - 0.05
+      if (shouldBeOn !== t.isOn) changed = true
+      return { ...t, isOn: shouldBeOn }
+    })
+
     opAmpStates = opAmpStates.map((op) => {
       const vp = solution!.voltages[op.netNonInv] ?? 0
       const vm = solution!.voltages[op.netInv] ?? 0
@@ -1088,18 +1254,43 @@ export function solveCircuit(
       return { ...op, outputVoltage: vout }
     })
 
-    capStates = capStates.map((cap) => {
-      const va = solution!.voltages[cap.netA] ?? 0
-      const vb = solution!.voltages[cap.netB] ?? 0
-      const target = va - vb
-      const tau = cap.capacitance * 1000
-      const alpha = tau > 0 ? 1 - Math.exp(-CAP_CHARGE_DT / tau) : 1
-      const next = cap.storedVoltage + (target - cap.storedVoltage) * alpha
-      if (Math.abs(next - cap.storedVoltage) > 0.001) changed = true
-      return { ...cap, storedVoltage: next }
-    })
-
     if (!changed) break
+  }
+
+  if (capStates.length > 0) {
+    const ocTargets = openCircuitCapTargets(
+      nodeCount,
+      groundNet,
+      resistors,
+      voltageSources,
+      ledStates,
+      diodeStates,
+      zenerStates,
+      npnStates,
+      mosfetStates,
+      opAmpStates,
+      capStates
+    )
+    capStates = advanceCapacitorStates(capStates, ocTargets, resistors, CAP_CHARGE_STEPS)
+
+    const bridgeDiodes = solution ? expandBridgeDiodes(solution.voltages) : []
+    const allDiodes = [...diodeStates, ...bridgeDiodes]
+    solution = solveMNA(
+      nodeCount,
+      groundNet,
+      resistors,
+      voltageSources,
+      ledStates,
+      allDiodes,
+      zenerStates,
+      capStates,
+      npnStates,
+      mosfetStates,
+      opAmpStates
+    )
+    if (!solution) {
+      return emptyResult('Circuit could not be solved (singular matrix)', errors)
+    }
   }
 
   if (!solution) {
@@ -1171,9 +1362,12 @@ export function solveCircuit(
         const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
         const existing = componentStates.get(cellComponentId)
         if (!existing) return
+        const net = posToNet.get(posKey(x, y))
+        const cellVoltage =
+          net !== undefined ? (voltages[net] ?? 0) : onCircuit ? (va + vb) / 2 : 0
         componentStates.set(cellComponentId, {
           ...existing,
-          outputVoltage: onCircuit ? voltages[posToNet.get(posKey(x, y)) ?? groundNet] ?? 0 : 0,
+          outputVoltage: onCircuit ? cellVoltage : 0,
           outputCurrent: current,
           power: onCircuit ? power : 0,
           voltageDrop: onCircuit ? voltageDrop : 0,
@@ -1185,15 +1379,13 @@ export function solveCircuit(
     })
   })
 
-  ledStates.forEach((led, idx) => {
-    const ledSourceIdx = voltageSources.length + idx
+  ledStates.forEach((led) => {
     const onCircuit = activeNets.has(led.netAnode) && activeNets.has(led.netCathode)
     const anodeVoltage = onCircuit ? voltages[led.netAnode] ?? 0 : 0
     const cathodeVoltage = onCircuit ? voltages[led.netCathode] ?? 0 : 0
-    const rawCurrent = onCircuit && led.isOn ? Math.max(0, solution!.sourceCurrents[ledSourceIdx] ?? 0) : 0
     const hasBias = ledHasForwardBias(anodeVoltage, cathodeVoltage, led.forwardVoltage)
-    const isOn = onCircuit && led.isOn && hasBias && rawCurrent > 1e-6
-    const current = isOn ? rawCurrent : 0
+    const isOn = onCircuit && led.isOn && hasBias && totalCurrent > 1e-6
+    const current = isOn ? totalCurrent : 0
 
     gridData.forEach((row, y) => {
       if (!row) return
@@ -1202,19 +1394,21 @@ export function solveCircuit(
         const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
         const moduleCell = cell.moduleDefinition.grid[cell.cellIndex ?? 0]
         const net = posToNet.get(posKey(x, y))
+        const isAnode = net === led.netAnode
+        const isCathode = net === led.netCathode
         componentStates.set(cellComponentId, {
           componentId: cellComponentId,
           componentType: 'LED',
           position: { x, y },
           inputVoltage: anodeVoltage,
-          outputVoltage: isOn ? anodeVoltage : 0,
-          outputCurrent: current,
+          outputVoltage: isOn ? (isAnode ? anodeVoltage : isCathode ? cathodeVoltage : 0) : 0,
+          outputCurrent: isOn ? current : 0,
           power: isOn ? led.forwardVoltage * current : 0,
           forwardVoltage: led.forwardVoltage,
           isOn,
           status: isOn ? 'on' : 'off',
           isPowered: isOn,
-          isGrounded: isGroundTerminal(moduleCell) || (onCircuit && net === led.netCathode),
+          isGrounded: isGroundTerminal(moduleCell) || (onCircuit && isCathode),
         })
       })
     })
@@ -1227,22 +1421,41 @@ export function solveCircuit(
   capStates.forEach((cap) => {
     const onCircuit = activeNets.has(cap.netA) && activeNets.has(cap.netB)
     const vc = onCircuit ? cap.storedVoltage : 0
+    const va = onCircuit ? voltages[cap.netA] ?? 0 : 0
+    const vb = onCircuit ? voltages[cap.netB] ?? 0 : 0
+    const target = onCircuit ? Math.abs(va - vb) : 0
+    const rSeries = seriesResistanceAtNet(cap.netA, resistors)
+    const isCharging = onCircuit && target > 0.05 && vc < target - 0.05
+    const chargeCurrent =
+      isCharging && rSeries > 0 ? (target - vc) / rSeries : isCharging ? totalCurrent : 0
+    const storedEnergy = 0.5 * cap.capacitance * vc * vc
+    const capStatus = !onCircuit
+      ? 'discharged'
+      : Math.abs(vc) < 0.05
+        ? 'discharged'
+        : vc >= target - 0.05
+          ? 'charged'
+          : 'charging'
+
     gridData.forEach((row, y) => {
       if (!row) return
       row.forEach((cell, x) => {
         if (cell?.componentId !== cap.componentId) return
         const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
         const net = posToNet.get(posKey(x, y))
-        const terminalV = onCircuit && net !== undefined ? voltages[net] ?? 0 : 0
+        const terminalV =
+          onCircuit && net !== undefined ? voltages[net] ?? 0 : onCircuit ? (va + vb) / 2 : 0
         componentStates.set(cellComponentId, {
           componentId: cellComponentId,
           componentType: 'Capacitor',
           position: { x, y },
-          outputVoltage: terminalV,
-          outputCurrent: 0,
-          power: 0.5 * cap.capacitance * vc * vc,
+          inputVoltage: va,
+          outputVoltage: vc,
+          terminalVoltage: terminalV,
+          outputCurrent: chargeCurrent,
+          power: storedEnergy,
           capacitorVoltage: vc,
-          status: Math.abs(vc) < 0.05 ? 'discharged' : Math.abs(vc) > 4 ? 'charged' : 'charging',
+          status: capStatus,
           isPowered: onCircuit && Math.abs(vc) > 0.05,
           isGrounded: isNetGrounded(net, groundNet, gridData, posToNet),
         })
@@ -1327,6 +1540,32 @@ export function solveCircuit(
     })
   })
 
+  mosfetStates.forEach((t) => {
+    const onCircuit =
+      activeNets.has(t.netGate) && activeNets.has(t.netDrain) && activeNets.has(t.netSource)
+    const isOn = onCircuit && t.isOn
+    gridData.forEach((row, y) => {
+      if (!row) return
+      row.forEach((cell, x) => {
+        if (cell?.componentId !== t.componentId) return
+        const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
+        const net = posToNet.get(posKey(x, y))
+        componentStates.set(cellComponentId, {
+          componentId: cellComponentId,
+          componentType: 'MOSFET',
+          position: { x, y },
+          outputVoltage: onCircuit && net !== undefined ? voltages[net] ?? 0 : 0,
+          outputCurrent: 0,
+          power: 0,
+          isOn,
+          status: isOn ? 'on' : 'off',
+          isPowered: isOn,
+          isGrounded: isNetGrounded(net, groundNet, gridData, posToNet),
+        })
+      })
+    })
+  })
+
   opAmpStates.forEach((op) => {
     const onCircuit =
       activeNets.has(op.netNonInv) &&
@@ -1385,8 +1624,7 @@ export function solveCircuit(
 
   components.forEach((component) => {
     const moduleType = component.moduleDefinition.module
-    const mcuTypes = ['Arduino Uno R3', 'ESP32', 'ArduinoUno', 'ESP32DevKit']
-    if (!mcuTypes.includes(moduleType)) return
+    if (!isMicrocontrollerModule(component.moduleDefinition)) return
 
     getTerminals(component).forEach((terminal) => {
       const moduleCell = terminal.moduleCell
@@ -1400,7 +1638,7 @@ export function solveCircuit(
         const gpioState = pin !== null ? gpioStates?.get(pin) : undefined
         const output = gpioOutputVoltage(moduleType, gpioState)
         const isPwm = gpioState?.state === 'PULSING'
-        const gpioActive = output.active && onCircuit
+        const gpioActive = output.active
 
         componentStates.set(cellComponentId, {
           componentId: cellComponentId,

@@ -9,27 +9,24 @@ from harness import (
     resistor_at,
     resistor_lead_voltage,
 )
-from expected import VCC, op_amp_open_loop_positive_rail, voltage_divider
+from expected import VCC, op_amp_open_loop_positive_rail, rc_capacitor_voltage, voltage_divider
 
 HARNESS = SolverHarness()
 
 
-def test_rc_initial_inrush() -> None:
-    """A discharged capacitor is modeled as a 0 V source, so the first solve looks like a short."""
+def test_rc_charging() -> None:
+    """Cap charges toward Vin through R; current falls as Vc rises."""
     result = HARNESS.circuit("rc_circuit")
     assert_solver_works(result)
 
-    expected_current = VCC / 1_000
-    r = resistor_at(result, 6, 10)
+    expected_vc = rc_capacitor_voltage(VCC, 1_000, 0.0001)
+    expected_current = (VCC - expected_vc) / 1_000
 
-    assert_close(r.output_current, expected_current, label="RC inrush current")
-    assert_close(result.total_current, expected_current, label="RC total inrush current")
-    assert_close(
-        resistor_lead_voltage(result, 6, 10, high_side=True),
-        0.0,
-        abs_tol=1e-3,
-        label="RC node held at ground while cap is discharged",
-    )
+    cap_states = [c for c in result.components if c.component_type == "Capacitor"]
+    assert cap_states, "expected capacitor component states"
+    assert_close(cap_states[0].capacitor_voltage or 0, expected_vc, rel=0.05, label="RC cap voltage")
+    assert_close(result.total_current, expected_current, rel=0.05, label="RC charge current")
+    assert expected_vc > 3.0, "cap should be substantially charged after solver steps"
 
 
 def test_op_amp_open_loop() -> None:
@@ -55,7 +52,7 @@ def test_op_amp_open_loop() -> None:
 
 
 TESTS = [
-    ("RC initial inrush", test_rc_initial_inrush),
+    ("RC charging", test_rc_charging),
     ("op-amp open loop saturation", test_op_amp_open_loop),
 ]
 

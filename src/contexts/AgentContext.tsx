@@ -13,14 +13,27 @@ import type { ClaudeMessage } from '../agent/claude/types'
 import type { ProjectFolder } from '../types/workspace'
 import { runAgentTurn } from '../agent/claude/runTurn'
 import { ClaudeApiError } from '../agent/claude/types'
+import { runSwitchControlledLedPlacementTest } from '../agent/schematic/devTestCases'
+import { appendAgentDevLog } from '../services/agentDevLog'
 import { clearProductSuiteSession } from '../agent/product/operations'
 
 export type AgentRevealPhase = 'hidden' | 'header' | 'expanded'
 
-export interface AgentChatEntry {
-  id: string
-  role: 'user' | 'assistant' | 'error'
-  text: string
+export type AgentChatEntry =
+  | { id: string; role: 'user'; text: string }
+  | { id: string; role: 'assistant'; text: string }
+  | { id: string; role: 'error'; text: string }
+  | {
+      id: string
+      role: 'tool'
+      toolName: string
+      label: string
+      status: 'running' | 'completed'
+      success?: boolean
+    }
+
+function formatToolLabel(toolName: string): string {
+  return toolName.replace(/_/g, ' ')
 }
 
 interface AgentContextValue {
@@ -37,12 +50,14 @@ interface AgentContextValue {
   error: string | null
   setError: (error: string | null) => void
   sendMessage: (text: string) => Promise<void>
+  stopAgent: () => void
   submitProductIdea: (idea: string) => Promise<void>
   projectContext: AgentProjectContext | null
   productSuiteOpen: boolean
   productSuiteLoading: boolean
   openProductSuite: () => void
   closeProductSuite: () => void
+  runDevTestCase: () => Promise<{ success: boolean; message: string }>
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null)
@@ -61,7 +76,10 @@ Generate 6–12 product-specific custom questions for this exact product and cal
 interface AgentProviderProps {
   children: ReactNode
   projectContext: AgentProjectContext | null
-  onProjectUpdate?: (folder: ProjectFolder) => void
+  onProjectUpdate?: (
+    folder: ProjectFolder,
+    options?: { openSchematicId?: string | null }
+  ) => void
 }
 
 export function AgentProvider({
@@ -83,6 +101,8 @@ export function AgentProvider({
   const claudeHistoryRef = useRef<ClaudeMessage[]>([])
   const abortRef = useRef<AbortController | null>(null)
   const projectContextRef = useRef(projectContext)
+  const loadedToolCategoriesRef = useRef<Set<string>>(new Set())
+  const currentAssistantIdRef = useRef<string | null>(null)
   projectContextRef.current = projectContext
 
   useEffect(() => {
@@ -141,41 +161,108 @@ export function AgentProvider({
       setIsStreaming(false)
 
       const assistantId = makeId()
+      currentAssistantIdRef.current = assistantId
       setStreamingMessageId(assistantId)
       setChat((prev) => [...prev, { id: assistantId, role: 'assistant', text: '' }])
 
       const controller = new AbortController()
       abortRef.current = controller
 
+      const ensureAssistantBubble = (): string => {
+        if (currentAssistantIdRef.current) return currentAssistantIdRef.current
+        const id = makeId()
+        currentAssistantIdRef.current = id
+        setStreamingMessageId(id)
+        setChat((prev) => [...prev, { id, role: 'assistant', text: '' }])
+        return id
+      }
+
+      const finalizeEmptyAssistant = (activeId: string | null) => {
+        if (!activeId) return
+        setChat((prev) =>
+          prev.filter(
+            (entry) =>
+              !(entry.id === activeId && entry.role === 'assistant' && entry.text.trim().length === 0)
+          )
+        )
+      }
+
       try {
         const result = await runAgentTurn({
           history: claudeHistoryRef.current,
           userMessage: trimmed,
           projectContext: projectContextRef.current,
+          loadedToolCategories: loadedToolCategoriesRef.current,
           signal: controller.signal,
           onTextDelta: (delta) => {
             setIsStreaming(true)
             setStatusHint(null)
+            const targetId = ensureAssistantBubble()
+            setStreamingMessageId(targetId)
             setChat((prev) =>
               prev.map((entry) =>
-                entry.id === assistantId ? { ...entry, text: entry.text + delta } : entry
+                entry.id === targetId && entry.role === 'assistant'
+                  ? { ...entry, text: entry.text + delta }
+                  : entry
               )
             )
           },
           onToolUseStart: (toolName) => {
             setIsStreaming(false)
-            setStatusHint(`Using ${toolName.replace(/_/g, ' ')}…`)
+            setStatusHint(null)
+            finalizeEmptyAssistant(currentAssistantIdRef.current)
+            currentAssistantIdRef.current = null
+            setStreamingMessageId(null)
+
+            const toolId = makeId()
+            setChat((prev) => [
+              ...prev,
+              {
+                id: toolId,
+                role: 'tool',
+                toolName,
+                label: formatToolLabel(toolName),
+                status: 'running',
+              },
+            ])
+
             if (toolName === 'product_open_new_product_suite') {
               setProductSuiteOpen(true)
               setProductSuiteLoading(true)
             }
           },
+          onToolUseComplete: (toolName, success) => {
+            setChat((prev) => {
+              const runningIndex = prev.findIndex(
+                (entry) => entry.role === 'tool' && entry.status === 'running'
+              )
+              if (runningIndex === -1) return prev
+              return prev.map((entry, index) =>
+                index === runningIndex && entry.role === 'tool'
+                  ? { ...entry, status: 'completed', success }
+                  : entry
+              )
+            })
+            currentAssistantIdRef.current = null
+          },
+          onFolderUpdate: (folder, meta) => {
+            onProjectUpdate?.(folder, {
+              openSchematicId: meta?.activeSchematicId ?? undefined,
+            })
+          },
         })
 
         claudeHistoryRef.current = result.messages
 
+        if (result.loadedToolCategories) {
+          loadedToolCategoriesRef.current = new Set(result.loadedToolCategories)
+        }
+
         if (result.updatedContext?.folder && onProjectUpdate) {
-          onProjectUpdate(result.updatedContext.folder)
+          onProjectUpdate(result.updatedContext.folder, {
+            openSchematicId:
+              result.openSchematicId ?? result.updatedContext.activeSchematicId ?? undefined,
+          })
         }
 
         if (result.uiActions?.some((a: AgentUiAction) => a.type === 'open_product_suite')) {
@@ -183,15 +270,43 @@ export function AgentProvider({
           setProductSuiteLoading(false)
         }
 
-        setChat((prev) =>
-          prev.map((entry) => {
-            if (entry.id !== assistantId) return entry
-            if (entry.text.trim().length > 0) return entry
-            return { ...entry, text: result.assistantText || '(No response)' }
-          })
-        )
+        setChat((prev) => {
+          const withoutEmpty = prev.filter(
+            (entry) => !(entry.role === 'assistant' && entry.text.trim().length === 0)
+          )
+          const hasAssistantText = withoutEmpty.some(
+            (entry) => entry.role === 'assistant' && entry.text.trim().length > 0
+          )
+          if (hasAssistantText || !result.assistantText.trim()) {
+            return withoutEmpty
+          }
+          return [
+            ...withoutEmpty,
+            { id: makeId(), role: 'assistant' as const, text: result.assistantText },
+          ]
+        })
       } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') return
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          setChat((prev) => {
+            const marked = prev.map((entry) =>
+              entry.role === 'tool' && entry.status === 'running'
+                ? { ...entry, status: 'completed' as const, success: false }
+                : entry
+            )
+            const activeId = currentAssistantIdRef.current
+            return marked.filter(
+              (entry) =>
+                !(
+                  entry.role === 'assistant' &&
+                  entry.id === activeId &&
+                  entry.text.trim().length === 0
+                )
+            )
+          })
+          setProductSuiteLoading(false)
+          appendAgentDevLog({ type: 'turn_end', payload: { cancelled: true } })
+          return
+        }
 
         const message =
           err instanceof ClaudeApiError
@@ -201,11 +316,23 @@ export function AgentProvider({
               : 'Something went wrong'
 
         setChat((prev) => {
-          const withoutEmptyAssistant = prev.filter(
-            (entry) => !(entry.id === assistantId && entry.text.length === 0)
+          const marked = prev.map((entry) =>
+            entry.role === 'tool' && entry.status === 'running'
+              ? { ...entry, status: 'completed' as const, success: false }
+              : entry
+          )
+          const activeId = currentAssistantIdRef.current
+          const withoutEmptyAssistant = marked.filter(
+            (entry) =>
+              !(
+                entry.role === 'assistant' &&
+                entry.id === activeId &&
+                entry.text.length === 0
+              )
           )
           return [...withoutEmptyAssistant, { id: makeId(), role: 'error', text: message }]
         })
+        appendAgentDevLog({ type: 'error', payload: { message, err: String(err) } })
         setError(message)
         setProductSuiteLoading(false)
         if (!projectContextRef.current?.folder.productSuiteSession) {
@@ -216,11 +343,16 @@ export function AgentProvider({
         setIsStreaming(false)
         setStreamingMessageId(null)
         setStatusHint(null)
+        currentAssistantIdRef.current = null
         abortRef.current = null
       }
     },
     [isLoading, onProjectUpdate]
   )
+
+  const stopAgent = useCallback(() => {
+    abortRef.current?.abort()
+  }, [])
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -250,6 +382,18 @@ export function AgentProvider({
     [runTurn, onProjectUpdate, ensureExpanded]
   )
 
+  const runDevTestCase = useCallback(async () => {
+    const ctx = projectContextRef.current
+    if (!ctx) {
+      return { success: false, message: 'Open a project first.' }
+    }
+    const result = runSwitchControlledLedPlacementTest(ctx)
+    if (result.folder && onProjectUpdate) {
+      onProjectUpdate(result.folder, { openSchematicId: result.activeSchematicId ?? null })
+    }
+    return { success: result.success, message: result.message }
+  }, [onProjectUpdate])
+
   const value = useMemo<AgentContextValue>(
     () => ({
       revealPhase,
@@ -265,12 +409,14 @@ export function AgentProvider({
       error,
       setError,
       sendMessage,
+      stopAgent,
       submitProductIdea,
       projectContext,
       productSuiteOpen,
       productSuiteLoading,
       openProductSuite,
       closeProductSuite,
+      runDevTestCase,
     }),
     [
       revealPhase,
@@ -284,12 +430,14 @@ export function AgentProvider({
       statusHint,
       error,
       sendMessage,
+      stopAgent,
       submitProductIdea,
       projectContext,
       productSuiteOpen,
       productSuiteLoading,
       openProductSuite,
       closeProductSuite,
+      runDevTestCase,
     ]
   )
 

@@ -71,12 +71,11 @@ def rc_capacitor_voltage(
     dt: float = CAP_CHARGE_DT,
     iterations: int = CAP_ITERATIONS,
 ) -> float:
-    tau = r * c * 1000  # matches CircuitSolver.ts: tau = cap.capacitance * 1000
+    tau = r * c
     alpha = 1.0 - math.exp(-dt / tau) if tau > 0 else 1.0
     stored = 0.0
-    target = vin
     for _ in range(iterations):
-        stored += (target - stored) * alpha
+        stored += (vin - stored) * alpha
     return stored
 
 

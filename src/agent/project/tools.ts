@@ -61,7 +61,13 @@ export const projectAgentTools: AgentTool[] = [
         args.name as string,
         (args.description as string) ?? ''
       )
-      return ok(ctx, folder, `Schematic "${schematic.name}" created.`, { schematic: { id: schematic.id, name: schematic.name } })
+      return ok(
+        ctx,
+        folder,
+        `Schematic "${schematic.name}" created.`,
+        { schematic: { id: schematic.id, name: schematic.name } },
+        { activeSchematicId: schematic.id }
+      )
     }
   ),
 
@@ -155,7 +161,13 @@ export const projectAgentTools: AgentTool[] = [
       if (id && !ctx.folder.schematics.some((s) => s.id === id)) {
         return fail(`Schematic not found: ${id}`)
       }
-      return okRead({ ...ctx, activeSchematicId: id || null }, 'Active schematic set.', { activeSchematicId: id })
+      return ok(
+        ctx,
+        ctx.folder,
+        'Active schematic set.',
+        { activeSchematicId: id || null },
+        { activeSchematicId: id || null }
+      )
     }
   ),
 

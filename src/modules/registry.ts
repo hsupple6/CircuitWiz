@@ -7,7 +7,6 @@ import { SensorType } from './types/Sensor'
 
 import ESP32 from './definitions/ESP32.json'
 import ArduinoUno from './definitions/ArduinoUno.json'
-import Battery from './definitions/Battery.json'
 import LED from './definitions/LED.json'
 import TemperatureSensor from './definitions/TemperatureSensor.json'
 import Switch from './definitions/Switch.json'
@@ -26,6 +25,7 @@ import GroupBox from './definitions/GroupBox.json'
 import Diode from './definitions/Diode.json'
 import ZenerDiode from './definitions/ZenerDiode.json'
 import NPNTransistor from './definitions/NPNTransistor.json'
+import MOSFET from './definitions/MOSFET.json'
 import OpAmp from './definitions/OpAmp.json'
 import BridgeRectifier from './definitions/BridgeRectifier.json'
 import ACSource from './definitions/ACSource.json'
@@ -56,12 +56,6 @@ export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
     category: 'microcontrollers',
     keywords: ['esp32', 'wifi', 'bluetooth', 'mcu', 'gpio'],
     disabled: true,
-  },
-  Battery: {
-    definition: Battery as ModuleDefinition,
-    type: PowerType,
-    category: 'power',
-    keywords: ['battery', 'aa', '9v', 'lipo', 'cell'],
   },
   PowerSupply: {
     definition: PowerSupply as ModuleDefinition,
@@ -104,6 +98,11 @@ export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
     definition: NPNTransistor as ModuleDefinition,
     category: 'semiconductors',
     keywords: ['npn', 'transistor', 'bjt', '2n2222', 'switch'],
+  },
+  MOSFET: {
+    definition: MOSFET as ModuleDefinition,
+    category: 'semiconductors',
+    keywords: ['mosfet', 'fet', 'nmos', 'n-channel', '2n7000', 'switch'],
   },
   OpAmp: {
     definition: OpAmp as ModuleDefinition,
@@ -181,16 +180,27 @@ export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
   },
 }
 
+export function resolveModuleName(name: string): string {
+  const trimmed = name.trim()
+  if (moduleRegistry[trimmed]) return trimmed
+
+  const compact = trimmed.toLowerCase().replace(/[\s_-]+/g, '')
+  for (const key of Object.keys(moduleRegistry)) {
+    if (key.toLowerCase().replace(/[\s_-]+/g, '') === compact) return key
+  }
+  return trimmed
+}
+
 export const getModule = (name: string): ModuleDefinition | undefined => {
-  return moduleRegistry[name]?.definition
+  return moduleRegistry[resolveModuleName(name)]?.definition
 }
 
 export const getModuleWithType = (name: string): ModuleRegistryEntry | undefined => {
-  return moduleRegistry[name]
+  return moduleRegistry[resolveModuleName(name)]
 }
 
 export const getModuleType = (name: string): ModuleType | undefined => {
-  return moduleRegistry[name]?.type
+  return moduleRegistry[resolveModuleName(name)]?.type
 }
 
 const availableRegistryEntries = (): ModuleRegistryEntry[] =>

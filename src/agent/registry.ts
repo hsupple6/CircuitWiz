@@ -18,6 +18,8 @@ import { requirementsAgentTools } from './requirements/tools'
 import { productAgentTools } from './product/tools'
 import { assemblyAgentTools } from './assembly/tools'
 import { validationAgentTools } from './validation/tools'
+import { buildMetaAgentTools } from './meta/buildMetaTools'
+import { AGENT_META_CATEGORY } from './meta/catalog'
 
 const toolMap = new Map<string, AgentTool>()
 
@@ -50,6 +52,16 @@ registerTools(validationAgentTools)
 /** All registered agent tools */
 export function getAllAgentTools(): AgentTool[] {
   return Array.from(toolMap.values())
+}
+
+registerTools(buildMetaAgentTools(() => getAllAgentTools()))
+
+/** Meta discovery tools are always included; other tools require agent_load_tool_categories. */
+export function getSessionAgentTools(loadedCategories: Iterable<string>): AgentTool[] {
+  const loaded = new Set(loadedCategories)
+  return getAllAgentTools().filter(
+    (tool) => tool.category === AGENT_META_CATEGORY || loaded.has(tool.category)
+  )
 }
 
 /** All tool-calling function names (snake_case) */
@@ -111,8 +123,8 @@ function parameterToJsonSchema(param: AgentToolParameter): Record<string, unknow
 }
 
 /** Convert registered tools to OpenAI / Anthropic function-calling format */
-export function getOpenAIToolDefinitions(): OpenAIToolDefinition[] {
-  return getAllAgentTools().map((tool) => {
+export function agentToolsToOpenAIToolDefinitions(tools: AgentTool[]): OpenAIToolDefinition[] {
+  return tools.map((tool) => {
     const properties: Record<string, unknown> = {}
     const required: string[] = []
 
@@ -134,6 +146,17 @@ export function getOpenAIToolDefinitions(): OpenAIToolDefinition[] {
       },
     }
   })
+}
+
+export function getOpenAIToolDefinitions(): OpenAIToolDefinition[] {
+  return agentToolsToOpenAIToolDefinitions(getAllAgentTools())
+}
+
+/** OpenAI tool definitions for a session with loaded categories */
+export function getOpenAIToolDefinitionsForSession(
+  loadedCategories: Iterable<string>
+): OpenAIToolDefinition[] {
+  return agentToolsToOpenAIToolDefinitions(getSessionAgentTools(loadedCategories))
 }
 
 /** OpenAI tool definitions filtered by category */

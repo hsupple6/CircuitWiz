@@ -50,6 +50,8 @@ export interface AgentToolResult {
   planSpace?: PlanSpace
   data?: unknown
   uiAction?: AgentUiAction
+  activeSchematicId?: string | null
+  activeDocumentId?: string | null
 }
 
 export type AgentToolHandler<TArgs = Record<string, unknown>> = (

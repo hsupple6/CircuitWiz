@@ -115,10 +115,25 @@ export function propagateVoltages(ctx: PropagateContext): {
 
     const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
     const moduleCell = cell.moduleDefinition.grid[cell.cellIndex ?? 0]
+    const moduleType = cell.moduleDefinition.module
     const v = ctx.netVoltages[net] ?? 0
     const grounded = isGroundReference(moduleCell) || isNetGrounded(net, ctx.groundNet, ctx.gridData, ctx.posToNet)
 
     const existing = ctx.componentStates.get(cellComponentId)
+    // Semiconductors and loads get full state from the solver — only fill in if missing.
+    const specialized = new Set([
+      'Resistor',
+      'LED',
+      'Diode',
+      'ZenerDiode',
+      'NPNTransistor',
+      'MOSFET',
+      'OpAmp',
+      'BridgeRectifier',
+      'Capacitor',
+    ])
+    if (existing && specialized.has(moduleType)) return
+
     if (existing) {
       ctx.componentStates.set(cellComponentId, {
         ...existing,

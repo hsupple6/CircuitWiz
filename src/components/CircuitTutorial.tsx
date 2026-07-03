@@ -14,8 +14,8 @@ export function CircuitTutorial({ onClose }: CircuitTutorialProps) {
       icon: "🎯"
     },
     {
-      title: "Step 1: Add a Battery",
-      content: "Drag a Battery from the component palette to the grid. This provides power (typically 9V).",
+      title: "Step 1: Add a Power Supply",
+      content: "Drag a Power Supply from the component palette to the grid. Set voltage (e.g. 5V) for your circuit.",
       icon: "🔋"
     },
     {
@@ -30,12 +30,12 @@ export function CircuitTutorial({ onClose }: CircuitTutorialProps) {
     },
     {
       title: "Step 4: Connect with Wires",
-      content: "Click on connection points to start wiring. Connect: Battery(+) → Resistor → LED(+) → LED(-) → Battery(-)",
+      content: "Click on connection points to start wiring. Connect: Power Supply(+) → Resistor → LED(+) → LED(-) → Power Supply(-)",
       icon: "🔌"
     },
     {
       title: "Step 5: Calculate Resistor Value",
-      content: "For a 9V battery and 2V LED: R = (9V - 2V) / 0.02A = 350Ω. Use 330Ω or 470Ω resistor.",
+      content: "For a 5V supply and 2V LED: R = (5V - 2V) / 0.02A = 150Ω. Use 150Ω or 220Ω resistor.",
       icon: "🧮"
     },
     {
@@ -62,7 +62,7 @@ export function CircuitTutorial({ onClose }: CircuitTutorialProps) {
           {/* Header */}
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Circuit Tutorial: LED + Resistor + Battery
+              Circuit Tutorial: LED + Resistor + Power Supply
             </h2>
             <button
               onClick={onClose}

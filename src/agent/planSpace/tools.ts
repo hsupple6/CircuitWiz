@@ -3,17 +3,13 @@ import {
   AgentToolParameter,
 } from '../types'
 import {
-  PLAN_SPACE_COORDINATE_SYSTEM,
   getViewport,
   getBubbleCenter,
   getBubbleRect,
   getBubbleBounds,
   getPlanSpaceContentBounds,
-  findBubbleAtPoint,
-  worldToScreen,
-  screenToWorld,
-  viewportToFitBounds,
   getArrowPoints,
+  viewportToFitBounds,
 } from './coordinates'
 import * as ops from './operations'
 import { PlanBubbleShape } from '../../types/workspace'
@@ -29,19 +25,6 @@ const PIPELINE_STAGE_ENUM = [
   'elicitation', 'system_design', 'schematic', 'code_architecture', 'bom', 'assembly',
 ] as const
 
-function pointParam(name: string, description: string): AgentToolParameter {
-  return {
-    name,
-    type: 'object',
-    description,
-    required: true,
-    properties: {
-      x: { name: 'x', type: 'number', description: 'World X in pixels', required: true },
-      y: { name: 'y', type: 'number', description: 'World Y in pixels', required: true },
-    },
-  }
-}
-
 function tool(
   name: string,
   description: string,
@@ -52,17 +35,7 @@ function tool(
 }
 
 export const planSpaceAgentTools: AgentTool[] = [
-  // ── Coordinate system & viewport ──────────────────────────────────────────
-  tool(
-    'plan_space_get_coordinate_system',
-    'Returns the Plan Space world coordinate system specification (origin, axes, units, zoom limits).',
-    [],
-    (ctx) =>
-      okRead(ctx, 'Coordinate system retrieved.', {
-        coordinateSystem: PLAN_SPACE_COORDINATE_SYSTEM,
-      })
-  ),
-
+  // ── Viewport ───────────────────────────────────────────────────────────────
   tool(
     'plan_space_get_viewport',
     'Get the current viewport (zoom and pan offset) for the plan space.',
@@ -130,28 +103,6 @@ export const planSpaceAgentTools: AgentTool[] = [
   ),
 
   tool(
-    'plan_space_world_to_screen',
-    'Convert a world coordinate point to screen coordinates using the current viewport.',
-    [pointParam('world', 'World-space point')],
-    (ctx, args) => {
-      const world = args.world as { x: number; y: number }
-      const screen = worldToScreen(world, getViewport(getPlanSpace(ctx)))
-      return okRead(ctx, 'Converted world to screen.', { world, screen })
-    }
-  ),
-
-  tool(
-    'plan_space_screen_to_world',
-    'Convert a screen coordinate point to world coordinates using the current viewport.',
-    [pointParam('screen', 'Screen-space point relative to viewport element')],
-    (ctx, args) => {
-      const screen = args.screen as { x: number; y: number }
-      const world = screenToWorld(screen, getViewport(getPlanSpace(ctx)))
-      return okRead(ctx, 'Converted screen to world.', { screen, world })
-    }
-  ),
-
-  tool(
     'plan_space_get_content_bounds',
     'Get the axis-aligned bounding box of all bubbles and arrow points in world coordinates.',
     [],
@@ -197,22 +148,6 @@ export const planSpaceAgentTools: AgentTool[] = [
       return okRead(ctx, 'Bubble retrieved.', {
         bubble: { ...bubble, center: getBubbleCenter(bubble) },
       })
-    }
-  ),
-
-  tool(
-    'plan_space_find_bubble_at',
-    'Find the topmost bubble at a world coordinate point.',
-    [
-      { name: 'x', type: 'number', description: 'World X', required: true },
-      { name: 'y', type: 'number', description: 'World Y', required: true },
-    ],
-    (ctx, args) => {
-      const hit = findBubbleAtPoint(getPlanSpace(ctx).bubbles, {
-        x: args.x as number,
-        y: args.y as number,
-      })
-      return okRead(ctx, hit ? 'Bubble found.' : 'No bubble at point.', { bubble: hit })
     }
   ),
 

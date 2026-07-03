@@ -2,7 +2,7 @@ import type { ClaudeApiResponse, ClaudeContentBlock } from './types'
 
 export interface StreamClaudeCallbacks {
   onTextDelta?: (text: string) => void
-  onToolUseStart?: (toolName: string) => void
+  onToolUseStart?: (toolName: string, toolUseId?: string) => void
 }
 
 interface ParsedSseEvent {
@@ -97,7 +97,7 @@ export async function parseClaudeSseStream(
             input: {},
           }
           toolInputJson[index] = ''
-          callbacks.onToolUseStart?.(block.name ?? 'tool')
+          callbacks.onToolUseStart?.(block.name ?? 'tool', block.id)
         } else {
           ensureTextBlock(index)
         }

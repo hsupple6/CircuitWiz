@@ -1224,7 +1224,7 @@ async function simulateGenericArduinoBehavior(board) {
 // Agent (Claude) proxy — keeps API key server-side
 function getAnthropicConfig() {
   const apiKey = (process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY || '').trim();
-  const model = (process.env.ANTHROPIC_MODEL || process.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
+  const model = (process.env.ANTHROPIC_MODEL || process.env.VITE_ANTHROPIC_MODEL || 'claude-haiku-4-5').trim();
   return { apiKey, model };
 }
 

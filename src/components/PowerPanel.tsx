@@ -13,7 +13,7 @@ interface PowerPanelProps {
 }
 
 function formatModuleLabel(module: PlacedPowerSupply['module']): string {
-  return module === 'Battery' ? 'Battery' : 'Power Supply'
+  return 'Power Supply'
 }
 
 export function PowerPanel({

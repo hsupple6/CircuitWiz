@@ -171,8 +171,8 @@ function zenerClampSchematic(): Schematic {
     const z = place('ZenerDiode', 10, 10, { zenerVoltage: 3.3 })
 
     wire([ps.pin('5V'), r.at(0, 0)], { powered: true })
-    wire([r.at(2, 0), z.pin('K')])
-    wire([z.pin('A'), { x: 10, y: 14 }, { x: 3, y: 14 }, { x: 3, y: 10 }, ps.pin('GND')], {
+    wire([r.at(2, 0), { x: 8, y: 10 }, z.pin('K')])
+    wire([z.pin('A'), { x: 10, y: 14 }, { x: 12, y: 14 }, { x: 3, y: 14 }, { x: 3, y: 10 }, ps.pin('GND')], {
       grounded: true,
     })
   })

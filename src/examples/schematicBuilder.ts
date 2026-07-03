@@ -11,7 +11,7 @@ const DEFAULT_GRID = { width: 50, height: 50 }
 
 function componentTypeFor(module: ModuleDefinition): string {
   if (module.category === 'microcontrollers') return 'Microcontroller'
-  if (module.category === 'power') return module.module === 'Battery' ? 'Battery' : 'PowerSupply'
+  if (module.category === 'power') return 'PowerSupply'
   if (module.category === 'sensors') return 'Sensor'
   if (module.category === 'switches') return module.module
   if (module.category === 'passives') return module.module
@@ -56,7 +56,7 @@ export function placeModule(
         if (cell.type === 'LED_POSITIVE' || cell.pin === '+') pinMap.set('+', { x, y })
         if (cell.type === 'LED_NEGATIVE' || cell.pin === '-') pinMap.set('-', { x, y })
       }
-      if (moduleName === 'Capacitor') {
+      if (moduleName === 'Resistor' || moduleName === 'Capacitor' || moduleName === 'Inductor') {
         if (cell.x === 0) pinMap.set('1', { x, y })
         if (cell.x === 2) pinMap.set('2', { x, y })
       }
@@ -68,6 +68,11 @@ export function placeModule(
         if (cell.pin === 'B') pinMap.set('B', { x, y })
         if (cell.pin === 'C') pinMap.set('C', { x, y })
         if (cell.pin === 'E') pinMap.set('E', { x, y })
+      }
+      if (moduleName === 'MOSFET') {
+        if (cell.pin === 'G') pinMap.set('G', { x, y })
+        if (cell.pin === 'D') pinMap.set('D', { x, y })
+        if (cell.pin === 'S') pinMap.set('S', { x, y })
       }
       if (moduleName === 'OpAmp') {
         if (cell.pin === '+') pinMap.set('+', { x, y })
@@ -105,6 +110,9 @@ export function placeModule(
     if (moduleName === 'Capacitor' && props.capacitance != null) {
       ;(entry as OccupiedComponent & { capacitance: number }).capacitance = props.capacitance as number
     }
+    if (moduleName === 'Inductor' && props.inductance != null) {
+      ;(entry as OccupiedComponent & { inductance: number }).inductance = props.inductance as number
+    }
     if (moduleName === 'ZenerDiode' && props.zenerVoltage != null) {
       moduleDefinition.properties = {
         ...(moduleDefinition.properties as Record<string, unknown>),
@@ -117,6 +125,13 @@ export function placeModule(
         ...(props.vrms != null ? { vrms: props.vrms } : {}),
         ...(props.frequency != null ? { frequency: props.frequency } : {}),
         ...(props.waveform != null ? { waveform: props.waveform } : {}),
+      }
+    }
+    if (moduleName === 'MOSFET') {
+      moduleDefinition.properties = {
+        ...(moduleDefinition.properties as Record<string, unknown>),
+        ...(props.vth != null ? { vth: props.vth } : {}),
+        ...(props.rdsOn != null ? { rdsOn: props.rdsOn } : {}),
       }
     }
 
@@ -139,12 +154,27 @@ export function wireBetween(
   points: Array<{ x: number; y: number }>,
   opts: { color?: string; powered?: boolean; grounded?: boolean } = {}
 ): WireConnection {
+  const expanded: Array<{ x: number; y: number }> = []
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i]
+    if (expanded.length === 0) {
+      expanded.push(point)
+      continue
+    }
+    const prev = expanded[expanded.length - 1]
+    if (prev.x === point.x && prev.y === point.y) continue
+    if (prev.x !== point.x && prev.y !== point.y) {
+      expanded.push({ x: point.x, y: prev.y })
+    }
+    expanded.push(point)
+  }
+
   const segments: WireSegment[] = []
-  for (let i = 0; i < points.length - 1; i++) {
+  for (let i = 0; i < expanded.length - 1; i++) {
     segments.push({
       id: `ex-seg-${++placementCounter}-${i}`,
-      from: points[i],
-      to: points[i + 1],
+      from: expanded[i],
+      to: expanded[i + 1],
       isPowered: opts.powered ?? false,
       isGrounded: opts.grounded ?? false,
       isPowerable: true,

@@ -48,9 +48,14 @@ export function updateSchematicInFolder(
     if (s.id !== schematicId) return s
     found = true
     const now = new Date().toISOString()
+    const updated = updater(s)
     return {
-      ...updater(s),
-      metadata: { ...s.metadata, updatedAt: now },
+      ...updated,
+      metadata: {
+        ...s.metadata,
+        ...updated.metadata,
+        updatedAt: now,
+      },
     }
   })
   if (!found) return null
@@ -61,7 +66,8 @@ export function ok(
   _ctx: AgentProjectContext,
   folder: ProjectFolder,
   message: string,
-  data?: unknown
+  data?: unknown,
+  meta?: Pick<AgentToolResult, 'activeSchematicId' | 'activeDocumentId' | 'uiAction'>
 ): AgentToolResult {
   const touched = touchFolder(folder)
   return {
@@ -70,6 +76,7 @@ export function ok(
     folder: touched,
     planSpace: touched.planSpace,
     data,
+    ...meta,
   }
 }
 

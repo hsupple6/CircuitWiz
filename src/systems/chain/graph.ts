@@ -78,7 +78,9 @@ export function buildCircuitGraph(
       if (!processedComponents.has(cell.componentId)) {
         processedComponents.add(cell.componentId)
         const compTerminals = collectComponentTerminals(gridData, cell.componentId)
-        internalEdges.push(...getComponentConductivity(moduleType, compTerminals, gridData))
+        internalEdges.push(
+          ...getComponentConductivity(moduleType, compTerminals, gridData, cell.moduleDefinition.category)
+        )
       }
     })
   })

@@ -6,7 +6,6 @@ import { newId, touchFolder } from '../helpers'
 const DEFAULT_UNIT_PRICES: Record<string, number> = {
   'Arduino Uno R3': 27.6,
   ESP32: 9.95,
-  Battery: 3.5,
   LED: 0.15,
   Resistor: 0.05,
   Capacitor: 0.12,
@@ -14,6 +13,7 @@ const DEFAULT_UNIT_PRICES: Record<string, number> = {
   Diode: 0.08,
   ZenerDiode: 0.12,
   NPNTransistor: 0.35,
+  MOSFET: 0.45,
   OpAmp: 0.85,
   BridgeRectifier: 1.2,
   ACSource: 4.5,

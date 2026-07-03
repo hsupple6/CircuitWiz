@@ -64,9 +64,6 @@ export function ElectricalValidator({ gridData, wires, onValidationUpdate }: Ele
       case 'Resistor':
         validateResistor(component, validations)
         break
-      case 'Battery':
-        validateBattery(component, validations)
-        break
       case 'PowerSupply':
         validatePowerSupply(component, validations)
         break
@@ -140,23 +137,6 @@ export function ElectricalValidator({ gridData, wires, onValidationUpdate }: Ele
         componentId: id,
         componentType: 'Resistor',
         message: `⚠️ Resistor power rating exceeded: ${power.toFixed(3)}W. Consider higher wattage resistor.`,
-        timestamp: Date.now()
-      })
-    }
-  }
-
-  const validateBattery = (component: any, validations: ElectricalValidation[]) => {
-    const { id, cells } = component
-    const voltage = getComponentVoltage(component)
-    const current = getComponentCurrent(component)
-    
-    if (current > 1.0) { // 1A typical battery limit
-      validations.push({
-        id: `battery-high-current-${id}`,
-        type: 'warning',
-        componentId: id,
-        componentType: 'Battery',
-        message: `⚠️ Battery current high: ${current.toFixed(2)}A. Check for short circuits.`,
         timestamp: Date.now()
       })
     }

@@ -296,17 +296,6 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
 
   const microcontrollers = findMicrocontrollers()
 
-  // Check if power is connected to the circuit using electrical system results
-  const hasPowerConnected = useCallback((): boolean => {
-    // Check if any component has power (voltage > 0) according to the electrical system
-    for (const [componentId, state] of componentStates) {
-      if (state.outputVoltage > 0) {
-        return true
-      }
-    }
-    return false
-  }, [componentStates])
-
   // Initialize templates and check system status
   useEffect(() => {
     const initializeServices = async () => {
@@ -560,11 +549,6 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
   const handleRun = async () => {
     if (!selectedMicrocontroller) {
       alert('Please select a microcontroller first')
-      return
-    }
-
-    if (!hasPowerConnected()) {
-      alert('Power must be connected to the circuit before running code')
       return
     }
 
@@ -970,7 +954,7 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
               {(() => {
                 const mcusWithCode = microcontrollers.filter(mcu => compiledCodes.has(mcu.id))
                 const runningCount = simulationState.runningMicrocontrollers.size
-                const canRunAll = mcusWithCode.length > 1 && hasPowerConnected()
+                const canRunAll = mcusWithCode.length > 1
                 const allRunning = mcusWithCode.length > 0 && mcusWithCode.every(mcu => simulationState.runningMicrocontrollers.has(mcu.id))
                 
                 if (mcusWithCode.length > 1) {
@@ -1028,7 +1012,6 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                         }`}
                         title={
                           allRunning ? 'Stop all running microcontrollers' :
-                          !hasPowerConnected() ? 'Power must be connected to run code' :
                           'Run all microcontrollers with compiled code'
                         }
                       >
@@ -1147,10 +1130,10 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                     microcontrollers.map((microcontroller) => {
                       // Check if this specific microcontroller has power using electrical system results
                       const isMicrocontrollerPowered = (() => {
-                        // Check if this microcontroller has power according to the electrical system
-                        const state = componentStates.get(microcontroller.id)
-                        if (state && state.outputVoltage > 0) {
-                          return true
+                        const prefix = `${microcontroller.id}-`
+                        for (const [key, state] of componentStates) {
+                          if (!key.startsWith(prefix)) continue
+                          if (state.isPowered && state.outputVoltage > 0.1) return true
                         }
                         return false
                       })()
@@ -1268,7 +1251,7 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                             className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
                               simulationState.runningMicrocontrollers.has(microcontroller.id)
                                 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50'
-                                : compiledCodes.has(microcontroller.id) && hasPowerConnected()
+                                : compiledCodes.has(microcontroller.id)
                                 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50'
                                 : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
                             }`}
@@ -1283,7 +1266,6 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                               } else {
                                 console.log(`Run button clicked for ${microcontroller.id} - Debug info:`, {
                                   hasCompiledCode: compiledCodes.has(microcontroller.id),
-                                  hasPowerConnected: hasPowerConnected(),
                                   isRunning: simulationState.runningMicrocontrollers.has(microcontroller.id),
                                   selectedMicrocontroller: selectedMicrocontroller?.name
                                 })
@@ -1320,11 +1302,10 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                                 }
                               }
                             }}
-                            disabled={!simulationState.runningMicrocontrollers.has(microcontroller.id) && (!compiledCodes.has(microcontroller.id) || !hasPowerConnected())}
+                            disabled={!simulationState.runningMicrocontrollers.has(microcontroller.id) && !compiledCodes.has(microcontroller.id)}
                             title={
                               simulationState.runningMicrocontrollers.has(microcontroller.id) ? 'Stop this microcontroller' :
                               !compiledCodes.has(microcontroller.id) ? 'Please compile code first' :
-                              !hasPowerConnected() ? 'Power must be connected to run code' : 
                               'Run compiled code'
                             }
                           >

@@ -45,6 +45,22 @@ export function createSchematicGroupBox(
   }
 }
 
+export interface SchematicCellLabel {
+  id: string
+  x: number
+  y: number
+  text: string
+}
+
+export function createSchematicCellLabel(x: number, y: number, text = ''): SchematicCellLabel {
+  return {
+    id: `label-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    x,
+    y,
+    text,
+  }
+}
+
 export interface Schematic {
   id: string
   name: string
@@ -54,6 +70,7 @@ export interface Schematic {
   wires: WireConnection[]
   componentStates: Record<string, ComponentState>
   groupBoxes?: SchematicGroupBox[]
+  labels?: SchematicCellLabel[]
   metadata: {
     createdAt: string
     updatedAt: string

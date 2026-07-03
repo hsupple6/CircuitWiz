@@ -8,6 +8,7 @@ import { ACSourceBodyLabel } from './ACSourceBodyLabel'
 import { DiodeBodyLabel } from './DiodeBodyLabel'
 import { ZenerDiodeBodyLabel } from './ZenerDiodeBodyLabel'
 import { TransistorBodyLabel } from './TransistorBodyLabel'
+import { MosfetBodyLabel } from './MosfetBodyLabel'
 import { OpAmpBodyLabel } from './OpAmpBodyLabel'
 import { BridgeRectifierBodyLabel } from './BridgeRectifierBodyLabel'
 import { SemiconductorPinPad } from './SemiconductorPinPad'
@@ -145,6 +146,19 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
             )}
             {definition.module === 'NPNTransistor' && cell.x === 1 && cell.y === 1 && (
               <TransistorBodyLabel />
+            )}
+
+            {definition.module === 'MOSFET' && cell.x === 1 && cell.y === 0 && (
+              <SemiconductorPinPad label="D" edge="top" />
+            )}
+            {definition.module === 'MOSFET' && cell.x === 0 && cell.y === 1 && (
+              <SemiconductorPinPad label="G" edge="left" />
+            )}
+            {definition.module === 'MOSFET' && cell.x === 1 && cell.y === 2 && (
+              <SemiconductorPinPad label="S" edge="bottom" />
+            )}
+            {definition.module === 'MOSFET' && cell.x === 1 && cell.y === 1 && (
+              <MosfetBodyLabel />
             )}
 
             {definition.module === 'OpAmp' && cell.x === 1 && cell.y === 0 && (

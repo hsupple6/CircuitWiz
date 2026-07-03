@@ -4,7 +4,6 @@ import { formatCapacitance } from '../components/CapacitanceSelector'
 import { formatInductance } from '../components/InductanceSelector'
 import { formatCurrent, formatPower, formatResistance, formatVoltage } from './electricalFormatting'
 import { readSupplyVoltageAndCurrent } from './powerSupplies'
-import { formatBatteryCapacity, readBatteryCapacity } from './batteryVisual'
 import {
   AC_WAVEFORM_LABELS,
   formatACFrequency,
@@ -254,21 +253,35 @@ function buildComponentStats(
     case 'Capacitor': {
       const c =
         cell.capacitance ?? getNumericProperty(cell.moduleDefinition?.properties, 'capacitance', 0.0001)
-      const chargeLabel = Math.abs(voltage) < 0.05 ? 'Discharged' : Math.abs(voltage) > 4 ? 'Charged' : 'Partially charged'
-      const chargePct = Math.min(100, (Math.abs(voltage) / 5) * 100)
+      const vc = state?.capacitorVoltage ?? 0
+      const chargeCurrent = state?.outputCurrent ?? current
+      const storedEnergy = state?.power ?? 0.5 * c * vc * vc
+      const capStatus = state?.status
+      const chargeLabel =
+        capStatus === 'charged'
+          ? 'Charged'
+          : capStatus === 'charging'
+            ? 'Partially charged'
+            : 'Discharged'
+      const chargePct = Math.min(100, (Math.abs(vc) / 5) * 100)
       status =
         chargeLabel === 'Discharged'
           ? { label: 'Discharged', tone: 'idle' }
-          : { label: chargeLabel, tone: 'active' }
+          : capStatus === 'charging'
+            ? { label: 'Charging', tone: 'active' }
+            : { label: chargeLabel, tone: 'active' }
+      metrics = primaryMetrics(vc, chargeCurrent, storedEnergy)
       details.push({ label: 'Capacitance', value: formatCapacitance(c), accent: 'info' })
       details.push({
         label: 'Charge',
         value: chargeLabel === 'Partially charged' ? `${chargePct.toFixed(0)}%` : chargeLabel,
         accent: chargeLabel === 'Discharged' ? 'idle' : 'success',
       })
-      const energy = 0.5 * c * voltage * voltage
-      if (energy > 1e-12) {
-        details.push({ label: 'Stored energy', value: formatPower(energy).replace('W', 'J').replace('mW', 'mJ'), accent: 'info' })
+      if (typeof state?.terminalVoltage === 'number' && pinCell?.pin) {
+        details.push({ label: 'Terminal', value: formatVoltage(state.terminalVoltage), accent: 'voltage' })
+      }
+      if (storedEnergy > 1e-12) {
+        details.push({ label: 'Stored energy', value: formatPower(storedEnergy).replace('W', 'J').replace('mW', 'mJ'), accent: 'info' })
       }
       break
     }
@@ -303,6 +316,21 @@ function buildComponentStats(
       details.push({
         label: 'β',
         value: String(getNumericProperty(cell.moduleDefinition?.properties, 'beta', 100)),
+        accent: 'info',
+      })
+      break
+    }
+    case 'MOSFET': {
+      const isOn = state?.isOn ?? state?.status === 'on'
+      status = isOn ? { label: 'On', tone: 'active' } : { label: 'Off', tone: 'idle' }
+      details.push({
+        label: 'Vth',
+        value: formatVoltage(getNumericProperty(cell.moduleDefinition?.properties, 'vth', 2.5)),
+        accent: 'info',
+      })
+      details.push({
+        label: 'Rds(on)',
+        value: formatResistance(getNumericProperty(cell.moduleDefinition?.properties, 'rdsOn', 0.05)),
         accent: 'info',
       })
       break
@@ -361,8 +389,7 @@ function buildComponentStats(
       }
       break
     }
-    case 'PowerSupply':
-    case 'Battery': {
+    case 'PowerSupply': {
       const { voltage: nominal, current: maxA } = readSupplyVoltageAndCurrent(
         cell.moduleDefinition as ModuleDefinition & { properties?: Record<string, unknown> }
       )
@@ -371,12 +398,7 @@ function buildComponentStats(
           ? { label: 'Supplying', tone: 'active' }
           : { label: 'Standby', tone: 'idle' }
       details.push({ label: 'Nominal', value: formatVoltage(nominal), accent: 'info' })
-      if (moduleName === 'Battery') {
-        const capacity = readBatteryCapacity(cell.moduleDefinition?.properties as Record<string, unknown> | undefined)
-        details.push({ label: 'Capacity', value: formatBatteryCapacity(capacity), accent: 'info' })
-      } else {
-        details.push({ label: 'Max current', value: formatCurrent(maxA), accent: 'current' })
-      }
+      details.push({ label: 'Max current', value: formatCurrent(maxA), accent: 'current' })
       break
     }
     default: {

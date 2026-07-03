@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Bot,
+  Bug,
+  Check,
   ChevronDown,
   ChevronUp,
   Loader2,
   Send,
   Sparkles,
+  Square,
   X,
 } from 'lucide-react'
 import { useAgent } from '../contexts/AgentContext'
@@ -14,6 +17,7 @@ import {
   getAgentBackendOfflineHint,
   getAnthropicApiKeySetupHint,
 } from '../services/anthropicEnv'
+import { AgentDevPanel } from './AgentDevPanel'
 
 export function AgentPanel({
   embedded = false,
@@ -37,10 +41,12 @@ export function AgentPanel({
     error,
     setError,
     sendMessage,
+    stopAgent,
     projectContext,
   } = useAgent()
 
   const [input, setInput] = useState('')
+  const [devOpen, setDevOpen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -86,6 +92,7 @@ export function AgentPanel({
 
   const showBody = revealPhase === 'expanded' && isExpanded
   const headerVisible = revealPhase !== 'hidden'
+  const hasRunningTool = chat.some((entry) => entry.role === 'tool' && entry.status === 'running')
 
   const handleHeaderToggle = () => {
     if (onHeaderToggle) onHeaderToggle()
@@ -128,6 +135,18 @@ export function AgentPanel({
             <h2 className="text-sm font-semibold text-zinc-100">Carbon Agent</h2>
             <p className="truncate text-xs text-zinc-500">{statusLabel}</p>
           </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setDevOpen(true)
+            }}
+            className="rounded-lg p-1.5 text-zinc-600 hover:bg-white/[0.05] hover:text-amber-400"
+            title="Agent dev log"
+            aria-label="Agent dev log"
+          >
+            <Bug className="h-4 w-4" />
+          </button>
           {isExpanded ? (
             <ChevronUp className="h-4 w-4 shrink-0 text-zinc-500" />
           ) : (
@@ -168,25 +187,61 @@ export function AgentPanel({
                 </div>
               )}
 
-              {chat.map((entry) => (
-                <div
-                  key={entry.id}
-                  className={`rounded-lg px-3 py-2 text-sm leading-relaxed ${
-                    entry.role === 'user'
-                      ? 'ml-6 bg-primary-400/10 text-zinc-100'
-                      : entry.role === 'error'
-                        ? 'mr-6 border border-red-500/20 bg-red-500/10 text-red-300'
-                        : 'mr-6 bg-carbon-elevated text-zinc-300'
-                  }`}
-                >
-                  <span className="whitespace-pre-wrap break-words">{entry.text}</span>
-                  {entry.id === streamingMessageId && isStreaming && (
-                    <span className="agent-stream-cursor ml-0.5 inline-block text-primary-400" />
-                  )}
-                </div>
-              ))}
+              {chat.map((entry) => {
+                if (entry.role === 'tool') {
+                  const completed = entry.status === 'completed'
+                  const failed = completed && entry.success === false
+                  return (
+                    <div
+                      key={entry.id}
+                      className={`mr-6 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+                        completed
+                          ? failed
+                            ? 'border-red-500/20 bg-red-500/10 text-red-300'
+                            : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200'
+                          : 'border-white/[0.06] bg-carbon-elevated text-zinc-400'
+                      }`}
+                    >
+                      {completed ? (
+                        <Check className={`h-3.5 w-3.5 shrink-0 ${failed ? 'text-red-400' : 'text-emerald-400'}`} />
+                      ) : (
+                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary-400" />
+                      )}
+                      <span>
+                        {completed
+                          ? failed
+                            ? `Failed · ${entry.label}`
+                            : `Completed · ${entry.label}`
+                          : `Using ${entry.label}…`}
+                      </span>
+                    </div>
+                  )
+                }
 
-              {isLoading && !isStreaming && (
+                if (entry.role === 'assistant' && entry.text.trim().length === 0) {
+                  return null
+                }
+
+                return (
+                  <div
+                    key={entry.id}
+                    className={`rounded-lg px-3 py-2 text-sm leading-relaxed ${
+                      entry.role === 'user'
+                        ? 'ml-6 bg-primary-400/10 text-zinc-100'
+                        : entry.role === 'error'
+                          ? 'mr-6 border border-red-500/20 bg-red-500/10 text-red-300'
+                          : 'mr-6 bg-carbon-elevated text-zinc-300'
+                    }`}
+                  >
+                    <span className="whitespace-pre-wrap break-words">{entry.text}</span>
+                    {entry.id === streamingMessageId && isStreaming && entry.role === 'assistant' && (
+                      <span className="agent-stream-cursor ml-0.5 inline-block text-primary-400" />
+                    )}
+                  </div>
+                )
+              })}
+
+              {isLoading && !isStreaming && !hasRunningTool && (
                 <div className="mr-6 flex items-center gap-2 rounded-lg bg-carbon-elevated px-3 py-2 text-sm text-zinc-400">
                   <Loader2 className="h-4 w-4 animate-spin text-primary-400" />
                   {statusHint ?? 'Thinking…'}
@@ -224,20 +279,33 @@ export function AgentPanel({
                   }
                   className="input-field min-h-[2.75rem] flex-1 resize-none rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
                 />
-                <button
-                  type="button"
-                  onClick={() => void handleSend()}
-                  disabled={isLoading || !input.trim() || !agentReady}
-                  className="btn btn-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-lg disabled:opacity-40"
-                  aria-label="Send message"
-                >
-                  <Send className="h-4 w-4" />
-                </button>
+                {isLoading ? (
+                  <button
+                    type="button"
+                    onClick={stopAgent}
+                    className="btn flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300"
+                    aria-label="Stop agent"
+                    title="Stop"
+                  >
+                    <Square className="h-4 w-4 fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void handleSend()}
+                    disabled={!input.trim() || !agentReady}
+                    className="btn btn-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-lg disabled:opacity-40"
+                    aria-label="Send message"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
+      <AgentDevPanel open={devOpen} onClose={() => setDevOpen(false)} />
     </aside>
   )
 }

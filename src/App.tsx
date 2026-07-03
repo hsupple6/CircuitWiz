@@ -13,11 +13,13 @@ import {
   Trash2,
   FolderOpen,
   Pencil,
+  Tag,
 } from 'lucide-react'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { extractOccupiedComponents } from './utils/gridUtils'
 import { AppearancePanel } from './components/AppearancePanel'
+import { AgentDevPanel, AgentDevToggle } from './components/AgentDevPanel'
 import { AgentProvider } from './contexts/AgentContext'
 import { ProductSuiteHost } from './components/ProductSuiteHost'
 import { RightWorkspaceRail } from './components/RightWorkspaceRail'
@@ -33,7 +35,6 @@ import { PlanSpaceEditor } from './components/PlanSpaceEditor'
 import { ResistanceSelector } from './components/ResistanceSelector'
 import { CapacitanceSelector } from './components/CapacitanceSelector'
 import { InductanceSelector } from './components/InductanceSelector'
-import { BatterySelector } from './components/BatterySelector'
 import { ACSourceSelector } from './components/ACSourceSelector'
 import { HoverStatsPanel } from './components/HoverStatsPanel'
 import { ResizableSidebar } from './components/ResizableSidebar'
@@ -49,6 +50,7 @@ import {
   createProgram,
   seedPlanSpaceIfEmpty,
   type SchematicGroupBox,
+  type SchematicCellLabel,
   type ProgramCompilation,
 } from './types/workspace'
 import {
@@ -142,13 +144,11 @@ function AppContent() {
 
   const [selectedModule, setSelectedModule] = useState<ModuleDefinition | null>(null)
   const [passiveValueSelector, setPassiveValueSelector] = useState<
-    'resistor' | 'capacitor' | 'inductor' | 'battery' | 'ac' | null
+    'resistor' | 'capacitor' | 'inductor' | 'ac' | null
   >(null)
   const [selectedResistance, setSelectedResistance] = useState(1000)
   const [selectedCapacitance, setSelectedCapacitance] = useState(0.0001)
   const [selectedInductance, setSelectedInductance] = useState(0.001)
-  const [selectedBatteryVoltage, setSelectedBatteryVoltage] = useState(3.7)
-  const [selectedBatteryCapacity, setSelectedBatteryCapacity] = useState(2000)
   const [selectedACVrms, setSelectedACVrms] = useState(12)
   const [selectedACFrequency, setSelectedACFrequency] = useState(60)
   const [selectedACWaveform, setSelectedACWaveform] = useState<
@@ -161,6 +161,9 @@ function AppContent() {
   const [groupBoxes, setGroupBoxes] = useState<SchematicGroupBox[]>([])
   const [selectedGroupBoxId, setSelectedGroupBoxId] = useState<string | null>(null)
   const [focusGroupBoxRequest, setFocusGroupBoxRequest] = useState<SchematicGroupBox | null>(null)
+  const [labelMode, setLabelMode] = useState(false)
+  const [labels, setLabels] = useState<SchematicCellLabel[]>([])
+  const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null)
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean
@@ -175,6 +178,7 @@ function AppContent() {
     error: null as string | null,
     hasUnsavedChanges: false,
   })
+  const [agentDevOpen, setAgentDevOpen] = useState(false)
   const [, setLastSavedState] = useState<Record<string, unknown> | null>(null)
 
   const selectedSchematic = useMemo(() => {
@@ -185,8 +189,11 @@ function AppContent() {
   useEffect(() => {
     if (selectedSchematic) {
       setGroupBoxes(selectedSchematic.groupBoxes ?? [])
+      setLabels(selectedSchematic.labels ?? [])
       setSelectedGroupBoxId(null)
+      setSelectedLabelId(null)
       setFocusGroupBoxRequest(null)
+      setLabelMode(false)
     }
   }, [selectedSchematic?.id])
 
@@ -584,10 +591,10 @@ function AppContent() {
 
   const handleModuleSelect = (module: ModuleDefinition | null) => {
     setSelectedModule(module)
+    if (module) setLabelMode(false)
     if (module?.module === 'Resistor') setPassiveValueSelector('resistor')
     else if (module?.module === 'Capacitor') setPassiveValueSelector('capacitor')
     else if (module?.module === 'Inductor') setPassiveValueSelector('inductor')
-    else if (module?.module === 'Battery') setPassiveValueSelector('battery')
     else if (module?.module === 'ACSource') setPassiveValueSelector('ac')
     else setPassiveValueSelector(null)
   }
@@ -613,22 +620,6 @@ function AppContent() {
     setPassiveValueSelector(null)
     if (selectedModule?.module === 'Inductor') {
       setSelectedModule({ ...selectedModule, properties: { ...(selectedModule as any).properties, inductance } } as ModuleDefinition)
-    }
-  }
-
-  const handleBatterySelect = (voltage: number, capacityMah: number) => {
-    setSelectedBatteryVoltage(voltage)
-    setSelectedBatteryCapacity(capacityMah)
-    setPassiveValueSelector(null)
-    if (selectedModule?.module === 'Battery') {
-      setSelectedModule({
-        ...selectedModule,
-        properties: {
-          ...(selectedModule as ModuleDefinition & { properties?: Record<string, unknown> }).properties,
-          voltage,
-          capacity: capacityMah,
-        },
-      } as ModuleDefinition)
     }
   }
 
@@ -659,6 +650,7 @@ function AppContent() {
     wires?: unknown[]
     componentStates?: Record<string, unknown>
     groupBoxes?: SchematicGroupBox[]
+    labels?: SchematicCellLabel[]
     hasUnsavedChanges?: boolean
     triggerUnsavedCheck?: boolean
   }) => {
@@ -686,6 +678,7 @@ function AppContent() {
         wires: (projectData.wires as Schematic['wires']) || selectedSchematic.wires,
         componentStates: (projectData.componentStates as Schematic['componentStates']) || selectedSchematic.componentStates,
         groupBoxes: projectData.groupBoxes ?? selectedSchematic.groupBoxes ?? [],
+        labels: projectData.labels ?? selectedSchematic.labels ?? [],
         occupiedComponents,
         metadata: { ...selectedSchematic.metadata, updatedAt: new Date().toISOString() },
       }
@@ -909,13 +902,18 @@ function AppContent() {
   }, [selectedFolder, activeView, selectedItemId])
 
   const handleAgentProjectUpdate = useCallback(
-    (folder: ProjectFolder) => {
+    (folder: ProjectFolder, options?: { openSchematicId?: string | null }) => {
       updateFolders(
         (folders) => folders.map((f) => (f.id === folder.id ? folder : f)),
         folder,
-        selectedItemId,
-        activeView
+        options?.openSchematicId ?? selectedItemId,
+        options?.openSchematicId ? 'schematic' : activeView
       )
+      if (options?.openSchematicId) {
+        setSelectedFolder(folder)
+        setActiveView('schematic')
+        setSelectedItemId(options.openSchematicId)
+      }
     },
     [updateFolders, selectedItemId, activeView]
   )
@@ -978,6 +976,28 @@ function AppContent() {
       <div className="flex items-center gap-4">
         {activeView === 'schematic' && (
           <>
+            <button
+              onClick={() => {
+                setLabelMode((prev) => {
+                  const next = !prev
+                  if (next) {
+                    setSelectedModule(null)
+                    setPassiveValueSelector(null)
+                  }
+                  return next
+                })
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                labelMode
+                  ? 'bg-primary-500 text-white hover:bg-primary-600'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-white/10'
+              }`}
+              title={labelMode ? 'Exit label mode' : 'Add labels to grid cells'}
+            >
+              <Tag className="h-4 w-4" />
+              Label
+            </button>
+            <div className="h-6 w-px bg-white/10" />
             <div className="text-sm text-zinc-500 font-mono truncate max-w-[240px]">
               {hoverStats
                 ? `${hoverStats.title}${hoverStats.status ? ` · ${hoverStats.status.label}` : ''}`
@@ -1008,6 +1028,7 @@ function AppContent() {
           </div>
         )}
         <AppearancePanel />
+        <AgentDevToggle onClick={() => setAgentDevOpen(true)} />
       </div>
     </div>
   )
@@ -1053,8 +1074,16 @@ function AppContent() {
               initialWires={selectedSchematic.wires || []}
               initialComponentStates={selectedSchematic.componentStates || {}}
               initialGroupBoxes={selectedSchematic.groupBoxes || []}
+              initialLabels={selectedSchematic.labels || []}
+              schematicUpdatedAt={selectedSchematic.metadata.updatedAt}
               groupBoxes={groupBoxes}
               onGroupBoxesChange={setGroupBoxes}
+              labels={labels}
+              onLabelsChange={setLabels}
+              labelMode={labelMode}
+              onLabelModeChange={setLabelMode}
+              selectedLabelId={selectedLabelId}
+              onSelectedLabelIdChange={setSelectedLabelId}
               selectedGroupBoxId={selectedGroupBoxId}
               onSelectedGroupBoxIdChange={setSelectedGroupBoxId}
               focusGroupBoxRequest={focusGroupBoxRequest}
@@ -1078,7 +1107,6 @@ function AppContent() {
                 {passiveValueSelector === 'resistor' && 'Select Resistor Value'}
                 {passiveValueSelector === 'capacitor' && 'Select Capacitance'}
                 {passiveValueSelector === 'inductor' && 'Select Inductance'}
-                {passiveValueSelector === 'battery' && 'Select Battery'}
                 {passiveValueSelector === 'ac' && 'Configure AC Source'}
               </h3>
               {passiveValueSelector === 'resistor' && (
@@ -1089,14 +1117,6 @@ function AppContent() {
               )}
               {passiveValueSelector === 'inductor' && (
                 <InductanceSelector currentInductance={selectedInductance} onInductanceChange={handleInductanceSelect} onClose={() => setPassiveValueSelector(null)} />
-              )}
-              {passiveValueSelector === 'battery' && (
-                <BatterySelector
-                  currentVoltage={selectedBatteryVoltage}
-                  currentCapacity={selectedBatteryCapacity}
-                  onApply={handleBatterySelect}
-                  onClose={() => setPassiveValueSelector(null)}
-                />
               )}
               {passiveValueSelector === 'ac' && (
                 <ACSourceSelector
@@ -1302,6 +1322,7 @@ function AppContent() {
       {deleteModal?.isOpen && (
         <DeleteModal modal={deleteModal} onClose={() => setDeleteModal(null)} onConfirm={confirmDelete} />
       )}
+      <AgentDevPanel open={agentDevOpen} onClose={() => setAgentDevOpen(false)} />
     </AgentProvider>
   )
 }

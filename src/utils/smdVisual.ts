@@ -4,11 +4,11 @@ export const SMD_VISUAL_MODULES = new Set([
   'Capacitor',
   'Inductor',
   'LED',
-  'Battery',
   'ACSource',
   'Diode',
   'ZenerDiode',
   'NPNTransistor',
+  'MOSFET',
   'OpAmp',
   'BridgeRectifier',
 ])

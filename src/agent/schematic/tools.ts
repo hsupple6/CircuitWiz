@@ -9,11 +9,30 @@ import {
   updateSchematicInFolder,
 } from '../helpers'
 import * as ops from './operations'
+import { SCHEMATIC_LAYOUT_GUIDELINES } from './layoutGuidelines'
+
+const COMPONENT_PROPERTIES_PARAM = {
+  name: 'properties',
+  type: 'object' as const,
+  description:
+    'Module-specific properties. Examples: MOSFET { vth: 2.5, rdsOn: 0.05 }, Resistor { resistance: 1000 }, Capacitor { capacitance: 0.0001 }, Inductor { inductance: 0.001 }, ZenerDiode { zenerVoltage: 5.1 }, ACSource { vrms: 12, frequency: 60, waveform: "sine" }, PowerSupply { voltage: 5, current: 1 }',
+  required: false,
+}
+
+function parseComponentProperties(args: Record<string, unknown>): Record<string, unknown> {
+  const props: Record<string, unknown> = {}
+  if (args.properties && typeof args.properties === 'object' && !Array.isArray(args.properties)) {
+    Object.assign(props, args.properties as Record<string, unknown>)
+  }
+  if (args.resistance != null) props.resistance = args.resistance
+  if (args.capacitance != null) props.capacitance = args.capacitance
+  return props
+}
 
 export const schematicAgentTools: AgentTool[] = [
   makeTool(
     'schematic_get_state',
-    'Get schematic summary: components, wires, group boxes, firmware status.',
+    'Get schematic summary plus layoutGuidelines. Use list_components / catalog_get_module for exact connectable pin names (e.g. Diode pins A and K).',
     'schematic',
     [{ name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false }],
     (ctx, args) => {
@@ -60,25 +79,34 @@ export const schematicAgentTools: AgentTool[] = [
 
   makeTool(
     'schematic_place_component',
-    'Place a component from the module catalog onto the schematic grid. Nothing is locked — components can always be added or replaced.',
+    'Place a component from the module catalog onto the schematic grid. Supports all modules including MOSFET (pins G/D/S), transistors, semiconductors, passives, and power sources. Use catalog_get_module to discover pin names and property keys.',
     'schematic',
     [
       { name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false },
-      { name: 'moduleName', type: 'string', description: 'Module name from catalog (e.g. "Arduino Uno R3", "LED")', required: true },
-      { name: 'x', type: 'number', description: 'Grid origin X', required: true },
-      { name: 'y', type: 'number', description: 'Grid origin Y', required: true },
+      { name: 'moduleName', type: 'string', description: 'Module name from catalog (e.g. "MOSFET", "Arduino Uno R3", "LED")', required: true },
+      {
+        name: 'x',
+        type: 'number',
+        description: `Grid origin X (start near ${SCHEMATIC_LAYOUT_GUIDELINES.placementOrigin.x}; canvas cannot extend left of 0)`,
+        required: true,
+      },
+      {
+        name: 'y',
+        type: 'number',
+        description: `Grid origin Y (start near ${SCHEMATIC_LAYOUT_GUIDELINES.placementOrigin.y}; canvas cannot extend above 0)`,
+        required: true,
+      },
       { name: 'componentId', type: 'string', description: 'Optional custom component id', required: false },
       { name: 'resistance', type: 'number', description: 'Resistance in ohms (for Resistor)', required: false },
-      { name: 'capacitance', type: 'number', description: 'Capacitance in µF (for Capacitor)', required: false },
+      { name: 'capacitance', type: 'number', description: 'Capacitance in farads (for Capacitor)', required: false },
+      COMPONENT_PROPERTIES_PARAM,
     ],
     (ctx, args) => {
       const id = resolveSchematicId(ctx, args.schematicId as string)
       if (!id) return fail('No schematic specified.')
       const schematic = getSchematic(ctx.folder, id)
       if (!schematic) return fail(`Schematic not found: ${id}`)
-      const props: Record<string, unknown> = {}
-      if (args.resistance != null) props.resistance = args.resistance
-      if (args.capacitance != null) props.capacitance = args.capacitance
+      const props = parseComponentProperties(args)
       const result = ops.placeComponent(
         schematic,
         args.moduleName as string,
@@ -142,22 +170,22 @@ export const schematicAgentTools: AgentTool[] = [
 
   makeTool(
     'schematic_set_component_property',
-    'Update component properties (resistance, capacitance, or module-specific params).',
+    'Update component properties. Pass a properties object for any module (e.g. MOSFET vth/rdsOn, ACSource vrms/frequency).',
     'schematic',
     [
       { name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false },
       { name: 'componentId', type: 'string', description: 'Component id', required: true },
       { name: 'resistance', type: 'number', description: 'Resistance in ohms', required: false },
-      { name: 'capacitance', type: 'number', description: 'Capacitance in µF', required: false },
+      { name: 'capacitance', type: 'number', description: 'Capacitance in farads', required: false },
+      COMPONENT_PROPERTIES_PARAM,
     ],
     (ctx, args) => {
       const id = resolveSchematicId(ctx, args.schematicId as string)
       if (!id) return fail('No schematic specified.')
       const schematic = getSchematic(ctx.folder, id)
       if (!schematic) return fail(`Schematic not found: ${id}`)
-      const props: Record<string, unknown> = {}
-      if (args.resistance != null) props.resistance = args.resistance
-      if (args.capacitance != null) props.capacitance = args.capacitance
+      const props = parseComponentProperties(args)
+      if (Object.keys(props).length === 0) return fail('No properties provided.')
       const result = ops.setComponentProperty(schematic, args.componentId as string, props)
       if ('error' in result) return fail(result.error)
       const folder = updateSchematicInFolder(ctx.folder, id, () => result.schematic)
@@ -168,7 +196,7 @@ export const schematicAgentTools: AgentTool[] = [
 
   makeTool(
     'schematic_replace_component',
-    'Replace an existing component with a different module type at the same position. Fully revisable — swap any component.',
+    'Replace an existing component with a different module type at the same position.',
     'schematic',
     [
       { name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false },
@@ -176,15 +204,14 @@ export const schematicAgentTools: AgentTool[] = [
       { name: 'moduleName', type: 'string', description: 'New module name', required: true },
       { name: 'resistance', type: 'number', description: 'Resistance (if applicable)', required: false },
       { name: 'capacitance', type: 'number', description: 'Capacitance (if applicable)', required: false },
+      COMPONENT_PROPERTIES_PARAM,
     ],
     (ctx, args) => {
       const id = resolveSchematicId(ctx, args.schematicId as string)
       if (!id) return fail('No schematic specified.')
       const schematic = getSchematic(ctx.folder, id)
       if (!schematic) return fail(`Schematic not found: ${id}`)
-      const props: Record<string, unknown> = {}
-      if (args.resistance != null) props.resistance = args.resistance
-      if (args.capacitance != null) props.capacitance = args.capacitance
+      const props = parseComponentProperties(args)
       const result = ops.replaceComponent(
         schematic,
         args.componentId as string,
@@ -214,7 +241,7 @@ export const schematicAgentTools: AgentTool[] = [
 
   makeTool(
     'schematic_connect_pins',
-    'Wire two component pins together with validation.',
+    'Wire two component pins by name. Resolves exact terminal grid positions automatically. Use pin names from catalog_get_module or schematic_list_components (Resistor: 1 and 2, not LEAD).',
     'schematic',
     [
       { name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false },
@@ -245,7 +272,7 @@ export const schematicAgentTools: AgentTool[] = [
 
   makeTool(
     'schematic_add_wire',
-    'Add a wire along a path of grid points.',
+    'Add a wire along grid points (Manhattan only). Prefer schematic_connect_pins. Endpoints on components must be connectable pin cells — use absolute x,y from schematic_list_components, never the body/center (e.g. 3-wide passives: origin+0 and origin+2, not origin+1).',
     'schematic',
     [
       { name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false },
@@ -312,6 +339,9 @@ export const schematicAgentTools: AgentTool[] = [
       { name: 'width', type: 'number', description: 'Width', required: true },
       { name: 'height', type: 'number', description: 'Height', required: true },
       { name: 'title', type: 'string', description: 'Region title', required: true },
+      { name: 'colorPreset', type: 'string', description: 'Color preset name: Indigo, Blue, Green, Amber, Pink, Purple, Slate', required: false },
+      { name: 'color', type: 'string', description: 'Custom fill color (rgba/css)', required: false },
+      { name: 'borderColor', type: 'string', description: 'Custom border color', required: false },
     ],
     (ctx, args) => {
       const id = resolveSchematicId(ctx, args.schematicId as string)
@@ -324,7 +354,12 @@ export const schematicAgentTools: AgentTool[] = [
         args.y as number,
         args.width as number,
         args.height as number,
-        args.title as string
+        args.title as string,
+        {
+          colorPreset: args.colorPreset as string | undefined,
+          color: args.color as string | undefined,
+          borderColor: args.borderColor as string | undefined,
+        }
       )
       const folder = updateSchematicInFolder(ctx.folder, id, () => result.schematic)
       if (!folder) return fail('Failed to save schematic.')
@@ -349,6 +384,156 @@ export const schematicAgentTools: AgentTool[] = [
       const folder = updateSchematicInFolder(ctx.folder, id, () => updated)
       if (!folder) return fail('Failed to save schematic.')
       return ok(ctx, folder, 'Group box removed.')
+    }
+  ),
+
+  makeTool(
+    'schematic_list_group_boxes',
+    'List all group box regions on the schematic with ids, positions, and titles.',
+    'schematic',
+    [{ name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false }],
+    (ctx, args) => {
+      const id = resolveSchematicId(ctx, args.schematicId as string)
+      if (!id) return fail('No schematic specified.')
+      const schematic = getSchematic(ctx.folder, id)
+      if (!schematic) return fail(`Schematic not found: ${id}`)
+      return okRead(ctx, 'Group boxes listed.', { groupBoxes: ops.listGroupBoxes(schematic) })
+    }
+  ),
+
+  makeTool(
+    'schematic_update_group_box',
+    'Update a group box region title, position, size, or colors.',
+    'schematic',
+    [
+      { name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false },
+      { name: 'groupBoxId', type: 'string', description: 'Group box id', required: true },
+      { name: 'x', type: 'number', description: 'New top-left X', required: false },
+      { name: 'y', type: 'number', description: 'New top-left Y', required: false },
+      { name: 'width', type: 'number', description: 'New width', required: false },
+      { name: 'height', type: 'number', description: 'New height', required: false },
+      { name: 'title', type: 'string', description: 'New title', required: false },
+      { name: 'color', type: 'string', description: 'Fill color', required: false },
+      { name: 'borderColor', type: 'string', description: 'Border color', required: false },
+    ],
+    (ctx, args) => {
+      const id = resolveSchematicId(ctx, args.schematicId as string)
+      if (!id) return fail('No schematic specified.')
+      const schematic = getSchematic(ctx.folder, id)
+      if (!schematic) return fail(`Schematic not found: ${id}`)
+      const patch: Record<string, unknown> = {}
+      if (args.x != null) patch.x = args.x
+      if (args.y != null) patch.y = args.y
+      if (args.width != null) patch.width = args.width
+      if (args.height != null) patch.height = args.height
+      if (args.title != null) patch.title = args.title
+      if (args.color != null) patch.color = args.color
+      if (args.borderColor != null) patch.borderColor = args.borderColor
+      const result = ops.updateGroupBox(schematic, args.groupBoxId as string, patch)
+      if (!result.groupBox) return fail(`Group box not found: ${args.groupBoxId}`)
+      const folder = updateSchematicInFolder(ctx.folder, id, () => result.schematic)
+      if (!folder) return fail('Failed to save schematic.')
+      return ok(ctx, folder, 'Group box updated.', { groupBoxId: result.groupBox.id })
+    }
+  ),
+
+  makeTool(
+    'schematic_list_labels',
+    'List all cell labels on the schematic grid.',
+    'schematic',
+    [{ name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false }],
+    (ctx, args) => {
+      const id = resolveSchematicId(ctx, args.schematicId as string)
+      if (!id) return fail('No schematic specified.')
+      const schematic = getSchematic(ctx.folder, id)
+      if (!schematic) return fail(`Schematic not found: ${id}`)
+      return okRead(ctx, 'Labels listed.', { labels: ops.listLabels(schematic) })
+    }
+  ),
+
+  makeTool(
+    'schematic_add_label',
+    'Add a text label to a grid cell. Use for net names, node annotations, or subsystem markers.',
+    'schematic',
+    [
+      { name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false },
+      { name: 'x', type: 'number', description: 'Grid cell X', required: true },
+      { name: 'y', type: 'number', description: 'Grid cell Y', required: true },
+      { name: 'text', type: 'string', description: 'Label text', required: true },
+      { name: 'labelId', type: 'string', description: 'Optional custom label id', required: false },
+    ],
+    (ctx, args) => {
+      const id = resolveSchematicId(ctx, args.schematicId as string)
+      if (!id) return fail('No schematic specified.')
+      const schematic = getSchematic(ctx.folder, id)
+      if (!schematic) return fail(`Schematic not found: ${id}`)
+      const result = ops.addLabel(
+        schematic,
+        args.x as number,
+        args.y as number,
+        args.text as string,
+        args.labelId as string | undefined
+      )
+      const folder = updateSchematicInFolder(ctx.folder, id, () => result.schematic)
+      if (!folder) return fail('Failed to save schematic.')
+      return ok(ctx, folder, 'Label added.', { labelId: result.label.id })
+    }
+  ),
+
+  makeTool(
+    'schematic_update_label',
+    'Update label text or move it to a different grid cell.',
+    'schematic',
+    [
+      { name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false },
+      { name: 'labelId', type: 'string', description: 'Label id', required: true },
+      { name: 'text', type: 'string', description: 'New label text', required: false },
+      { name: 'x', type: 'number', description: 'New grid cell X', required: false },
+      { name: 'y', type: 'number', description: 'New grid cell Y', required: false },
+    ],
+    (ctx, args) => {
+      const id = resolveSchematicId(ctx, args.schematicId as string)
+      if (!id) return fail('No schematic specified.')
+      const schematic = getSchematic(ctx.folder, id)
+      if (!schematic) return fail(`Schematic not found: ${id}`)
+      const patch: Record<string, unknown> = {}
+      if (args.text != null) patch.text = args.text
+      if (args.x != null) patch.x = args.x
+      if (args.y != null) patch.y = args.y
+      const result = ops.updateLabel(schematic, args.labelId as string, patch)
+      if (!result.label) return fail(`Label not found: ${args.labelId}`)
+      const folder = updateSchematicInFolder(ctx.folder, id, () => result.schematic)
+      if (!folder) return fail('Failed to save schematic.')
+      return ok(ctx, folder, 'Label updated.', { labelId: result.label.id })
+    }
+  ),
+
+  makeTool(
+    'schematic_remove_label',
+    'Remove a cell label by id, or by grid position if labelId is omitted.',
+    'schematic',
+    [
+      { name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false },
+      { name: 'labelId', type: 'string', description: 'Label id', required: false },
+      { name: 'x', type: 'number', description: 'Grid cell X (used when labelId omitted)', required: false },
+      { name: 'y', type: 'number', description: 'Grid cell Y (used when labelId omitted)', required: false },
+    ],
+    (ctx, args) => {
+      const id = resolveSchematicId(ctx, args.schematicId as string)
+      if (!id) return fail('No schematic specified.')
+      const schematic = getSchematic(ctx.folder, id)
+      if (!schematic) return fail(`Schematic not found: ${id}`)
+      let updated: ReturnType<typeof ops.removeLabel>
+      if (args.labelId) {
+        updated = ops.removeLabel(schematic, args.labelId as string)
+      } else if (args.x != null && args.y != null) {
+        updated = ops.removeLabelAt(schematic, args.x as number, args.y as number)
+      } else {
+        return fail('Provide labelId or both x and y.')
+      }
+      const folder = updateSchematicInFolder(ctx.folder, id, () => updated)
+      if (!folder) return fail('Failed to save schematic.')
+      return ok(ctx, folder, 'Label removed.')
     }
   ),
 
