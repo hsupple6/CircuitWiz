@@ -1,0 +1,100 @@
+{
+  "module": "StepperMotor",
+  "gridX": 4,
+  "gridY": 2,
+  "background": "#111111",
+  "css": "border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.45);",
+  "category": "output",
+  "subcategory": "electromechanical",
+  "description": "Bipolar stepper motor — A+/A− and B+/B− coil pairs",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "COIL",
+      "pin": "A+",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "COIL",
+      "pin": "A-",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "type": "COIL",
+      "pin": "B+",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true
+    },
+    {
+      "x": 3,
+      "y": 0,
+      "type": "COIL",
+      "pin": "B-",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "type": "BODY",
+      "pin": "",
+      "isConnectable": false
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "type": "BODY",
+      "pin": "",
+      "isConnectable": false,
+      "isClickable": true
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "type": "SHAFT",
+      "pin": "",
+      "isConnectable": false
+    },
+    {
+      "x": 3,
+      "y": 1,
+      "type": "BODY",
+      "pin": "",
+      "isConnectable": false
+    }
+  ],
+  "properties": {
+    "stepsPerRev": {
+      "default": 200,
+      "min": 48,
+      "max": 400,
+      "unit": "steps",
+      "description": "Full steps per revolution (1.8° = 200)"
+    },
+    "coilResistance": {
+      "default": 2,
+      "min": 0.5,
+      "max": 20,
+      "unit": "Ω",
+      "description": "Phase coil resistance"
+    },
+    "ratedVoltage": {
+      "default": 12,
+      "min": 3,
+      "max": 48,
+      "unit": "V",
+      "description": "Rated coil voltage"
+    }
+  }
+}

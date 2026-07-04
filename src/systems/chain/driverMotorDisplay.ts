@@ -341,6 +341,70 @@ export function applyEscMotorDisplay(
     )
   }
 
+  for (const component of components) {
+    if (resolveLogicModule(component.moduleDefinition) !== 'StepperMotor') continue
+
+    const terminals = getTerminals(component)
+    const coilPairs = [
+      { pair: 'A' as const, plus: 'A+', minus: 'A-' },
+      { pair: 'B' as const, plus: 'B+', minus: 'B-' },
+    ]
+
+    let coilAActive = false
+    let coilBActive = false
+
+    const voltageAt = (x: number, y: number): number => {
+      const st = stateAt(gridData, x, y, componentStates)
+      if ((st?.outputVoltage ?? 0) > 0.01) return st!.outputVoltage!
+      if (ctx.posToNet && ctx.netVoltages) {
+        const net = ctx.posToNet.get(posKey(x, y))
+        if (net !== undefined) return ctx.netVoltages.get(net) ?? 0
+      }
+      return 0
+    }
+
+    for (const { pair, plus, minus } of coilPairs) {
+      const plusTerm = terminals.find((t) => t.moduleCell.pin === plus)
+      const minusTerm = terminals.find((t) => t.moduleCell.pin === minus)
+      if (!plusTerm || !minusTerm) continue
+
+      const differential = Math.abs(voltageAt(plusTerm.x, plusTerm.y) - voltageAt(minusTerm.x, minusTerm.y))
+      const active = differential > 1.0
+      if (pair === 'A') coilAActive = active
+      else coilBActive = active
+
+      for (const term of [plusTerm, minusTerm]) {
+        stampPinState(
+          component.componentId,
+          term.cellIndex,
+          term.x,
+          term.y,
+          'StepperMotor',
+          componentStates,
+          {
+            coilPair: pair,
+            isPowered: active,
+            outputVoltage: voltageAt(term.x, term.y),
+            status: active ? 'active' : 'inactive',
+          }
+        )
+      }
+    }
+
+    component.moduleDefinition.grid.forEach(
+      (moduleCell: { x: number; y: number }, cellIndex: number) => {
+        const x = component.baseX + moduleCell.x
+        const y = component.baseY + moduleCell.y
+        stampPinState(component.componentId, cellIndex, x, y, 'StepperMotor', componentStates, {
+          stepperCoilA: coilAActive,
+          stepperCoilB: coilBActive,
+          isPowered: coilAActive || coilBActive,
+          status: coilAActive || coilBActive ? 'active' : 'inactive',
+        })
+      }
+    )
+  }
+
   return propagatePwmFromPins(gridData, updatedWires, componentStates)
 }
 

@@ -21,8 +21,8 @@ export const AGENT_TOOL_CATEGORIES = [
     description: 'Read and write project documentation files',
   },
   {
-    id: 'firmware',
-    description: 'Arduino sketch files, board selection, libraries, pin maps',
+    id: 'program',
+    description: 'Program artifacts — create sketches, compile, flash to schematic MCUs',
   },
   {
     id: 'bom',

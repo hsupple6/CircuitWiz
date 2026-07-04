@@ -2,6 +2,8 @@ import {
   ProjectFolder,
   Schematic,
   Document,
+  Program,
+  ProgramCompilation,
   createSchematic,
   createDocument,
   ProjectRequirements,
@@ -9,6 +11,11 @@ import {
   AssemblyGuide,
 } from '../../types/workspace'
 import { newId, touchFolder } from '../helpers'
+import {
+  createProgramInFolder as createProgramOp,
+  updateProgramInFolder as updateProgramOp,
+  deleteProgramFromFolder as deleteProgramOp,
+} from '../program/operations'
 
 export function getProjectState(folder: ProjectFolder) {
   return {
@@ -17,6 +24,7 @@ export function getProjectState(folder: ProjectFolder) {
     description: folder.description,
     schematicCount: folder.schematics.length,
     documentCount: folder.documents.length,
+    programCount: folder.programs.length,
     hasRequirements: !!folder.requirements,
     hasBom: !!folder.bom,
     hasAssembly: !!folder.assembly,
@@ -29,13 +37,19 @@ export function getProjectState(folder: ProjectFolder) {
       id: s.id,
       name: s.name,
       description: s.description,
-      hasFirmware: !!s.arduinoProject,
+      hasProgramFlashes: !!s.programFlashes && Object.keys(s.programFlashes).length > 0,
       wireCount: s.wires.length,
     })),
     documents: folder.documents.map((d) => ({
       id: d.id,
       name: d.name,
       contentLength: d.content.length,
+    })),
+    programs: folder.programs.map((p) => ({
+      id: p.id,
+      name: p.name,
+      board: p.board,
+      isCompiled: p.compilation?.success === true,
     })),
     metadata: folder.metadata,
   }
@@ -143,6 +157,38 @@ export function deleteDocumentFromFolder(
     ...folder,
     documents: folder.documents.filter((d) => d.id !== documentId),
   })
+}
+
+export function createProgramInFolder(
+  folder: ProjectFolder,
+  name: string,
+  code?: string,
+  board?: string
+): { folder: ProjectFolder; program: Program } {
+  const { folder: next, program } = createProgramOp(folder, name, code, board)
+  return { folder: touchFolder(next), program }
+}
+
+export function updateProgramInFolder(
+  folder: ProjectFolder,
+  programId: string,
+  patch: {
+    name?: string
+    code?: string
+    board?: string
+    compilation?: ProgramCompilation | undefined
+  }
+): { folder: ProjectFolder; program: Program | null } {
+  const result = updateProgramOp(folder, programId, patch)
+  if (!result.program) return { folder, program: null }
+  return { folder: touchFolder(result.folder), program: result.program }
+}
+
+export function deleteProgramFromFolder(
+  folder: ProjectFolder,
+  programId: string
+): ProjectFolder {
+  return touchFolder(deleteProgramOp(folder, programId))
 }
 
 export function setRequirements(

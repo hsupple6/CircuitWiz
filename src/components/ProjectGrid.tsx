@@ -12,7 +12,7 @@ import {
   type WireColorId,
 } from '../theme/colors'
 import { useAgent } from '../contexts/AgentContext'
-import { calculateElectricalFlow, ComponentState } from '../systems/ElectricalSystem'
+import { calculateElectricalFlow, ComponentState, startMultiMicrocontrollerGPIO } from '../systems/ElectricalSystem'
 import { ElectricalValidator } from './ElectricalValidator'
 import { WorkspaceFloatingPanels } from './WorkspaceFloatingPanels'
 import { ElectricalNotifications } from './ElectricalNotifications'
@@ -24,23 +24,29 @@ import { ComponentStatsBadge } from './ComponentStatsBadge'
 import { InductorBodyLabel } from './InductorBodyLabel'
 import { isOutputModule } from '../modules/registry'
 import { resolveLogicModule } from '../modules/logicModule'
+import { connectorIsConfigured, isNPinConnectorModule } from '../modules/connectors/buildConnectorDefinition'
 import { getPassiveValueKind } from '../modules/passiveValueKind'
 import { SchematicGroupBoxLayer } from './SchematicGroupBoxLayer'
 import { SchematicLabelLayer } from './SchematicLabelLayer'
-import { createSchematicGroupBox, createSchematicCellLabel, type SchematicGroupBox, type SchematicCellLabel, type Program } from '../types/workspace'
+import { createSchematicGroupBox, createSchematicCellLabel, type SchematicGroupBox, type SchematicCellLabel, type Program, type ProgramFlashAssignment } from '../types/workspace'
 import { ResistorBodyLabel } from './ResistorBodyLabel'
 import { CapacitorBodyLabel } from './CapacitorBodyLabel'
 import { ACSourceBodyLabel } from './ACSourceBodyLabel'
-import { LedBodyIndicator, resolveLedColor } from './LedBodyIndicator'
+import { LedBodyIndicator, resolveLedColor, resolveLedModuleState } from './LedBodyIndicator'
+import { RgbLedBodyIndicator, findRgbChannelStates } from './RgbLedBodyIndicator'
 import { MotorBodyLabel } from './MotorBodyLabel'
 import { MotorPhasePad } from './MotorPhasePad'
+import { StepperCoilPad } from './StepperCoilPad'
+import { StepperBodyLabel, findStepperCoilStates } from './StepperBodyLabel'
 import { ServoBodyLabel } from './ServoBodyLabel'
 import { ServoPinPad } from './ServoPinPad'
 import { SemiconductorPinPad } from './SemiconductorPinPad'
 import { DiodeBodyLabel } from './DiodeBodyLabel'
 import { ZenerDiodeBodyLabel } from './ZenerDiodeBodyLabel'
 import { TransistorBodyLabel } from './TransistorBodyLabel'
+import { PnpTransistorBodyLabel } from './PnpTransistorBodyLabel'
 import { MosfetBodyLabel } from './MosfetBodyLabel'
+import { PmosfetBodyLabel } from './PmosfetBodyLabel'
 import { OpAmpBodyLabel } from './OpAmpBodyLabel'
 import { BridgeRectifierBodyLabel } from './BridgeRectifierBodyLabel'
 import { getDisplayPin } from '../utils/smdVisual'
@@ -124,6 +130,7 @@ interface ProjectGridProps {
   selectedLabelId?: string | null
   onSelectedLabelIdChange?: (id: string | null) => void
   projectPrograms?: Program[]
+  programFlashes?: Record<string, ProgramFlashAssignment>
   /** Bumps when schematic is updated externally (e.g. agent tools) — triggers grid resync. */
   schematicUpdatedAt?: string
   /** Style Lab — wraps grid in .schematic-style-dev for CSS override experiments. */
@@ -315,6 +322,7 @@ export function ProjectGrid({
   selectedLabelId: externalSelectedLabelId,
   onSelectedLabelIdChange,
   projectPrograms,
+  programFlashes,
   schematicUpdatedAt,
   styleDevMode = false,
   showWorkspacePanels = false,
@@ -325,6 +333,26 @@ export function ProjectGrid({
   const gridRef = useRef<HTMLDivElement>(null)
   const gridLayerRef = useRef<HTMLDivElement>(null)
   const dragComponentRef = useRef<any>(null)
+
+  useEffect(() => {
+    if (!programFlashes || !projectPrograms?.length) return
+    const runningIds = new Set<string>()
+    for (const [componentId, assignment] of Object.entries(programFlashes)) {
+      const program = projectPrograms.find((p) => p.id === assignment.programId)
+      if (program?.compilation?.success) {
+        startMultiMicrocontrollerGPIO(componentId, program.code)
+        runningIds.add(componentId)
+      }
+    }
+    if (runningIds.size > 0) {
+      setSimulationState((prev) => ({
+        ...prev,
+        isRunning: true,
+        runningMicrocontrollers: runningIds,
+      }))
+    }
+  }, [programFlashes, projectPrograms, schematicUpdatedAt])
+
   const [cellSizePx, setCellSizePx] = useState(DEFAULT_CELL_SIZE_PX)
   const [gridSize, setGridSize] = useState(() => {
     if (initialGridData && initialGridData.length > 0) {
@@ -543,7 +571,6 @@ export function ProjectGrid({
       onProjectDataChange({
         gridData,
         wires,
-        componentStates: Object.fromEntries(componentStates),
         groupBoxes,
         labels,
         hasUnsavedChanges: true,
@@ -553,11 +580,9 @@ export function ProjectGrid({
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
       autosaveTimerRef.current = setTimeout(() => {
         autosaveTimerRef.current = null
-        // After debounce, trigger the actual save (without hasUnsavedChanges flag)
         onProjectDataChange({
           gridData,
           wires,
-          componentStates: Object.fromEntries(componentStates),
           groupBoxes,
           labels,
         })
@@ -570,7 +595,7 @@ export function ProjectGrid({
         }
       }
     }
-  }, [gridData, wires, componentStates, groupBoxes, labels, agentBusy, onProjectDataChange])
+  }, [gridData, wires, groupBoxes, labels, agentBusy, onProjectDataChange])
 
   // Local (pre-transform) cell size for SVG wire geometry inside the transformed layer
   useEffect(() => {
@@ -1938,6 +1963,9 @@ export function ProjectGrid({
       if (selectedModule.module === 'Group Box') {
         return
       }
+      if (isNPinConnectorModule(selectedModule) && !connectorIsConfigured(selectedModule)) {
+        return
+      }
       
       // Place the module with its top-left corner at the target cell
       const centeredX = x
@@ -2252,7 +2280,8 @@ export function ProjectGrid({
   const showPlacementPreview =
     Boolean(hoverState && selectedModule) &&
     !wiringState.isWiring &&
-    selectedModule?.module !== 'Group Box'
+    selectedModule?.module !== 'Group Box' &&
+    !(isNPinConnectorModule(selectedModule) && !connectorIsConfigured(selectedModule))
 
   // Render wire segment
   const renderWireSegment = (segment: WireSegment, wireId: string) => {
@@ -2659,6 +2688,9 @@ const GridCell = React.memo(({
                 logicMod === 'Motor' && relativeY === 0
               ) &&
               !(
+                logicMod === 'StepperMotor' && relativeY === 0
+              ) &&
+              !(
                 logicMod === 'Servo' && relativeY === 0
               ) && (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -2683,6 +2715,36 @@ const GridCell = React.memo(({
               relativeY === 1 && (
                 <MotorBodyLabel
                   state={findMotorComponentState(cell.componentId, componentStates)}
+                />
+              )}
+
+            {logicMod === 'StepperMotor' && relativeY === 0 && (
+              <StepperCoilPad
+                label={
+                  relativeX === 0
+                    ? 'A+'
+                    : relativeX === 1
+                      ? 'A-'
+                      : relativeX === 2
+                        ? 'B+'
+                        : 'B-'
+                }
+                active={(() => {
+                  const { coilAActive, coilBActive } = findStepperCoilStates(
+                    cell.componentId,
+                    componentStates
+                  )
+                  if (relativeX <= 1) return coilAActive
+                  return coilBActive
+                })()}
+              />
+            )}
+
+            {logicMod === 'StepperMotor' &&
+              relativeX === 1 &&
+              relativeY === 1 && (
+                <StepperBodyLabel
+                  {...findStepperCoilStates(cell.componentId, componentStates)}
                 />
               )}
 
@@ -2782,6 +2844,32 @@ const GridCell = React.memo(({
               <MosfetBodyLabel />
             )}
 
+            {logicMod === 'PNPTransistor' && relativeX === 1 && relativeY === 0 && (
+              <SemiconductorPinPad label="C" edge="top" />
+            )}
+            {logicMod === 'PNPTransistor' && relativeX === 0 && relativeY === 1 && (
+              <SemiconductorPinPad label="B" edge="left" />
+            )}
+            {logicMod === 'PNPTransistor' && relativeX === 1 && relativeY === 2 && (
+              <SemiconductorPinPad label="E" edge="bottom" />
+            )}
+            {logicMod === 'PNPTransistor' && relativeX === 1 && relativeY === 1 && (
+              <PnpTransistorBodyLabel />
+            )}
+
+            {logicMod === 'PMOSFET' && relativeX === 1 && relativeY === 0 && (
+              <SemiconductorPinPad label="D" edge="top" />
+            )}
+            {logicMod === 'PMOSFET' && relativeX === 0 && relativeY === 1 && (
+              <SemiconductorPinPad label="G" edge="left" />
+            )}
+            {logicMod === 'PMOSFET' && relativeX === 1 && relativeY === 2 && (
+              <SemiconductorPinPad label="S" edge="bottom" />
+            )}
+            {logicMod === 'PMOSFET' && relativeX === 1 && relativeY === 1 && (
+              <PmosfetBodyLabel />
+            )}
+
             {logicMod === 'OpAmp' && relativeX === 1 && relativeY === 0 && (
               <SemiconductorPinPad label="V+" edge="top" />
             )}
@@ -2833,8 +2921,9 @@ const GridCell = React.memo(({
             
             {/* Show LED state indicator */}
             {logicMod === 'LED' && relativeX === 1 && relativeY === 0 && (() => {
-              const cellComponentId = `${cell.componentId}-${cell.cellIndex || 0}`
-              const ledState = componentStates.get(cellComponentId)
+              const ledState =
+                resolveLedModuleState(cell.componentId, componentStates) ??
+                componentStates.get(`${cell.componentId}-${cell.cellIndex || 0}`)
               const isOn = ledState?.isOn || false
               const isPWM = ledState?.status === 'pwm'
               const ledColor = resolveLedColor(
@@ -2850,6 +2939,11 @@ const GridCell = React.memo(({
                   state={ledState ?? null}
                 />
               )
+            })()}
+
+            {logicMod === 'RGBLED' && relativeX === 2 && relativeY === 0 && (() => {
+              const { rOn, gOn, bOn } = findRgbChannelStates(cell.componentId, componentStates)
+              return <RgbLedBodyIndicator rOn={rOn} gOn={gOn} bOn={bOn} />
             })()}
             
             {/* Show switch state indicator */}
@@ -3140,7 +3234,7 @@ const GridCell = React.memo(({
 
       {/* Control Buttons — aligned with floating panel top (top-4) */}
       <div
-        className={`absolute top-4 flex gap-2 z-[100] ${showWorkspacePanels ? 'right-[calc(min(360px,100%-1rem)+1rem)]' : 'right-4'}`}
+        className={`absolute top-4 flex gap-2 z-workspace-controls ${showWorkspacePanels ? 'right-[calc(min(360px,100%-1rem)+1rem)]' : 'right-4'}`}
         data-control-buttons
       >
         {/* Delete Mode Button */}
@@ -3162,7 +3256,7 @@ const GridCell = React.memo(({
         <button
           onClick={zoomToLastPlaced}
           disabled={!lastPlacedObject}
-          className={`absolute bottom-4 right-4 z-[100] rounded-lg border border-gray-200 bg-white p-3 shadow-lg transition-all dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 ${
+          className={`absolute bottom-4 right-4 z-workspace-controls rounded-lg border border-gray-200 bg-white p-3 shadow-lg transition-all dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 ${
             lastPlacedObject
               ? 'cursor-pointer text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
               : 'cursor-default text-gray-700 opacity-25'
@@ -3184,6 +3278,7 @@ const GridCell = React.memo(({
         wires={wires}
         componentStates={componentStates}
         projectPrograms={projectPrograms}
+        programFlashes={programFlashes}
         onMicrocontrollerHighlight={setHighlightedMicrocontroller}
         onModalStateChange={setIsModalOpen}
         onSimulationStateChange={setSimulationState}

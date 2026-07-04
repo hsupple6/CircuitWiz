@@ -1,5 +1,9 @@
-import { getModule } from '../modules/registry'
+import { getModule, resolveModuleName } from '../modules/registry'
 import { ModuleDefinition, WireConnection, WireSegment } from '../modules/types'
+import {
+  buildNPinConnectorDefinition,
+  isNPinConnectorModule,
+} from '../modules/connectors/buildConnectorDefinition'
 import { reconstructGridData, type OccupiedComponent } from '../utils/gridUtils'
 import {
   createSchematic,
@@ -20,6 +24,7 @@ function componentTypeFor(module: ModuleDefinition): string {
   if (module.category === 'microcontrollers') return 'Microcontroller'
   if (module.category === 'power') return 'PowerSupply'
   if (module.category === 'sensors') return 'Sensor'
+  if (module.category === 'connectors') return 'Connector'
   if (module.category === 'switches') return module.module
   if (module.category === 'passives') return module.module
   if (module.category === 'output' || module.category === 'semiconductors') return module.module
@@ -42,18 +47,25 @@ export function placeModule(
   originY: number,
   props: Record<string, unknown> = {}
 ): PlacedComponent {
-  const def = getModule(moduleName)
+  const def = getModule(resolveModuleName(moduleName))
   if (!def) throw new Error(`Unknown module: ${moduleName}`)
 
   const id = `ex-${moduleName.replace(/\s+/g, '')}-${++placementCounter}`
-  const moduleDefinition = {
+  let moduleDefinition: ModuleDefinition = {
     ...def,
     properties: { ...(def as ModuleDefinition & { properties?: Record<string, unknown> }).properties, ...props },
   }
 
+  if (isNPinConnectorModule(def)) {
+    const pins = typeof props.pins === 'number' ? props.pins : 2
+    const gender = props.gender === 'socket' ? 'socket' : 'plug'
+    moduleDefinition = buildNPinConnectorDefinition(pins, gender)
+  }
+
+  const placementDef = moduleDefinition
   const pinMap = new Map<string, { x: number; y: number }>()
 
-  def.grid.forEach((cell, cellIndex) => {
+  placementDef.grid.forEach((cell, cellIndex) => {
     const x = originX + cell.x
     const y = originY + cell.y
     const pinName = cell.pin || cell.type
@@ -103,13 +115,16 @@ export function placeModule(
         if (cell.pin === 'AC1') pinMap.set('AC1', { x, y })
         if (cell.pin === 'AC2') pinMap.set('AC2', { x, y })
       }
+      if (isNPinConnectorModule(placementDef) && cell.pin) {
+        pinMap.set(cell.pin, { x, y })
+      }
     }
 
     const entry: OccupiedComponent = {
       x,
       y,
       componentId: id,
-      componentType: componentTypeFor(def),
+      componentType: componentTypeFor(placementDef),
       moduleDefinition,
       cellIndex,
       isPowered: cell.isPowered ?? false,

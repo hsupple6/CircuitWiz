@@ -78,6 +78,84 @@ const fullComponents: Components = {
   td: ({ children }) => <td className="px-4 py-3 text-zinc-300">{children}</td>,
 }
 
+const agentComponents: Components = {
+  h1: ({ children }) => (
+    <h1 className="mb-2 mt-0 border-b border-white/[0.08] pb-1.5 text-base font-bold text-zinc-100 first:mt-0">
+      {children}
+    </h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="mb-1.5 mt-3 text-sm font-semibold text-zinc-100">{children}</h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="mb-1 mt-2.5 text-sm font-semibold text-zinc-200">{children}</h3>
+  ),
+  h4: ({ children }) => (
+    <h4 className="mb-1 mt-2 text-xs font-medium text-zinc-300">{children}</h4>
+  ),
+  p: ({ children }) => <p className="mb-2 leading-relaxed text-zinc-300 last:mb-0">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-zinc-100">{children}</strong>,
+  em: ({ children }) => <em className="italic text-zinc-400">{children}</em>,
+  ul: ({ children }) => (
+    <ul className="mb-2 list-disc space-y-1 pl-5 text-zinc-300 marker:text-primary-400/70">{children}</ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="mb-2 list-decimal space-y-1 pl-5 text-zinc-300 marker:text-primary-400/70">{children}</ol>
+  ),
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  blockquote: ({ children }) => (
+    <blockquote className="my-2 border-l-2 border-primary-400/50 bg-white/[0.03] py-0.5 pl-3 text-zinc-400">
+      {children}
+    </blockquote>
+  ),
+  hr: () => <hr className="my-3 border-white/[0.06]" />,
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-medium text-primary-400 underline decoration-primary-400/40 underline-offset-2 hover:text-primary-300"
+    >
+      {children}
+    </a>
+  ),
+  code: ({ className, children, ...props }) => {
+    const isBlock = className?.includes('language-')
+    if (isBlock) {
+      return (
+        <code className={`${className ?? ''} font-mono text-xs leading-relaxed text-zinc-200`} {...props}>
+          {children}
+        </code>
+      )
+    }
+    return (
+      <code
+        className="rounded bg-white/[0.08] px-1 py-0.5 font-mono text-[0.85em] text-primary-300"
+        {...props}
+      >
+        {children}
+      </code>
+    )
+  },
+  pre: ({ children }) => (
+    <pre className="my-2 overflow-x-auto rounded-lg border border-white/[0.08] bg-black/45 p-2.5 text-xs">
+      {children}
+    </pre>
+  ),
+  table: ({ children }) => (
+    <div className="my-2 overflow-x-auto rounded-lg border border-white/[0.08]">
+      <table className="w-full min-w-[240px] border-collapse text-left text-xs">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-white/[0.04] text-zinc-200">{children}</thead>,
+  tbody: ({ children }) => <tbody className="divide-y divide-white/[0.06]">{children}</tbody>,
+  tr: ({ children }) => <tr>{children}</tr>,
+  th: ({ children }) => (
+    <th className="border-b border-white/[0.08] px-2 py-1.5 font-semibold text-zinc-100">{children}</th>
+  ),
+  td: ({ children }) => <td className="px-2 py-1.5 text-zinc-300">{children}</td>,
+}
+
 const cardComponents: Components = {
   h1: ({ children }) => (
     <h1 className="mb-1 mt-0 text-sm font-bold leading-snug text-zinc-100">{children}</h1>
@@ -135,7 +213,7 @@ export function MarkdownPreview({
 }: {
   content: string
   className?: string
-  variant?: 'full' | 'card'
+  variant?: 'full' | 'card' | 'agent'
   emptyLabel?: string
 }) {
   if (!content.trim()) {
@@ -146,7 +224,8 @@ export function MarkdownPreview({
     )
   }
 
-  const components = variant === 'card' ? cardComponents : fullComponents
+  const components =
+    variant === 'card' ? cardComponents : variant === 'agent' ? agentComponents : fullComponents
 
   return (
     <article

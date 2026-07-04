@@ -25,7 +25,7 @@ import {
   wireColorPatch,
   type WireColorId,
 } from '../theme/colors'
-import type { Program } from '../types/workspace'
+import type { Program, ProgramFlashAssignment } from '../types/workspace'
 import { gpioPinNumber } from '../systems/chain/components/registry'
 
 type GpioDisplayState = GPIOState & { state?: GPIOState['state'] | 'PULSING' }
@@ -74,6 +74,7 @@ interface DevicePanelProps {
   wires: WireConnection[]
   componentStates: Map<string, any>
   projectPrograms?: Program[]
+  programFlashes?: Record<string, ProgramFlashAssignment>
   onMicrocontrollerHighlight: (id: string | null) => void
   onMicrocontrollerClick: (microcontroller: Microcontroller) => void
   onModalStateChange?: (isOpen: boolean) => void
@@ -81,11 +82,13 @@ interface DevicePanelProps {
   onWiresChange?: (wires: WireConnection[]) => void
   embedded?: boolean
   floating?: boolean
+  stacked?: boolean
+  onExpandedChange?: (expanded: boolean) => void
 }
 
-export function DevicePanel({ gridData, wires, componentStates, projectPrograms, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange, onWiresChange, embedded = false, floating = false }: DevicePanelProps) {
+export function DevicePanel({ gridData, wires, componentStates, projectPrograms, programFlashes, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange, onWiresChange, embedded = false, floating = false, stacked = false, onExpandedChange }: DevicePanelProps) {
   const { wireColorMode } = useTheme()
-  const [isExpanded, setIsExpanded] = useState(!(embedded || floating))
+  const [isExpanded, setIsExpanded] = useState(() => stacked || !(embedded || floating))
   const [activeTab, setActiveTab] = useState<'microcontrollers' | 'wires' | 'simulation'>('microcontrollers')
   const [expandedMicrocontroller, setExpandedMicrocontroller] = useState<string | null>(null)
   const [showCodingModal, setShowCodingModal] = useState(false)
@@ -137,6 +140,49 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
     () => (projectPrograms ?? []).filter((p) => p.compilation?.success),
     [projectPrograms]
   )
+
+  React.useEffect(() => {
+    if (!programFlashes || !projectPrograms?.length) return
+
+    const nextLinked = new Map<string, string>()
+    const nextCodes = new Map<string, string>()
+    const nextCompiled = new Map<string, CompiledCode>()
+    const runningIds = new Set<string>()
+
+    for (const [componentId, assignment] of Object.entries(programFlashes)) {
+      const program = projectPrograms.find((p) => p.id === assignment.programId)
+      if (!program?.compilation?.success) continue
+
+      nextLinked.set(componentId, program.id)
+      nextCodes.set(componentId, program.code)
+      nextCompiled.set(componentId, {
+        microcontrollerId: componentId,
+        code: program.code,
+        compilationResult: {
+          success: true,
+          output: program.compilation.output,
+          firmware: program.compilation.firmware,
+          filename: program.compilation.filename,
+          size: program.compilation.size,
+          binPath: program.compilation.binPath,
+        },
+        compiledAt: new Date(program.compilation.compiledAt),
+      })
+      runningIds.add(componentId)
+    }
+
+    setLinkedPrograms(nextLinked)
+    setMicrocontrollerCode(nextCodes)
+    setCompiledCodes(nextCompiled)
+    if (runningIds.size > 0) {
+      setSimulationState((prev) => ({
+        ...prev,
+        isRunning: true,
+        runningMicrocontrollers: runningIds,
+      }))
+      setShowSimulationPanel(true)
+    }
+  }, [programFlashes, projectPrograms])
   
   // Wire editing state
   const [selectedWire, setSelectedWire] = useState<string | null>(null)
@@ -1019,13 +1065,21 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
     }
   }
 
+  const toggleExpanded = () => {
+    setIsExpanded((prev) => {
+      const next = !prev
+      onExpandedChange?.(next)
+      return next
+    })
+  }
+
   return (
     <>
       {/* Main Panel */}
       <div
         className={
           floating
-            ? 'flex min-h-0 w-full flex-col overflow-hidden'
+            ? `flex min-h-0 w-full flex-col overflow-hidden ${stacked ? 'h-full flex-1' : ''}`
             : embedded
               ? 'flex w-full flex-col overflow-hidden bg-white dark:bg-carbon-card/80 dark:bg-dark-surface'
               : 'absolute top-4 left-4 bg-white dark:bg-dark-surface rounded-lg shadow-lg border border-gray-200 dark:border-dark-border z-50 min-w-[300px] max-w-[400px]'
@@ -1034,7 +1088,7 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
         {/* Header */}
         <div
           className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-card transition-colors shrink-0"
-          onClick={() => setIsExpanded(!isExpanded)}
+          onClick={toggleExpanded}
         >
           <div className="flex items-center gap-2">
             <Cpu className="w-5 h-5 text-blue-600 dark:text-blue-400" />
@@ -1049,8 +1103,12 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
 
         {isExpanded && (
           <div
-            className={`border-t border-gray-200 dark:border-dark-border overflow-y-auto ${
-              embedded ? 'max-h-[min(40vh,320px)]' : ''
+            className={`border-t border-gray-200 dark:border-dark-border ${
+              stacked
+                ? 'flex min-h-0 flex-1 flex-col overflow-y-auto'
+                : embedded
+                  ? 'max-h-[min(40vh,320px)] overflow-y-auto'
+                  : 'overflow-y-auto'
             }`}
           >
             {/* Global MCU Stats and Run All Button */}

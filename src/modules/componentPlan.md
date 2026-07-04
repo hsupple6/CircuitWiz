@@ -19,6 +19,7 @@ modules/
   drivers/        Motor/LED/Display/Relay/Audio/Power/Serial drivers + aliases
   sensors/        Temperature Sensor
   microcontrollers/ Arduino, ESP32 + voltageFlow/
+  connectors/     N-Pin Terminal blocks + aliases
   organization/   Group Box
   types/          shared ModuleDefinition, ModuleType schemas
   componentPlan.md
@@ -30,7 +31,7 @@ modules/
 
 ## Current Inventory
 
-**31 anchors** + **78 aliases** = **109 registry entries** (108 palette-visible; ESP32 disabled)
+**38 anchors** + **90 aliases** (approx.; ESP32 disabled)
 
 Alias source: domain `aliases.ts` files aggregated in `core/allAliases.ts`.  
 Logic trace: `core/logicIndex.ts` → `ANCHOR_LOGIC_INDEX[anchorId]`.
@@ -61,11 +62,20 @@ Logic trace: `core/logicIndex.ts` → `ANCHOR_LOGIC_INDEX[anchorId]`.
 
 | Item | Status | Anchor |
 |---|---|---|
-| Diode, Zener, NPN, MOSFET, OpAmp, Bridge | ✓ HAVE | — |
+| Diode, Zener, NPN, PNP, NMOS, PMOS, OpAmp, Bridge | ✓ HAVE | — |
 | Rectifier / Signal / Schottky / ESD / Reverse Polarity | ✓ alias | Diode |
 | TVS / TVS Diode | ✓ alias | ZenerDiode |
 | Darlington / Phototransistor | ✓ alias | NPNTransistor |
+| 2N3906 / IRF9540 | ✓ alias | PNPTransistor / PMOSFET |
 | Buffer Amplifier | ✓ alias | OpAmp |
+
+---
+
+## Registered — Connectors
+
+| Item | Status | Anchor |
+|---|---|---|
+| N Pin Connector | ✓ HAVE | — (configure pins + plug/socket at placement) |
 
 ---
 
@@ -82,10 +92,12 @@ Logic trace: `core/logicIndex.ts` → `ANCHOR_LOGIC_INDEX[anchorId]`.
 
 | Item | Status | Anchor |
 |---|---|---|
-| LED, Motor, Buzzer, Speaker, Servo, Potentiometer | ✓ HAVE | — |
+| LED, RGB LED, Motor, Stepper Motor, Buzzer, Speaker, Servo, Potentiometer | ✓ HAVE | — |
 | Variable / Trimmer Pot | ✓ alias | Potentiometer |
 | IR / UV LED | ✓ alias | LED |
-| DC / Brushed / Brushless / Stepper Motor | ✓ alias | Motor |
+| Common Cathode RGB LED | ✓ alias | RGBLED |
+| DC / Brushed / Brushless Motor | ✓ alias | Motor |
+| NEMA 17 Stepper | ✓ alias | StepperMotor |
 | Piezo Buzzer, Solenoid, Heater, Fan | ✓ alias | Buzzer |
 | Vibration Sensor | ✓ alias | Buzzer |
 
@@ -124,24 +136,21 @@ Stepper: STEP/DIR/EN → A+/A−/B+/B−. ESC: PWM → U/V/W (wire to Motor IN1�
 
 ## Planned Categories
 
-`connectors` · `modules` · `power-ics` · `test` (Jumper uses `test` category today)
+`modules` · `power-ics` · `test` (Jumper uses `test` category today)
 
 ## Needs New Symbol / Logic
 
 | Item | Notes |
 |---|---|
-| RGB LED | 4-pin + multi-channel sim |
-| PNP BJT / P-MOSFET | flipped shader |
 | Comparator, Voltage Reference | analog IC |
 | Logic Gate, Timer 555 | education |
 | Optocoupler, IR Receiver | isolation / module |
-| LDO, DC-DC, Charger | power-ics |
+| LDO, DC-DC, Charger | power-ics (PowerDriver block exists as alias) |
 | MEMS Oscillator, RTC | timing |
 | ESP8266 / Pico / Blue Pill | board pin maps |
 | Seven Seg / Matrix / LCD modules | Full panel sim (driver block exists with dummy pins) |
 | Rotary Encoder, Keypad, Joystick | HMI |
 | Humidity, IMU, GPS, … | Module Block |
-| All connectors | N-Pin Terminal |
 | All wireless | Module Block |
 
 ## Review / Enhance
@@ -150,7 +159,8 @@ Stepper: STEP/DIR/EN → A+/A−/B+/B−. ESC: PWM → U/V/W (wire to Motor IN1�
 |---|---|
 | Current Sense Resistor | current-derived R in sim |
 | Temperature Sensor | finish chain + sim |
+| Module Block | generic sensor/wireless wrapper (deferred) |
 
 ## Priorities
 
-P0 Module Block · P0 N-Pin connectors · P1 PNP/P-MOSFET · P1 RGB LED · P1 Stepper shader · P2 Logic Gate · P3 DC-DC sim
+P0 Module Block (deferred) · ~~P0 N-Pin connectors~~ · ~~P1 PNP/P-MOSFET~~ · ~~P1 RGB LED~~ · ~~P1 Stepper shader~~ · P2 Logic Gate · P3 DC-DC sim

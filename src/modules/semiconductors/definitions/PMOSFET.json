@@ -1,0 +1,38 @@
+{
+  "module": "PMOSFET",
+  "description": "P-channel MOSFET switch — drain-source conducts when gate is pulled below source",
+  "category": "semiconductors",
+  "gridX": 3,
+  "gridY": 3,
+  "background": "#141414",
+  "css": "border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.35);",
+  "grid": [
+    { "x": 0, "y": 0, "type": "BODY", "pin": "", "isConnectable": false, "background": "#0a0a0a", "css": "background: transparent;" },
+    { "x": 1, "y": 0, "type": "DRAIN", "pin": "D", "isConnectable": true, "isPowerable": true, "isGroundable": false, "background": "#0a0a0a", "css": "border-radius: 4px 4px 0 0; border: 1px solid #333; background: #0a0a0a;" },
+    { "x": 2, "y": 0, "type": "BODY", "pin": "", "isConnectable": false, "background": "#0a0a0a", "css": "background: transparent;" },
+    { "x": 0, "y": 1, "type": "GATE", "pin": "G", "isConnectable": true, "isPowerable": true, "isGroundable": false, "background": "#0a0a0a", "css": "border-radius: 4px 0 0 4px; border: 1px solid #333; background: #0a0a0a;" },
+    { "x": 1, "y": 1, "type": "BODY", "pin": "", "isConnectable": false, "isClickable": true, "background": "#161616", "css": "border: 1px solid #333; background: linear-gradient(180deg, #222 0%, #141414 40%, #141414 100%); cursor: pointer;" },
+    { "x": 2, "y": 1, "type": "BODY", "pin": "", "isConnectable": false, "background": "#161616", "css": "border: 1px solid #333; border-left: none; background: linear-gradient(180deg, #222 0%, #141414 40%, #141414 100%);" },
+    { "x": 0, "y": 2, "type": "BODY", "pin": "", "isConnectable": false, "background": "#0a0a0a", "css": "background: transparent;" },
+    { "x": 1, "y": 2, "type": "SOURCE", "pin": "S", "isConnectable": true, "isPowerable": true, "isGroundable": false, "background": "#0a0a0a", "css": "border-radius: 0 0 4px 4px; border: 1px solid #333; background: #0a0a0a;" },
+    { "x": 2, "y": 2, "type": "BODY", "pin": "", "isConnectable": false, "background": "#0a0a0a", "css": "background: transparent;" }
+  ],
+  "properties": {
+    "vth": {
+      "type": "number",
+      "default": 2.5,
+      "min": 0.5,
+      "max": 5,
+      "unit": "V",
+      "description": "Gate-source threshold voltage"
+    },
+    "rdsOn": {
+      "type": "number",
+      "default": 0.05,
+      "min": 0.01,
+      "max": 10,
+      "unit": "Ω",
+      "description": "Drain-source on resistance"
+    }
+  }
+}

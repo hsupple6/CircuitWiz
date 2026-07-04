@@ -13,7 +13,7 @@ import { documentAgentTools } from './document/tools'
 import { schematicAgentTools } from './schematic/tools'
 import { catalogAgentTools } from './catalog/tools'
 import { bomAgentTools } from './bom/tools'
-import { firmwareAgentTools } from './firmware/tools'
+import { programAgentTools } from './program/tools'
 import { requirementsAgentTools } from './requirements/tools'
 import { productAgentTools } from './product/tools'
 import { assemblyAgentTools } from './assembly/tools'
@@ -43,7 +43,7 @@ registerTools(documentAgentTools)
 registerTools(schematicAgentTools)
 registerTools(catalogAgentTools)
 registerTools(bomAgentTools)
-registerTools(firmwareAgentTools)
+registerTools(programAgentTools)
 registerTools(requirementsAgentTools)
 registerTools(productAgentTools)
 registerTools(assemblyAgentTools)
@@ -86,17 +86,17 @@ export function getAgentToolsForPipelineStage(stage: PipelineStage): AgentTool[]
 }
 
 /** Execute a tool by name against a project context */
-export function executeAgentTool(
+export async function executeAgentTool(
   name: string,
   context: AgentProjectContext,
   args: Record<string, unknown> = {}
-): AgentToolResult {
+): Promise<AgentToolResult> {
   const tool = toolMap.get(name)
   if (!tool) {
     return { success: false, message: `Unknown tool: ${name}` }
   }
   try {
-    return tool.execute(context, args)
+    return await tool.execute(context, args)
   } catch (error) {
     return {
       success: false,

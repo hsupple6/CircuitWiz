@@ -9,7 +9,12 @@ import { ACSourceBodyLabel } from './ACSourceBodyLabel'
 import { DiodeBodyLabel } from './DiodeBodyLabel'
 import { ZenerDiodeBodyLabel } from './ZenerDiodeBodyLabel'
 import { TransistorBodyLabel } from './TransistorBodyLabel'
+import { PnpTransistorBodyLabel } from './PnpTransistorBodyLabel'
 import { MosfetBodyLabel } from './MosfetBodyLabel'
+import { PmosfetBodyLabel } from './PmosfetBodyLabel'
+import { RgbLedBodyIndicator } from './RgbLedBodyIndicator'
+import { StepperCoilPad } from './StepperCoilPad'
+import { StepperBodyLabel } from './StepperBodyLabel'
 import { OpAmpBodyLabel } from './OpAmpBodyLabel'
 import { BridgeRectifierBodyLabel } from './BridgeRectifierBodyLabel'
 import { SemiconductorPinPad } from './SemiconductorPinPad'
@@ -164,6 +169,36 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
               <MosfetBodyLabel />
             )}
 
+            {logicName === 'PNPTransistor' && cell.x === 1 && cell.y === 0 && (
+              <SemiconductorPinPad label="C" edge="top" />
+            )}
+            {logicName === 'PNPTransistor' && cell.x === 0 && cell.y === 1 && (
+              <SemiconductorPinPad label="B" edge="left" />
+            )}
+            {logicName === 'PNPTransistor' && cell.x === 1 && cell.y === 2 && (
+              <SemiconductorPinPad label="E" edge="bottom" />
+            )}
+            {logicName === 'PNPTransistor' && cell.x === 1 && cell.y === 1 && (
+              <PnpTransistorBodyLabel />
+            )}
+
+            {logicName === 'PMOSFET' && cell.x === 1 && cell.y === 0 && (
+              <SemiconductorPinPad label="D" edge="top" />
+            )}
+            {logicName === 'PMOSFET' && cell.x === 0 && cell.y === 1 && (
+              <SemiconductorPinPad label="G" edge="left" />
+            )}
+            {logicName === 'PMOSFET' && cell.x === 1 && cell.y === 2 && (
+              <SemiconductorPinPad label="S" edge="bottom" />
+            )}
+            {logicName === 'PMOSFET' && cell.x === 1 && cell.y === 1 && (
+              <PmosfetBodyLabel />
+            )}
+
+            {logicName === 'RGBLED' && cell.type === 'RGB_LED_BODY' && cell.x === 2 && cell.y === 0 && (
+              <RgbLedBodyIndicator compact rOn gOn bOn />
+            )}
+
             {logicName === 'OpAmp' && cell.x === 1 && cell.y === 0 && (
               <SemiconductorPinPad label="V+" edge="top" />
             )}
@@ -206,6 +241,15 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
                   Motor
                 </div>
               </div>
+            )}
+
+            {logicName === 'StepperMotor' && cell.y === 0 && ['A+', 'A-', 'B+', 'B-'].includes(cell.pin ?? '') && (
+              <StepperCoilPad
+                label={cell.pin as 'A+' | 'A-' | 'B+' | 'B-'}
+              />
+            )}
+            {logicName === 'StepperMotor' && cell.x === 1 && cell.y === 1 && (
+              <StepperBodyLabel coilAActive={false} coilBActive={false} />
             )}
           </div>
         ))}

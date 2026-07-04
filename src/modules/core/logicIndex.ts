@@ -8,6 +8,7 @@ import { DRIVER_ANCHOR_LOGIC } from '../drivers/logic'
 import { SENSOR_ANCHOR_LOGIC } from '../sensors/logic'
 import { MICROCONTROLLER_ANCHOR_LOGIC } from '../microcontrollers/logic'
 import { ORGANIZATION_ANCHOR_LOGIC } from '../organization/logic'
+import { CONNECTOR_ANCHOR_LOGIC } from '../connectors/logic'
 
 export const ALL_ANCHOR_LOGIC = [
   ...PASSIVE_ANCHOR_LOGIC,
@@ -19,6 +20,7 @@ export const ALL_ANCHOR_LOGIC = [
   ...SENSOR_ANCHOR_LOGIC,
   ...MICROCONTROLLER_ANCHOR_LOGIC,
   ...ORGANIZATION_ANCHOR_LOGIC,
+  ...CONNECTOR_ANCHOR_LOGIC,
 ]
 
 /** Lookup logic profile by anchor id (e.g. "Resistor", "PowerSupply"). */

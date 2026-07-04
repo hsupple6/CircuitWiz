@@ -1,0 +1,32 @@
+{
+  "module": "N Pin Connector",
+  "logicModule": "NPinConnector",
+  "gridX": 2,
+  "gridY": 1,
+  "background": "#374151",
+  "css": "border-radius: 4px; border: 1px solid #6B7280;",
+  "category": "connectors",
+  "description": "Configurable N-pin connector — choose pin count and plug or socket before placing",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "PIN",
+      "pin": "1",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "background:#4B5563;color:#F3F4F6;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:4px 0 0 4px;border:1px solid #9CA3AF;"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "PIN",
+      "pin": "2",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": true,
+      "css": "background:#4B5563;color:#F3F4F6;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 4px 4px 0;border:1px solid #9CA3AF;border-left:none;"
+    }
+  ]
+}

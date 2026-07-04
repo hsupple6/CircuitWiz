@@ -26,6 +26,7 @@ import { ProductSuiteHost } from './components/ProductSuiteHost'
 import { CarbonLogo } from './components/CarbonLogo'
 import { ProjectGrid } from './components/ProjectGrid'
 import { ComponentsFloatingPanel } from './components/ComponentsFloatingPanel'
+import { ProjectsAgentLayout } from './components/ProjectsAgentLayout'
 import { ProjectPreview } from './components/ProjectPreview'
 import { ProjectFolderView } from './components/ProjectFolderView'
 import { DocumentEditor } from './components/DocumentEditor'
@@ -35,6 +36,14 @@ import { ResistanceSelector } from './components/ResistanceSelector'
 import { CapacitanceSelector } from './components/CapacitanceSelector'
 import { InductanceSelector } from './components/InductanceSelector'
 import { ACSourceSelector } from './components/ACSourceSelector'
+import { ConnectorPlacementSelector } from './components/ConnectorPlacementSelector'
+import {
+  buildNPinConnectorDefinition,
+  isNPinConnectorModule,
+  readConnectorGender,
+  readConnectorPins,
+  type ConnectorGender,
+} from './modules/connectors/buildConnectorDefinition'
 import { EditorFloatingChrome } from './components/EditorFloatingChrome'
 import type { HoverStats } from './utils/hoverStats'
 import type { ComponentState } from './systems/ElectricalSystem'
@@ -61,7 +70,7 @@ import {
   saveLocalSession,
   createLocalProjectFolder,
 } from './services/localProjectStorage'
-import { ensureExamplesProject, hasExamplesProject } from './examples/examplesProject'
+import { ensureExamplesProject } from './examples/examplesProject'
 import {
   loadStyleDevSchematic,
   resetStyleDevSchematic,
@@ -152,6 +161,7 @@ function AppContent() {
 
   const [selectedModule, setSelectedModule] = useState<ModuleDefinition | null>(null)
   const [passiveValueSelector, setPassiveValueSelector] = useState<PassiveValueKind | null>(null)
+  const [connectorSelectorOpen, setConnectorSelectorOpen] = useState(false)
   const [selectedResistance, setSelectedResistance] = useState(1000)
   const [selectedCapacitance, setSelectedCapacitance] = useState(0.0001)
   const [selectedInductance, setSelectedInductance] = useState(0.001)
@@ -233,12 +243,20 @@ function AppContent() {
     itemId: string | null,
     view: WorkspaceView
   ) => {
-    saveLocalSession({
+    const result = saveLocalSession({
       projectFolders: folders,
       selectedFolderId: folder?.id ?? null,
       selectedItemId: itemId,
       activeView: view,
     })
+    if (!result.ok) {
+      console.warn('Local session save failed:', result.error)
+      setSaveStatus((prev) => ({
+        ...prev,
+        error: result.error ?? 'Local save failed',
+        hasUnsavedChanges: true,
+      }))
+    }
   }, [])
 
   const updateFolders = useCallback((
@@ -269,15 +287,12 @@ function AppContent() {
 
     setProjectFolders(folders)
 
-    const examplesAdded = !hasExamplesProject(previous)
-    if (!session || examplesAdded) {
-      persistSession(
-        folders,
-        session?.selectedFolderId ? folders.find((f) => f.id === session.selectedFolderId) ?? null : null,
-        session?.selectedItemId ?? null,
-        session?.activeView ?? 'folders'
-      )
-    }
+    persistSession(
+      folders,
+      session?.selectedFolderId ? folders.find((f) => f.id === session.selectedFolderId) ?? null : null,
+      session?.selectedItemId ?? null,
+      session?.activeView ?? 'folders'
+    )
 
     if (!session) return
 
@@ -411,9 +426,7 @@ function AppContent() {
           ...styleDevSchematic,
           gridData: (projectData.gridData as Schematic['gridData']) || styleDevSchematic.gridData,
           wires: (projectData.wires as Schematic['wires']) || styleDevSchematic.wires,
-          componentStates:
-            (projectData.componentStates as Schematic['componentStates']) ||
-            styleDevSchematic.componentStates,
+          componentStates: {},
           groupBoxes: projectData.groupBoxes ?? styleDevSchematic.groupBoxes ?? [],
           labels: projectData.labels ?? styleDevSchematic.labels ?? [],
           occupiedComponents,
@@ -699,7 +712,23 @@ function AppContent() {
   const handleModuleSelect = (module: ModuleDefinition | null) => {
     setSelectedModule(module)
     if (module) setLabelMode(false)
+    if (isNPinConnectorModule(module)) {
+      setConnectorSelectorOpen(true)
+      setPassiveValueSelector(null)
+      return
+    }
+    setConnectorSelectorOpen(false)
     setPassiveValueSelector(getPassiveValueKind(module))
+  }
+
+  const handleConnectorApply = (pins: number, gender: ConnectorGender) => {
+    setSelectedModule(buildNPinConnectorDefinition(pins, gender))
+    setConnectorSelectorOpen(false)
+  }
+
+  const handleConnectorClose = () => {
+    setConnectorSelectorOpen(false)
+    setSelectedModule(null)
   }
 
   const handleResistanceSelect = (resistance: number) => {
@@ -788,7 +817,7 @@ function AppContent() {
         ...selectedSchematic,
         gridData: (projectData.gridData as Schematic['gridData']) || selectedSchematic.gridData,
         wires: (projectData.wires as Schematic['wires']) || selectedSchematic.wires,
-        componentStates: (projectData.componentStates as Schematic['componentStates']) || selectedSchematic.componentStates,
+        componentStates: {},
         groupBoxes: projectData.groupBoxes ?? selectedSchematic.groupBoxes ?? [],
         labels: projectData.labels ?? selectedSchematic.labels ?? [],
         occupiedComponents,
@@ -814,7 +843,7 @@ function AppContent() {
       setLastSavedState({
         gridData: updatedSchematic.gridData,
         wires: updatedSchematic.wires,
-        componentStates: updatedSchematic.componentStates,
+        componentStates: {},
       })
     } catch (error) {
       setSaveStatus({
@@ -1010,6 +1039,7 @@ function AppContent() {
       folder: selectedFolder,
       activeSchematicId: activeView === 'schematic' ? selectedItemId : null,
       activeDocumentId: activeView === 'document' ? selectedItemId : null,
+      activeProgramId: activeView === 'program' ? selectedItemId : null,
     }
   }, [selectedFolder, activeView, selectedItemId])
 
@@ -1045,9 +1075,10 @@ function AppContent() {
 
   let workspaceContent: React.ReactNode
   let carbonHeader: React.ReactNode | undefined
+  let projectsBrowserShell = false
 
   const editorTopBar = (title: string, backLabel: string, onBack: () => void, showSave = false) => (
-    <div className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-gray-200 bg-white px-4 dark:border-white/[0.06] dark:bg-black">
+    <div className="sticky top-0 z-workspace-chrome flex h-16 items-center justify-between border-b border-gray-200 bg-white px-4 dark:border-white/[0.06] dark:bg-black">
       <div className="flex items-center gap-4">
         <button
           onClick={onBack}
@@ -1328,6 +1359,21 @@ function AppContent() {
             </div>
           </div>
         )}
+        {connectorSelectorOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-dark-surface rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4">
+                Configure N Pin Connector
+              </h3>
+              <ConnectorPlacementSelector
+                initialPins={readConnectorPins(selectedModule)}
+                initialGender={readConnectorGender(selectedModule)}
+                onApply={handleConnectorApply}
+                onClose={handleConnectorClose}
+              />
+            </div>
+          </div>
+        )}
       </div>
     )
   } else if (activeView === 'schematic' && selectedFolder && selectedSchematic) {
@@ -1371,6 +1417,7 @@ function AppContent() {
             onHoveredPositionChange={setHoveredPosition}
             onHoverStatsChange={setHoverStats}
             projectPrograms={selectedFolder.programs}
+            programFlashes={selectedSchematic.programFlashes}
             showWorkspacePanels
             workspaceOverlay={workspaceOverlay}
           />
@@ -1433,6 +1480,21 @@ function AppContent() {
             </div>
           </div>
         )}
+        {connectorSelectorOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-dark-surface rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4">
+                Configure N Pin Connector
+              </h3>
+              <ConnectorPlacementSelector
+                initialPins={readConnectorPins(selectedModule)}
+                initialGender={readConnectorGender(selectedModule)}
+                onApply={handleConnectorApply}
+                onClose={handleConnectorClose}
+              />
+            </div>
+          </div>
+        )}
       </div>
     )
   } else if (activeView === 'document' && selectedFolder && selectedDocument) {
@@ -1479,9 +1541,10 @@ function AppContent() {
       </div>
     )
   } else if (activeView === 'folder' && selectedFolder) {
+    projectsBrowserShell = true
     workspaceContent = (
-      <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-dark-bg">
-        <div className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm dark:border-dark-border dark:bg-dark-surface">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="sticky top-0 z-workspace-chrome flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm dark:border-dark-border dark:bg-dark-surface">
           <button
             onClick={handleBackToFolders}
             className="flex items-center gap-2 text-gray-600 hover:text-gray-900 dark:text-dark-text-secondary dark:hover:text-dark-text-primary"
@@ -1495,7 +1558,7 @@ function AppContent() {
           <div className="flex-1" />
           <AppearancePanel />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50 dark:bg-dark-bg">
           <ProjectFolderView
             folder={selectedFolder}
             onOpenSchematic={handleOpenSchematic}
@@ -1515,43 +1578,38 @@ function AppContent() {
       </div>
     )
   } else {
-    carbonHeader = (
-      <header className="flex shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 py-3 dark:border-white/[0.06] dark:bg-black sm:gap-x-6 sm:px-6">
-        <CarbonLogo size="lg" />
-        <div className="flex flex-1 items-center gap-x-4 lg:gap-x-6">
-          <div className="relative ml-auto flex flex-1 max-w-xl">
-            <Search className="pointer-events-none absolute inset-y-0 left-0 h-full w-5 text-gray-400 pl-3 dark:text-zinc-500" />
-            <input
-              type="search"
-              placeholder="Search projects..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="block h-10 w-full rounded-lg border border-gray-200 bg-gray-50 py-0 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-primary-400/50 focus:outline-none focus:ring-1 focus:ring-primary-400/30 dark:border-white/[0.08] dark:bg-carbon-surface dark:text-zinc-100 dark:placeholder-zinc-500"
-            />
-          </div>
-          <AppearancePanel />
-        </div>
-      </header>
-    )
-
+    projectsBrowserShell = true
     workspaceContent = (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-100 dark:bg-carbon-matte">
-      <div
-        className="pointer-events-none absolute -bottom-[45%] -right-[25%] h-[min(1100px,95vw)] w-[min(1100px,95vw)] rounded-full carbon-orb"
-        aria-hidden
-      />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <header className="relative z-workspace-chrome flex shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 py-3 dark:border-white/[0.06] dark:bg-black sm:gap-x-6 sm:px-6">
+              <CarbonLogo size="lg" />
+              <div className="flex flex-1 items-center gap-x-4 lg:gap-x-6">
+                <div className="relative ml-auto flex flex-1 max-w-xl">
+                  <Search className="pointer-events-none absolute inset-y-0 left-0 h-full w-5 text-gray-400 pl-3 dark:text-zinc-500" />
+                  <input
+                    type="search"
+                    placeholder="Search projects..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="block h-10 w-full rounded-lg border border-gray-200 bg-gray-50 py-0 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-primary-400/50 focus:outline-none focus:ring-1 focus:ring-primary-400/30 dark:border-white/[0.08] dark:bg-carbon-surface dark:text-zinc-100 dark:placeholder-zinc-500"
+                  />
+                </div>
+                <AppearancePanel />
+              </div>
+            </header>
 
-      <div className="relative shrink-0 pt-8 pb-6">
-        <h1 className="px-4 text-3xl font-bold tracking-tight text-gray-900 dark:text-zinc-50 sm:px-6 sm:text-4xl lg:px-8">
-          Your Projects
-        </h1>
-        <p className="mt-3 max-w-2xl px-4 text-base text-gray-600 dark:text-zinc-400 sm:px-6 lg:px-8">
-          Each project is a folder containing schematics, programs, documents, and a plan space
-        </p>
-      </div>
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-100 dark:bg-carbon-matte">
+            <div className="relative shrink-0 pt-8 pb-6">
+              <h1 className="px-4 text-3xl font-bold tracking-tight text-gray-900 dark:text-zinc-50 sm:px-6 sm:text-4xl lg:px-8">
+                Your Projects
+              </h1>
+              <p className="mt-3 max-w-2xl px-4 text-base text-gray-600 dark:text-zinc-400 sm:px-6 lg:px-8">
+                Each project is a folder containing schematics, programs, documents, and a plan space
+              </p>
+            </div>
 
-      <div className="relative min-h-0 flex-1 overflow-y-auto pb-8">
-        <div className="grid grid-cols-1 gap-6 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-3 lg:px-8 xl:grid-cols-4">
+            <div className="relative min-h-0 flex-1 overflow-y-auto pb-8">
+              <div className="grid grid-cols-1 gap-6 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-3 lg:px-8 xl:grid-cols-4">
             <div
               className="carbon-card group cursor-pointer border-dashed border-primary-400/20 p-6 transition-colors hover:border-primary-400/40 hover:bg-carbon-elevated/50"
               onClick={handleCreateFolder}
@@ -1622,9 +1680,10 @@ function AppContent() {
                 </div>
               </div>
             )}
-        </div>
+              </div>
+            </div>
+          </div>
       </div>
-    </div>
     )
   }
 
@@ -1633,7 +1692,13 @@ function AppContent() {
       projectContext={agentProjectContext}
       onProjectUpdate={handleAgentProjectUpdate}
     >
-      {wrapWorkspaceLayout(workspaceContent, { carbonHeader })}
+      {projectsBrowserShell ? (
+        <div className="flex h-screen flex-col overflow-hidden bg-gray-50 dark:bg-black">
+          <ProjectsAgentLayout>{workspaceContent}</ProjectsAgentLayout>
+        </div>
+      ) : (
+        wrapWorkspaceLayout(workspaceContent, { carbonHeader })
+      )}
       <ProductSuiteHost onProjectUpdate={handleAgentProjectUpdate} />
       {deleteModal?.isOpen && (
         <DeleteModal modal={deleteModal} onClose={() => setDeleteModal(null)} onConfirm={confirmDelete} />

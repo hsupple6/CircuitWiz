@@ -1,0 +1,25 @@
+{
+  "module": "PNPTransistor",
+  "description": "PNP BJT switch — collector-emitter saturates when base is pulled below emitter",
+  "category": "semiconductors",
+  "gridX": 3,
+  "gridY": 3,
+  "background": "#141414",
+  "css": "border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.35);",
+  "grid": [
+    { "x": 0, "y": 0, "type": "BODY", "pin": "", "isConnectable": false, "background": "#0a0a0a", "css": "background: transparent;" },
+    { "x": 1, "y": 0, "type": "COLLECTOR", "pin": "C", "isConnectable": true, "isPowerable": true, "isGroundable": false, "background": "#0a0a0a", "css": "border-radius: 4px 4px 0 0; border: 1px solid #333; background: #0a0a0a;" },
+    { "x": 2, "y": 0, "type": "BODY", "pin": "", "isConnectable": false, "background": "#0a0a0a", "css": "background: transparent;" },
+    { "x": 0, "y": 1, "type": "BASE", "pin": "B", "isConnectable": true, "isPowerable": true, "isGroundable": false, "background": "#0a0a0a", "css": "border-radius: 4px 0 0 4px; border: 1px solid #333; background: #0a0a0a;" },
+    { "x": 1, "y": 1, "type": "BODY", "pin": "", "isConnectable": false, "isClickable": true, "background": "#161616", "css": "border: 1px solid #333; background: linear-gradient(180deg, #222 0%, #141414 40%, #141414 100%); cursor: pointer;" },
+    { "x": 2, "y": 1, "type": "BODY", "pin": "", "isConnectable": false, "background": "#161616", "css": "border: 1px solid #333; border-left: none; background: linear-gradient(180deg, #222 0%, #141414 40%, #141414 100%);" },
+    { "x": 0, "y": 2, "type": "BODY", "pin": "", "isConnectable": false, "background": "#0a0a0a", "css": "background: transparent;" },
+    { "x": 1, "y": 2, "type": "EMITTER", "pin": "E", "isConnectable": true, "isPowerable": true, "isGroundable": false, "background": "#0a0a0a", "css": "border-radius: 0 0 4px 4px; border: 1px solid #333; background: #0a0a0a;" },
+    { "x": 2, "y": 2, "type": "BODY", "pin": "", "isConnectable": false, "background": "#0a0a0a", "css": "background: transparent;" }
+  ],
+  "properties": {
+    "beta": { "type": "number", "default": 100, "min": 20, "max": 500, "description": "DC current gain (hFE)" },
+    "vbe": { "type": "number", "default": 0.65, "min": 0.5, "max": 0.9, "unit": "V", "description": "Base-emitter turn-on voltage" },
+    "vceSat": { "type": "number", "default": 0.2, "min": 0.05, "max": 0.5, "unit": "V", "description": "Collector-emitter saturation voltage" }
+  }
+}

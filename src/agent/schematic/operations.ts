@@ -25,6 +25,7 @@ import { solveCircuit } from '../../services/CircuitSolver'
 import { layoutGuidelinesForAgent } from './layoutGuidelines'
 import { cellMatchesPin, primaryPinName } from '../../utils/pinNames'
 import { buildWirePath } from '../../utils/wireRouting'
+import { pickWireColorForConnection, pickWireColorForPath, PickWireColorOptions } from '../../utils/pickWireColor'
 
 function pinMatchesForCell(
   moduleName: string,
@@ -439,7 +440,8 @@ export function connectPins(
   fromComponentId: string,
   fromPin: string,
   toComponentId: string,
-  toPin: string
+  toPin: string,
+  opts: PickWireColorOptions = {}
 ): { schematic: Schematic; wire: WireConnection } | { error: string; warning?: string } {
   const from = findPin(schematic, fromComponentId, fromPin)
   const to = findPin(schematic, toComponentId, toPin)
@@ -454,7 +456,13 @@ export function connectPins(
   if (!validation.isValid) return { error: validation.error ?? 'Invalid connection' }
 
   const path = buildWirePath(from.position, to.position, schematic.gridData)
-  const wire = wireBetween(path)
+  const colorChoice = pickWireColorForConnection(schematic.wires, from, to, opts)
+  const wire = wireBetween(path, {
+    colorId: colorChoice.colorId,
+    color: colorChoice.color,
+    powered: colorChoice.powered,
+    grounded: colorChoice.grounded,
+  })
   const wires = [...schematic.wires, wire]
 
   const shortCheck = checkForShortCircuit([{ from, to }])
@@ -468,7 +476,7 @@ export function connectPins(
 export function addWirePath(
   schematic: Schematic,
   points: Array<{ x: number; y: number }>,
-  opts: { color?: string; powered?: boolean; grounded?: boolean } = {}
+  opts: PickWireColorOptions & { powered?: boolean; grounded?: boolean } = {}
 ): { schematic: Schematic; wire: WireConnection } | { error: string } {
   if (points.length < 2) return { error: 'Wire requires at least 2 points' }
 
@@ -477,7 +485,13 @@ export function addWirePath(
     if (!check.ok) return { error: check.error }
   }
 
-  const wire = wireBetween(points, opts)
+  const colorChoice = pickWireColorForPath(schematic.wires, opts)
+  const wire = wireBetween(points, {
+    colorId: opts.colorId ?? colorChoice.colorId,
+    color: opts.color ?? colorChoice.color,
+    powered: opts.powered ?? colorChoice.powered,
+    grounded: opts.grounded ?? colorChoice.grounded,
+  })
   return {
     schematic: rebuildSchematic(schematic, getComponents(schematic), [...schematic.wires, wire]),
     wire,
@@ -498,6 +512,7 @@ export function listWires(schematic: Schematic) {
     segmentCount: w.segments.length,
     points: w.segments.flatMap((s, i) => (i === 0 ? [s.from, s.to] : [s.to])),
     color: w.color,
+    colorId: w.colorId,
     isPowered: w.isPowered,
     isGrounded: w.isGrounded,
   }))
@@ -680,7 +695,7 @@ export function getSchematicState(schematic: Schematic) {
     labelCount: schematic.labels?.length ?? 0,
     groupBoxes: listGroupBoxes(schematic),
     labels: listLabels(schematic),
-    hasFirmware: !!schematic.arduinoProject,
+    flashedMicrocontrollers: Object.keys(schematic.programFlashes ?? {}).length,
     gridSize: schematic.metadata.gridSize,
     metadata: schematic.metadata,
     layoutGuidelines: layoutGuidelinesForAgent(),
@@ -698,6 +713,7 @@ export function replaceSchematicContent(
     componentStates: source.componentStates,
     groupBoxes: source.groupBoxes,
     labels: source.labels,
+    programFlashes: source.programFlashes,
     arduinoProject: source.arduinoProject,
   })
 }

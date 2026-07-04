@@ -1,4 +1,5 @@
 import { useId } from 'react'
+import { useTheme } from '../contexts/ThemeContext'
 
 interface CarbonLogoProps {
   className?: string
@@ -20,6 +21,7 @@ function hexPath(cx: number, cy: number, r: number, rotation = -90) {
 }
 
 export function CarbonLogo({ className = '', size = 'md' }: CarbonLogoProps) {
+  const { isDark } = useTheme()
   const uid = useId().replace(/:/g, '')
   const h = heights[size]
 
@@ -40,6 +42,15 @@ export function CarbonLogo({ className = '', size = 'md' }: CarbonLogoProps) {
     }
   })
 
+  const textTop = isDark ? '#ffffff' : '#18181b'
+  const textMid = isDark ? '#f4f4f5' : '#27272a'
+  const textBottom = isDark ? '#d4d4d8' : '#52525b'
+  const markTop = isDark ? '#ffffff' : '#27272a'
+  const markBottom = isDark ? '#e4e4e7' : '#71717a'
+  const coreFill = isDark ? '#ffffff' : '#18181b'
+  const glowColor = isDark ? '#ffffff' : '#000000'
+  const glowOpacity = isDark ? 0.35 : 0.12
+
   return (
     <svg
       viewBox="0 0 196 44"
@@ -50,18 +61,18 @@ export function CarbonLogo({ className = '', size = 'md' }: CarbonLogoProps) {
     >
       <defs>
         <linearGradient id={`${uid}-shine`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="55%" stopColor="#f4f4f5" />
-          <stop offset="100%" stopColor="#d4d4d8" />
+          <stop offset="0%" stopColor={textTop} />
+          <stop offset="55%" stopColor={textMid} />
+          <stop offset="100%" stopColor={textBottom} />
         </linearGradient>
         <linearGradient id={`${uid}-mark`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="100%" stopColor="#e4e4e7" />
+          <stop offset="0%" stopColor={markTop} />
+          <stop offset="100%" stopColor={markBottom} />
         </linearGradient>
         <filter id={`${uid}-glow`} x="-20%" y="-30%" width="140%" height="160%">
           <feGaussianBlur in="SourceAlpha" stdDeviation="0.6" result="blur" />
           <feOffset in="blur" dx="0" dy="0.5" result="offsetBlur" />
-          <feFlood floodColor="#ffffff" floodOpacity="0.35" result="glowColor" />
+          <feFlood floodColor={glowColor} floodOpacity={glowOpacity} result="glowColor" />
           <feComposite in="glowColor" in2="offsetBlur" operator="in" result="softGlow" />
           <feMerge>
             <feMergeNode in="softGlow" />
@@ -84,7 +95,7 @@ export function CarbonLogo({ className = '', size = 'md' }: CarbonLogoProps) {
             opacity="0.85"
           />
         ))}
-        <circle cx={markCx} cy={markCy} r="2.1" fill="#ffffff" stroke="none" />
+        <circle cx={markCx} cy={markCy} r="2.1" fill={coreFill} stroke="none" />
       </g>
 
       <text

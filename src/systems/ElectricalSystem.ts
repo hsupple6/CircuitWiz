@@ -17,7 +17,8 @@ import { findCircuitPathways, CalculateCircuit, convertGridToNodes } from '../se
 import { checkContinuity } from '../systems/chain/graph'
 import { isActivePowerSourceTerminal } from '../utils/powerSupplies'
 import { solveCircuit } from '../services/CircuitSolver'
-import { applyGpioComponentStates, applyGpioWireHints, stripPwmFromWires } from './chain/gpioDisplay'
+import { applyGpioComponentStates, applyGpioWireHints, applyGpioVoltagePropagation, stripPwmFromWires } from './chain/gpioDisplay'
+import { syncLedComponentStates } from './chain/ledDisplay'
 import { applyEscMotorDisplay } from './chain/driverMotorDisplay'
 import { extractOccupiedComponents } from '../utils/gridUtils'
 import { LEDVoltageFlow } from '../modules/output/voltageFlow/LED'
@@ -2491,11 +2492,19 @@ export function calculateElectricalFlow(
 
   const solverResult = solveCircuit(gridData, wires, effectiveGPIOStates)
   const componentStates = new Map(solverResult.componentStates) as Map<string, ComponentState>
+  syncLedComponentStates(componentStates)
   let updatedWires = solverResult.updatedWires
 
   if (hasLiveGpio && effectiveGPIOStates) {
-    applyGpioComponentStates(gridData, effectiveGPIOStates, componentStates)
+    applyGpioComponentStates(gridData, wires, effectiveGPIOStates, componentStates)
     updatedWires = applyGpioWireHints(gridData, updatedWires, effectiveGPIOStates)
+    updatedWires = applyGpioVoltagePropagation(
+      gridData,
+      updatedWires,
+      effectiveGPIOStates,
+      componentStates,
+      { preferSolver: solverResult.works }
+    )
     updatedWires = applyEscMotorDisplay(gridData, updatedWires, componentStates, {
       netVoltages: solverResult.netVoltages,
     })

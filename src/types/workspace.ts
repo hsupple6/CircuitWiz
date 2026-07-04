@@ -61,6 +61,11 @@ export function createSchematicCellLabel(x: number, y: number, text = ''): Schem
   }
 }
 
+export interface ProgramFlashAssignment {
+  programId: string
+  flashedAt: string
+}
+
 export interface Schematic {
   id: string
   name: string
@@ -71,6 +76,8 @@ export interface Schematic {
   componentStates: Record<string, ComponentState>
   groupBoxes?: SchematicGroupBox[]
   labels?: SchematicCellLabel[]
+  /** Maps microcontroller component id → flashed program artifact */
+  programFlashes?: Record<string, ProgramFlashAssignment>
   metadata: {
     createdAt: string
     updatedAt: string

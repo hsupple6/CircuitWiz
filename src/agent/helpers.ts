@@ -31,6 +31,16 @@ export function resolveSchematicId(
   return null
 }
 
+export function resolveProgramId(
+  ctx: AgentProjectContext,
+  programId?: string | null
+): string | null {
+  if (programId) return programId
+  if (ctx.activeProgramId) return ctx.activeProgramId
+  if (ctx.folder.programs.length === 1) return ctx.folder.programs[0].id
+  return null
+}
+
 export function getSchematic(
   folder: ProjectFolder,
   schematicId: string
@@ -67,7 +77,7 @@ export function ok(
   folder: ProjectFolder,
   message: string,
   data?: unknown,
-  meta?: Pick<AgentToolResult, 'activeSchematicId' | 'activeDocumentId' | 'uiAction'>
+  meta?: Pick<AgentToolResult, 'activeSchematicId' | 'activeDocumentId' | 'activeProgramId' | 'uiAction'>
 ): AgentToolResult {
   const touched = touchFolder(folder)
   return {

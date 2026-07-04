@@ -63,6 +63,8 @@ interface LedStamp {
   componentId: string
   maxCurrent: number
   isOn: boolean
+  channel?: 'R' | 'G' | 'B'
+  moduleType?: 'LED' | 'RGBLED'
 }
 
 interface DiodeStamp {
@@ -100,6 +102,7 @@ interface NpnStamp {
   vceSat: number
   componentId: string
   isOn: boolean
+  polarity: 'npn' | 'pnp'
 }
 
 interface MosfetStamp {
@@ -110,6 +113,7 @@ interface MosfetStamp {
   rdsOn: number
   componentId: string
   isOn: boolean
+  polarity: 'n' | 'p'
 }
 
 interface OpAmpStamp {
@@ -327,12 +331,21 @@ function solveMNA(
     voltage: c.storedVoltage,
     componentId: c.componentId,
   }))
-  const npnAsSources: VoltageSourceStamp[] = activeNpns.map((t) => ({
-    netPos: t.netCollector,
-    netNeg: t.netEmitter,
-    voltage: t.vceSat,
-    componentId: t.componentId,
-  }))
+  const npnAsSources: VoltageSourceStamp[] = activeNpns.map((t) =>
+    t.polarity === 'pnp'
+      ? {
+          netPos: t.netEmitter,
+          netNeg: t.netCollector,
+          voltage: t.vceSat,
+          componentId: t.componentId,
+        }
+      : {
+          netPos: t.netCollector,
+          netNeg: t.netEmitter,
+          voltage: t.vceSat,
+          componentId: t.componentId,
+        }
+  )
   const opAmpAsSources: VoltageSourceStamp[] = opAmps.map((op) => ({
     netPos: op.netOut,
     netNeg: op.netVee,
@@ -671,7 +684,47 @@ function buildNets(
         componentId: component.componentId,
         maxCurrent,
         isOn: false,
+        moduleType: 'LED',
       })
+      return
+    }
+
+    if (moduleType === 'RGBLED') {
+      const cathode = terminals.find(
+        (t) => t.moduleCell.type === 'LED_NEGATIVE' || t.moduleCell.pin === 'COM'
+      )
+      if (!cathode) {
+        errors.push(`RGB LED ${component.componentId} is missing cathode`)
+        return
+      }
+      const netCathode = posToNet.get(posKey(cathode.x, cathode.y))
+      if (netCathode === undefined) return
+
+      const props = component.moduleDefinition.properties ?? {}
+      const channels: Array<{ pin: 'R' | 'G' | 'B'; vfKey: string; defaultVf: number }> = [
+        { pin: 'R', vfKey: 'forwardVoltageR', defaultVf: 2.0 },
+        { pin: 'G', vfKey: 'forwardVoltageG', defaultVf: 3.0 },
+        { pin: 'B', vfKey: 'forwardVoltageB', defaultVf: 3.0 },
+      ]
+      const maxCurrent = parseNumericProperty(props.maxCurrent, 0.02)
+
+      for (const ch of channels) {
+        const anode = terminals.find((t) => t.moduleCell.pin === ch.pin)
+        if (!anode) continue
+        const netAnode = posToNet.get(posKey(anode.x, anode.y))
+        if (netAnode === undefined) continue
+        leds.push({
+          netAnode,
+          netCathode,
+          forwardVoltage: parseNumericProperty(props[ch.vfKey], ch.defaultVf),
+          seriesResistance: 10,
+          componentId: component.componentId,
+          maxCurrent,
+          isOn: false,
+          channel: ch.pin,
+          moduleType: 'RGBLED',
+        })
+      }
       return
     }
 
@@ -711,7 +764,7 @@ function buildNets(
       return
     }
 
-    if (moduleType === 'NPNTransistor') {
+    if (moduleType === 'NPNTransistor' || moduleType === 'PNPTransistor') {
       const base = terminals.find((t) => t.moduleCell.pin === 'B' || t.moduleCell.type === 'BASE')
       const collector = terminals.find((t) => t.moduleCell.pin === 'C' || t.moduleCell.type === 'COLLECTOR')
       const emitter = terminals.find((t) => t.moduleCell.pin === 'E' || t.moduleCell.type === 'EMITTER')
@@ -728,11 +781,12 @@ function buildNets(
         vceSat: parseNumericProperty(component.moduleDefinition.properties?.vceSat, 0.2),
         componentId: component.componentId,
         isOn: false,
+        polarity: moduleType === 'PNPTransistor' ? 'pnp' : 'npn',
       })
       return
     }
 
-    if (moduleType === 'MOSFET') {
+    if (moduleType === 'MOSFET' || moduleType === 'PMOSFET') {
       const gate = terminals.find((t) => t.moduleCell.pin === 'G' || t.moduleCell.type === 'GATE')
       const drain = terminals.find((t) => t.moduleCell.pin === 'D' || t.moduleCell.type === 'DRAIN')
       const source = terminals.find((t) => t.moduleCell.pin === 'S' || t.moduleCell.type === 'SOURCE')
@@ -749,6 +803,7 @@ function buildNets(
         rdsOn: parseNumericProperty(component.moduleDefinition.properties?.rdsOn, 0.05),
         componentId: component.componentId,
         isOn: false,
+        polarity: moduleType === 'PMOSFET' ? 'p' : 'n',
       })
       return
     }
@@ -962,6 +1017,10 @@ function buildNets(
               })
               return
             }
+            if (gpioState?.state === 'LOW') {
+              stampResistor(resistors, net, groundNet, 40, `${component.componentId}_pinLow`)
+              return
+            }
           }
         }
 
@@ -1139,7 +1198,14 @@ export function solveCircuit(
   }
 
   const chainCheck = validateSourceChains(gridData, wires)
-  if (!chainCheck.valid) {
+  const hasActiveGpio =
+    Boolean(gpioStates?.size) &&
+    [...gpioStates.values()].some(
+      (s) =>
+        s?.state === 'HIGH' ||
+        (s?.state === 'PULSING' && (typeof s?.value === 'number' ? s.value : 0) > 0.001)
+    )
+  if (!chainCheck.valid && !(hasActiveGpio && hasGround)) {
     return emptyResult(
       'No continuity — each power source needs a closed path from + back to its own - terminal',
       [...chainCheck.errors, ...errors]
@@ -1302,7 +1368,10 @@ export function solveCircuit(
     npnStates = npnStates.map((t) => {
       const vb = solution!.voltages[t.netBase] ?? 0
       const ve = solution!.voltages[t.netEmitter] ?? 0
-      const shouldBeOn = vb - ve >= t.vbe - 0.05
+      const shouldBeOn =
+        t.polarity === 'pnp'
+          ? ve - vb >= t.vbe - 0.05
+          : vb - ve >= t.vbe - 0.05
       if (shouldBeOn !== t.isOn) changed = true
       return { ...t, isOn: shouldBeOn }
     })
@@ -1310,7 +1379,10 @@ export function solveCircuit(
     mosfetStates = mosfetStates.map((t) => {
       const vg = solution!.voltages[t.netGate] ?? 0
       const vs = solution!.voltages[t.netSource] ?? 0
-      const shouldBeOn = vg - vs >= t.vth - 0.05
+      const shouldBeOn =
+        t.polarity === 'p'
+          ? vs - vg >= t.vth - 0.05
+          : vg - vs >= t.vth - 0.05
       if (shouldBeOn !== t.isOn) changed = true
       return { ...t, isOn: shouldBeOn }
     })
@@ -1415,6 +1487,11 @@ export function solveCircuit(
   })
 
   resistors.forEach((resistor) => {
+    if (!activeNets.has(resistor.netA) || !activeNets.has(resistor.netB)) return
+    totalCurrent = Math.max(totalCurrent, Math.abs(resistorCurrent(resistor, voltages)))
+  })
+
+  resistors.forEach((resistor) => {
     const onCircuit = activeNets.has(resistor.netA) && activeNets.has(resistor.netB)
     const current = onCircuit ? Math.abs(resistorCurrent(resistor, voltages)) : 0
     const va = voltages[resistor.netA] ?? 0
@@ -1433,7 +1510,10 @@ export function solveCircuit(
           ? parseNumericProperty(comp?.moduleDefinition?.properties?.minVoltage, 4.8)
           : 0.1
     const isLoadOutput = ['Buzzer', 'Speaker', 'Servo', 'Motor'].includes(moduleType)
-    const isActive = onCircuit && current > 1e-6 && driveVoltage >= minVoltage
+    const isActive =
+      onCircuit &&
+      driveVoltage >= minVoltage &&
+      (current > 1e-6 || (moduleType === 'Resistor' && driveVoltage > 0.1))
 
     gridData.forEach((row, y) => {
       if (!row) return
@@ -1466,6 +1546,7 @@ export function solveCircuit(
     const hasBias = ledHasForwardBias(anodeVoltage, cathodeVoltage, led.forwardVoltage)
     const isOn = onCircuit && led.isOn && hasBias && totalCurrent > 1e-6
     const current = isOn ? totalCurrent : 0
+    const componentType = led.moduleType ?? 'LED'
 
     gridData.forEach((row, y) => {
       if (!row) return
@@ -1476,16 +1557,26 @@ export function solveCircuit(
         const net = posToNet.get(posKey(x, y))
         const isAnode = net === led.netAnode
         const isCathode = net === led.netCathode
+        const isBody = !isAnode && !isCathode
+        if (led.channel && moduleCell.pin && moduleCell.pin !== led.channel && !isCathode) return
+        if (led.channel && isAnode && moduleCell.pin !== led.channel) return
         componentStates.set(cellComponentId, {
           componentId: cellComponentId,
-          componentType: 'LED',
+          componentType,
           position: { x, y },
           inputVoltage: anodeVoltage,
-          outputVoltage: isOn ? (isAnode ? anodeVoltage : isCathode ? cathodeVoltage : 0) : 0,
+          outputVoltage: isOn
+            ? isCathode
+              ? cathodeVoltage
+              : isAnode || isBody
+                ? anodeVoltage
+                : Math.max(cathodeVoltage, anodeVoltage - led.forwardVoltage)
+            : 0,
           outputCurrent: isOn ? current : 0,
           power: isOn ? led.forwardVoltage * current : 0,
           forwardVoltage: led.forwardVoltage,
           isOn,
+          ledChannel: led.channel,
           status: isOn ? 'on' : 'off',
           isPowered: isOn,
           isGrounded: isGroundTerminal(moduleCell) || (onCircuit && isCathode),
@@ -1493,7 +1584,7 @@ export function solveCircuit(
       })
     })
 
-    if (onCircuit && !isOn && !hasBias) {
+    if (onCircuit && !isOn && !hasBias && componentType === 'LED') {
       errors.push(`LED ${led.componentId} has insufficient forward voltage`)
     }
   })
@@ -1598,6 +1689,7 @@ export function solveCircuit(
     const onCircuit =
       activeNets.has(t.netBase) && activeNets.has(t.netCollector) && activeNets.has(t.netEmitter)
     const isOn = onCircuit && t.isOn
+    const componentType = t.polarity === 'pnp' ? 'PNPTransistor' : 'NPNTransistor'
     gridData.forEach((row, y) => {
       if (!row) return
       row.forEach((cell, x) => {
@@ -1606,7 +1698,7 @@ export function solveCircuit(
         const net = posToNet.get(posKey(x, y))
         componentStates.set(cellComponentId, {
           componentId: cellComponentId,
-          componentType: 'NPNTransistor',
+          componentType,
           position: { x, y },
           outputVoltage: onCircuit && net !== undefined ? voltages[net] ?? 0 : 0,
           outputCurrent: 0,
@@ -1624,6 +1716,7 @@ export function solveCircuit(
     const onCircuit =
       activeNets.has(t.netGate) && activeNets.has(t.netDrain) && activeNets.has(t.netSource)
     const isOn = onCircuit && t.isOn
+    const componentType = t.polarity === 'p' ? 'PMOSFET' : 'MOSFET'
     gridData.forEach((row, y) => {
       if (!row) return
       row.forEach((cell, x) => {
@@ -1632,7 +1725,7 @@ export function solveCircuit(
         const net = posToNet.get(posKey(x, y))
         componentStates.set(cellComponentId, {
           componentId: cellComponentId,
-          componentType: 'MOSFET',
+          componentType,
           position: { x, y },
           outputVoltage: onCircuit && net !== undefined ? voltages[net] ?? 0 : 0,
           outputCurrent: 0,

@@ -1,4 +1,5 @@
 import type { ComponentState } from '../systems/ElectricalSystem'
+import { resolveLedModuleState as resolveLedModuleStateFromChain } from '../systems/chain/ledDisplay'
 import { ComponentStatsBadge } from './ComponentStatsBadge'
 
 const LED_CLASS: Record<string, string> = {
@@ -27,6 +28,16 @@ interface LedBodyIndicatorProps {
   compact?: boolean
 }
 
+export function resolveLedModuleState(
+  componentId: string,
+  componentStates: Map<string, ComponentState>
+): ComponentState | undefined {
+  return resolveLedModuleStateFromChain(
+    componentId,
+    componentStates as Map<string, import('../systems/chain/types').SolvedComponentState>
+  )
+}
+
 export function resolveLedColor(
   moduleProperties?: Record<string, unknown>,
   cellProperties?: Record<string, unknown>
@@ -52,11 +63,11 @@ export function LedBodyIndicator({
 }: LedBodyIndicatorProps) {
   const anodeVoltage = state?.inputVoltage ?? state?.outputVoltage ?? 0
   const forwardV = state?.forwardVoltage ?? 2
+  const branchCurrent = state?.outputCurrent ?? 0
   const lit =
     isOn &&
-    anodeVoltage > 0.01 &&
-    anodeVoltage >= forwardV - 0.05 &&
-    (state?.outputCurrent ?? 0) > 1e-6
+    anodeVoltage >= forwardV - 0.1 &&
+    branchCurrent > 1e-6
   const ledClass = lit ? (LED_CLASS[color] ?? 'bg-yellow-300 border-yellow-400') : 'bg-gray-600 border-gray-400'
   const brightnessClass = lit ? 'opacity-100' : 'opacity-30'
   const glow = LED_GLOW[color] ?? '#facc15'

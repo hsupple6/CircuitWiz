@@ -10,6 +10,8 @@ import {
 } from '../helpers'
 import * as ops from './operations'
 import { SCHEMATIC_LAYOUT_GUIDELINES } from './layoutGuidelines'
+import { AGENT_WIRE_COLOR_IDS } from '../../utils/pickWireColor'
+import { isWireColorId } from '../../theme/colors'
 
 const COMPONENT_PROPERTIES_PARAM = {
   name: 'properties',
@@ -17,6 +19,22 @@ const COMPONENT_PROPERTIES_PARAM = {
   description:
     'Module-specific properties. Examples: MOSFET { vth: 2.5, rdsOn: 0.05 }, Resistor { resistance: 1000 }, Capacitor { capacitance: 0.0001 }, Inductor { inductance: 0.001 }, ZenerDiode { zenerVoltage: 5.1 }, ACSource { vrms: 12, frequency: 60, waveform: "sine" }, PowerSupply { voltage: 5, current: 1 }',
   required: false,
+}
+
+const WIRE_COLOR_PARAM = {
+  name: 'colorId',
+  type: 'string' as const,
+  description: `Wire palette color. Options: ${AGENT_WIRE_COLOR_IDS.join(', ')}. Auto-assigned from pin type if omitted (red=power, black=ground, distinct colors for signals).`,
+  required: false,
+}
+
+function parseWireColorArgs(args: Record<string, unknown>) {
+  const colorIdRaw = args.colorId as string | undefined
+  const colorId = colorIdRaw && isWireColorId(colorIdRaw) ? colorIdRaw : undefined
+  return {
+    colorId,
+    color: args.color as string | undefined,
+  }
 }
 
 function parseComponentProperties(args: Record<string, unknown>): Record<string, unknown> {
@@ -249,24 +267,31 @@ export const schematicAgentTools: AgentTool[] = [
       { name: 'fromPin', type: 'string', description: 'Source pin name', required: true },
       { name: 'toComponentId', type: 'string', description: 'Target component id', required: true },
       { name: 'toPin', type: 'string', description: 'Target pin name', required: true },
+      WIRE_COLOR_PARAM,
     ],
     (ctx, args) => {
       const id = resolveSchematicId(ctx, args.schematicId as string)
       if (!id) return fail('No schematic specified.')
       const schematic = getSchematic(ctx.folder, id)
       if (!schematic) return fail(`Schematic not found: ${id}`)
+      const wireColor = parseWireColorArgs(args)
       const result = ops.connectPins(
         schematic,
         args.fromComponentId as string,
         args.fromPin as string,
         args.toComponentId as string,
-        args.toPin as string
+        args.toPin as string,
+        wireColor
       )
       if ('error' in result) return fail(result.error)
       const folder = updateSchematicInFolder(ctx.folder, id, () => result.schematic)
       if (!folder) return fail('Failed to save schematic.')
       const warning = 'warning' in result ? result.warning : undefined
-      return ok(ctx, folder, 'Pins connected.', { wireId: result.wire.id, warning })
+      return ok(ctx, folder, 'Pins connected.', {
+        wireId: result.wire.id,
+        colorId: result.wire.colorId,
+        warning,
+      })
     }
   ),
 
@@ -291,7 +316,8 @@ export const schematicAgentTools: AgentTool[] = [
           },
         },
       },
-      { name: 'color', type: 'string', description: 'Wire color hex', required: false },
+      WIRE_COLOR_PARAM,
+      { name: 'color', type: 'string', description: 'Legacy wire color hex override', required: false },
     ],
     (ctx, args) => {
       const id = resolveSchematicId(ctx, args.schematicId as string)
@@ -299,12 +325,12 @@ export const schematicAgentTools: AgentTool[] = [
       const schematic = getSchematic(ctx.folder, id)
       if (!schematic) return fail(`Schematic not found: ${id}`)
       const result = ops.addWirePath(schematic, args.points as Array<{ x: number; y: number }>, {
-        color: args.color as string | undefined,
+        ...parseWireColorArgs(args),
       })
       if ('error' in result) return fail(result.error)
       const folder = updateSchematicInFolder(ctx.folder, id, () => result.schematic)
       if (!folder) return fail('Failed to save schematic.')
-      return ok(ctx, folder, 'Wire added.', { wireId: result.wire.id })
+      return ok(ctx, folder, 'Wire added.', { wireId: result.wire.id, colorId: result.wire.colorId })
     }
   ),
 

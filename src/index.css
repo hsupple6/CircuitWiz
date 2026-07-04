@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  .z-workspace-chrome {
+    z-index: 110;
+  }
+
+  .z-workspace-controls {
+    z-index: 90;
+  }
+}
+
 @layer base {
   :root {
     --accent-50: 240 249 255;
@@ -24,7 +34,20 @@
   body {
     @apply bg-gray-50 text-gray-900 dark:bg-dark-bg dark:text-dark-text-primary;
     font-feature-settings: "rlig" 1, "calt" 1;
-    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  html.theme-transition,
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition:
+      background-color 500ms ease,
+      color 500ms ease,
+      border-color 500ms ease,
+      fill 500ms ease,
+      stroke 500ms ease,
+      box-shadow 500ms ease,
+      outline-color 500ms ease !important;
   }
 }
 
@@ -97,6 +120,26 @@
       rgb(var(--accent-glow) / 0.04) 200deg,
       transparent 280deg
     );
+  }
+
+  .projects-agent-drawer-shell {
+    background: linear-gradient(
+      165deg,
+      #fafafa 0%,
+      #f4f4f5 38%,
+      rgb(var(--accent-glow) / 0.1) 100%
+    );
+    box-shadow: inset 14px 0 32px -12px rgba(0, 0, 0, 0.14);
+  }
+
+  .dark .projects-agent-drawer-shell {
+    background: linear-gradient(
+      165deg,
+      #0a0a0c 0%,
+      #111114 42%,
+      rgb(var(--accent-glow) / 0.14) 100%
+    );
+    box-shadow: inset 14px 0 36px -12px rgba(0, 0, 0, 0.55);
   }
 
   .agent-panel {

@@ -8,7 +8,9 @@ export const SMD_VISUAL_MODULES = new Set([
   'Diode',
   'ZenerDiode',
   'NPNTransistor',
+  'PNPTransistor',
   'MOSFET',
+  'PMOSFET',
   'OpAmp',
   'BridgeRectifier',
 ])

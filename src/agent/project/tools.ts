@@ -41,7 +41,7 @@ export const projectAgentTools: AgentTool[] = [
           name: s.name,
           description: s.description,
           wireCount: s.wires.length,
-          hasFirmware: !!s.arduinoProject,
+          hasProgramFlashes: !!s.programFlashes && Object.keys(s.programFlashes).length > 0,
         })),
         activeSchematicId: ctx.activeSchematicId,
       })
@@ -182,6 +182,81 @@ export const projectAgentTools: AgentTool[] = [
         return fail(`Document not found: ${id}`)
       }
       return okRead({ ...ctx, activeDocumentId: id }, 'Active document set.', { activeDocumentId: id })
+    }
+  ),
+
+  makeTool(
+    'project_list_programs',
+    'List all program artifacts in the project.',
+    'project',
+    [],
+    (ctx) =>
+      okRead(ctx, 'Programs listed.', {
+        programs: ctx.folder.programs.map((p) => ({
+          id: p.id,
+          name: p.name,
+          board: p.board,
+          codeLength: p.code.length,
+          isCompiled: p.compilation?.success === true,
+        })),
+        activeProgramId: ctx.activeProgramId,
+      })
+  ),
+
+  makeTool(
+    'project_create_program',
+    'Create a new program artifact for Arduino/ESP32 firmware, like creating a document.',
+    'project',
+    [
+      { name: 'name', type: 'string', description: 'Program name', required: true },
+      { name: 'code', type: 'string', description: 'Initial sketch source (optional)', required: false },
+      {
+        name: 'board',
+        type: 'string',
+        description: 'Board FQBN (default arduino:avr:uno)',
+        required: false,
+      },
+    ],
+    (ctx, args) => {
+      const { folder, program } = ops.createProgramInFolder(
+        ctx.folder,
+        args.name as string,
+        args.code as string | undefined,
+        (args.board as string) ?? 'arduino:avr:uno'
+      )
+      return ok(
+        ctx,
+        folder,
+        `Program "${program.name}" created.`,
+        { program: { id: program.id, name: program.name, board: program.board } },
+        { activeProgramId: program.id }
+      )
+    }
+  ),
+
+  makeTool(
+    'project_delete_program',
+    'Delete a program artifact.',
+    'project',
+    [{ name: 'programId', type: 'string', description: 'Program id', required: true }],
+    (ctx, args) => {
+      const exists = ctx.folder.programs.some((p) => p.id === args.programId)
+      if (!exists) return fail(`Program not found: ${args.programId}`)
+      return ok(ctx, ops.deleteProgramFromFolder(ctx.folder, args.programId as string), 'Program deleted.')
+    }
+  ),
+
+  makeTool(
+    'project_set_active_program',
+    'Set the active program for tools that default to a single program context.',
+    'project',
+    [{ name: 'programId', type: 'string', description: 'Program id', required: true }],
+    (ctx, args) => {
+      const id = args.programId as string
+      if (!ctx.folder.programs.some((p) => p.id === id)) {
+        return fail(`Program not found: ${id}`)
+      }
+      return okRead({ ...ctx, activeProgramId: id }, 'Active program set.', { activeProgramId: id })
     }
   ),
 ]

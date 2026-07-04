@@ -10,6 +10,7 @@ import {
 import { KicadSymbol } from './KicadSymbol'
 import { ModuleDefinition } from '../modules/types'
 import type { ModuleRegistryEntry } from '../modules/registry'
+import { isNPinConnectorModule } from '../modules/connectors/buildConnectorDefinition'
 
 interface ComponentPaletteProps {
   selectedModule: ModuleDefinition | null
@@ -44,11 +45,11 @@ function ModuleCard({
               <h3 className="truncate text-xs font-medium text-gray-900 dark:text-dark-text-primary">
                 {module.module}
               </h3>
-              {entry.type && (
+              {entry.type || isNPinConnectorModule(module) ? (
                 <div title="Configurable component">
                   <Settings className="h-3 w-3 shrink-0 text-blue-500" />
                 </div>
-              )}
+              ) : null}
             </div>
             <p className="line-clamp-2 text-[11px] leading-snug text-gray-400 dark:text-dark-text-muted">
               {module.description || 'No description'}

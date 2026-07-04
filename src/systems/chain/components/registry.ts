@@ -10,6 +10,7 @@ import { classifyTerminalPolarity, isConnectable, isGroundReference, isPositiveT
 import { parseNumericProperty, posKey } from '../utils'
 import { resolveLogicModule } from '../../../modules/logicModule'
 import { isDriverModule } from '../../../modules/drivers/logic'
+import { isConnectorModule } from '../../../modules/connectors/logic'
 
 function pairBidirectional(keys: string[]): InternalEdge[] {
   const edges: InternalEdge[] = []
@@ -129,6 +130,15 @@ export function getComponentConductivity(
       return []
     }
 
+    case 'RGBLED': {
+      const pos = byPolarity('positive')
+      const neg = byPolarity('negative')
+      if (!neg.length) return []
+      const edges: InternalEdge[] = []
+      for (const p of pos) edges.push(directedEdge(p, neg[0]))
+      return edges
+    }
+
     case 'ZenerDiode': {
       const anode = byType('ANODE')
       const cathode = byType('CATHODE')
@@ -143,14 +153,16 @@ export function getComponentConductivity(
       return []
     }
 
-    case 'NPNTransistor': {
+    case 'NPNTransistor':
+    case 'PNPTransistor': {
       const c = byType('COLLECTOR')
       const e = byType('EMITTER')
       if (c.length && e.length) return pairBidirectional([c[0], e[0]])
       return []
     }
 
-    case 'MOSFET': {
+    case 'MOSFET':
+    case 'PMOSFET': {
       const d = byType('DRAIN')
       const s = byType('SOURCE')
       if (d.length && s.length) return pairBidirectional([d[0], s[0]])
@@ -182,6 +194,7 @@ export function getComponentConductivity(
     case 'Buzzer':
     case 'Speaker':
     case 'Motor':
+    case 'StepperMotor':
     case 'Servo':
       return pairBidirectional(terminals.map((t) => t.key))
 
@@ -189,6 +202,7 @@ export function getComponentConductivity(
       return []
 
     default:
+      if (isConnectorModule(moduleType) || moduleType === 'NPinConnector') return []
       if (isDriverModule(moduleType)) return []
       return []
   }
@@ -206,6 +220,7 @@ const BIDIRECTIONAL_MODULES = new Set([
   'Buzzer',
   'Speaker',
   'Motor',
+  'StepperMotor',
   'Servo',
 ])
 
@@ -226,6 +241,19 @@ export function getComponentChainUnit(
     const neg = terminals.find((t) => t.polarity === 'negative')
     if (pos && neg) {
       return { componentId, moduleType, pinKeys: [pos.key, neg.key], bidirectional: false }
+    }
+  }
+
+  if (moduleType === 'RGBLED') {
+    const pos = terminals.filter((t) => t.polarity === 'positive')
+    const neg = terminals.find((t) => t.polarity === 'negative')
+    if (neg) {
+      return {
+        componentId,
+        moduleType,
+        pinKeys: [...pos.map((t) => t.key), neg.key],
+        bidirectional: false,
+      }
     }
   }
 

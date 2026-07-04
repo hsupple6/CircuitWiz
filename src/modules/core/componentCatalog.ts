@@ -21,6 +21,7 @@ export const COMPONENT_CATEGORIES = [
   { id: 'switches', label: 'Switches' },
   { id: 'output', label: 'Output' },
   { id: 'drivers', label: 'Drivers' },
+  { id: 'connectors', label: 'Connectors' },
   { id: 'sensors', label: 'Sensors' },
   { id: 'mechanical', label: 'Mechanical' },
   { id: 'test', label: 'Test & Debug' },

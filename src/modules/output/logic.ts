@@ -12,6 +12,15 @@ export const OUTPUT_ANCHOR_LOGIC: AnchorLogicProfile[] = [
     voltageFlow: 'output/voltageFlow/LED.tsx',
   },
   {
+    anchorId: 'RGBLED',
+    domain: 'output',
+    category: 'output',
+    kicadSymbol: 'Device/LED.kicad_sym',
+    outputModule: true,
+    chain: 'systems/chain/components/registry.ts → R/G/B→COM',
+    sim: 'systems/chain/solver/engine.ts → 3× LED stamp',
+  },
+  {
     anchorId: 'Motor',
     domain: 'output',
     category: 'output',
@@ -20,6 +29,15 @@ export const OUTPUT_ANCHOR_LOGIC: AnchorLogicProfile[] = [
     chain: 'systems/chain/components/registry.ts → all pins bidirectional',
     sim: 'systems/chain/solver/engine.ts → Motor load',
     voltageFlow: 'output/voltageFlow/Motor.tsx',
+  },
+  {
+    anchorId: 'StepperMotor',
+    domain: 'output',
+    category: 'output',
+    kicadSymbol: 'Motor/Motor_Stepper.kicad_sym',
+    outputModule: true,
+    chain: 'systems/chain/components/registry.ts → coil pins bidirectional',
+    sim: 'systems/chain/solver/engine.ts → coil load',
   },
   {
     anchorId: 'Buzzer',

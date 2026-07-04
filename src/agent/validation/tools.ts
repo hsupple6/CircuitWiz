@@ -15,7 +15,7 @@ export const validationAgentTools: AgentTool[] = [
         name: s.name,
         components: schematicOps.listComponents(s).length,
         wires: s.wires.length,
-        hasFirmware: !!s.arduinoProject,
+        hasProgramFlashes: !!s.programFlashes && Object.keys(s.programFlashes).length > 0,
         simulation: schematicOps.simulateSchematic(s).works,
         validation: schematicOps.validateSchematicConnections(s).valid,
       }))
@@ -25,6 +25,7 @@ export const validationAgentTools: AgentTool[] = [
         planSpaceBubbles: folder.planSpace.bubbles.length,
         schematics: schematicSummaries,
         documents: folder.documents.length,
+        programs: folder.programs.length,
         bom: folder.bom ? folder.bom.lineItems.length : 0,
         assembly: folder.assembly ? folder.assembly.checklist.length : 0,
       })

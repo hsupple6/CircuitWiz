@@ -168,7 +168,7 @@ export async function runAgentTurn(params: {
         continue
       }
 
-      const result = executeAgentTool(toolUse.name, projectContext, toolUse.input)
+      const result = await executeAgentTool(toolUse.name, projectContext, toolUse.input)
 
       if (
         toolUse.name === 'agent_load_tool_categories' &&
@@ -202,6 +202,12 @@ export async function runAgentTurn(params: {
         projectContext = {
           ...projectContext,
           activeDocumentId: result.activeDocumentId,
+        }
+      }
+      if (result.activeProgramId !== undefined) {
+        projectContext = {
+          ...projectContext,
+          activeProgramId: result.activeProgramId,
         }
       }
       if (result.uiAction) {

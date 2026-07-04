@@ -19,6 +19,8 @@ interface HoverStatsPanelProps {
   stats: HoverStats | null
   embedded?: boolean
   floating?: boolean
+  stacked?: boolean
+  onExpandedChange?: (expanded: boolean) => void
 }
 
 const METRIC_ACCENTS: Record<string, string> = {
@@ -182,26 +184,42 @@ function HoverStatsContent({
   )
 }
 
-export function HoverStatsPanel({ stats, embedded = false, floating = false }: HoverStatsPanelProps) {
+export function HoverStatsPanel({
+  stats,
+  embedded = false,
+  floating = false,
+  stacked = false,
+  onExpandedChange,
+}: HoverStatsPanelProps) {
   const [expanded, setExpanded] = useState(false)
   const [dockExpanded, setDockExpanded] = useState(false)
   const Icon = stats ? pickIcon(stats) : Activity
   const visible = stats !== null
 
+  const toggleExpanded = () => {
+    setExpanded((prev) => {
+      const next = !prev
+      onExpandedChange?.(next)
+      return next
+    })
+  }
+
   if (embedded || floating) {
     return (
       <aside
-        className={`live-monitor-panel flex w-full flex-col ${floating ? 'min-h-0 shrink-0' : ''}`}
+        className={`live-monitor-panel flex w-full flex-col ${
+          stacked ? 'h-full min-h-0 flex-1' : floating ? 'min-h-0 shrink-0' : ''
+        }`}
         aria-label="Live Monitor"
       >
         <div
           role="button"
           tabIndex={0}
-          onClick={() => setExpanded((prev) => !prev)}
+          onClick={toggleExpanded}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
-              setExpanded((prev) => !prev)
+              toggleExpanded()
             }
           }}
           className="flex w-full shrink-0 cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.03]"
@@ -237,7 +255,13 @@ export function HoverStatsPanel({ stats, embedded = false, floating = false }: H
         </div>
 
         {expanded && (
-          <div className="max-h-[min(28vh,240px)] overflow-y-auto border-t border-black/[0.06] px-4 py-3 dark:border-white/[0.06]">
+          <div
+            className={`border-t border-black/[0.06] px-4 py-3 dark:border-white/[0.06] ${
+              stacked
+                ? 'flex min-h-0 flex-1 flex-col overflow-y-auto'
+                : 'max-h-[min(28vh,240px)] overflow-y-auto'
+            }`}
+          >
             <HoverStatsContent stats={stats} embedded />
           </div>
         )}

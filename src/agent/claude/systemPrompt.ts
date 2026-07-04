@@ -21,8 +21,15 @@ Schematics
 - Use exact catalog module names from lookup results when placing (e.g. "Push Button" not PushButton, "Limit Switch", "Arduino Uno R3").
 - Place each part with schematic_place_component (one call per component). Start near layoutGuidelines.placementOrigin from schematic_get_state.
 - Wire with schematic_connect_pins using pin names from catalog_get_module or schematic_list_components.
+- Pick a colorId per wire when connecting (red for power/VCC, black for GND, distinct colors for separate signals). Colors auto-assign from pin type if omitted.
 - Don't claim a circuit is complete until components and wires exist.
 - Validate and simulate after building (schematic_validate, schematic_simulate).
+
+Programs (firmware)
+- Programs are project artifacts like documents — use project_create_program, then program_set_code to write sketches.
+- Call program_compile and wait for success before program_flash. Fix compile errors before flashing.
+- Flash with program_flash using the microcontroller componentId from schematic_list_components.
+- Typical load: project + program + schematic (+ catalog if placing parts).
 
 Product Suite
 - Open at most ONCE per project. If product_get_definition returns data, never call product_open_new_product_suite again.

@@ -1,6 +1,7 @@
 import type { WireConnection, WireSegment, ModuleDefinition } from '../modules/types'
 import { resolveLogicModule } from '../modules/logicModule'
 import type { ComponentState } from '../systems/ElectricalSystem'
+import { resolveLedModuleState } from '../systems/chain/ledDisplay'
 import { formatCapacitance } from '../components/CapacitanceSelector'
 import { formatInductance } from '../components/InductanceSelector'
 import { formatCurrent, formatPower, formatResistance, formatVoltage } from './electricalFormatting'
@@ -221,13 +222,14 @@ function buildComponentStats(
 
   switch (logicModule) {
     case 'LED': {
-      const forwardV = state?.forwardVoltage ?? getNumericProperty(cell.moduleDefinition?.properties, 'forwardVoltage', 2)
-      const anodeV = state?.inputVoltage ?? state?.outputVoltage ?? voltage
+      const ledState = resolveLedModuleState(componentId, componentStates) ?? state
+      const forwardV = ledState?.forwardVoltage ?? getNumericProperty(cell.moduleDefinition?.properties, 'forwardVoltage', 2)
+      const anodeV = ledState?.inputVoltage ?? ledState?.outputVoltage ?? voltage
+      const ledCurrent = ledState?.outputCurrent ?? current
       const isOn =
-        (state?.isOn ?? false) &&
-        anodeV > 0.01 &&
-        anodeV >= forwardV - 0.05 &&
-        current > 1e-6
+        (ledState?.isOn ?? false) &&
+        anodeV >= forwardV - 0.1 &&
+        ledCurrent > 1e-6
       const isPwm = state?.status === 'pwm'
       const color =
         (cell.moduleDefinition?.properties?.color as { default?: string } | string | undefined) &&
@@ -239,11 +241,30 @@ function buildComponentStats(
         : isOn
           ? { label: 'On', tone: 'active' }
           : { label: 'Off', tone: 'idle' }
-      if (state?.inputVoltage !== undefined) {
-        details.push({ label: 'Input', value: formatVoltage(state.inputVoltage), accent: 'voltage' })
+      metrics = primaryMetrics(anodeV, ledCurrent, ledState?.power ?? anodeV * ledCurrent)
+      if (ledState?.inputVoltage !== undefined) {
+        details.push({ label: 'Input', value: formatVoltage(ledState.inputVoltage), accent: 'voltage' })
       }
       details.push({ label: 'Forward drop', value: formatVoltage(forwardV), accent: 'info' })
       details.push({ label: 'Color', value: String(color), accent: 'info' })
+      break
+    }
+    case 'RGBLED': {
+      const channel = state?.ledChannel as string | undefined
+      const forwardV =
+        channel === 'R'
+          ? getNumericProperty(cell.moduleDefinition?.properties, 'forwardVoltageR', 2)
+          : channel === 'G'
+            ? getNumericProperty(cell.moduleDefinition?.properties, 'forwardVoltageG', 3)
+            : channel === 'B'
+              ? getNumericProperty(cell.moduleDefinition?.properties, 'forwardVoltageB', 3)
+              : 2
+      const isOn = (state?.isOn ?? false) && current > 1e-6
+      status = isOn
+        ? { label: channel ? `${channel} On` : 'On', tone: 'active' }
+        : { label: 'Off', tone: 'idle' }
+      details.push({ label: 'Channel', value: channel ?? 'RGB', accent: 'info' })
+      details.push({ label: 'Forward drop', value: formatVoltage(forwardV), accent: 'info' })
       break
     }
     case 'Resistor': {
@@ -315,7 +336,8 @@ function buildComponentStats(
       details.push({ label: 'Vz', value: formatVoltage(vz), accent: 'info' })
       break
     }
-    case 'NPNTransistor': {
+    case 'NPNTransistor':
+    case 'PNPTransistor': {
       const isOn = state?.isOn ?? state?.status === 'saturated'
       status = isOn ? { label: 'Saturated', tone: 'active' } : { label: 'Off', tone: 'idle' }
       details.push({
@@ -325,7 +347,8 @@ function buildComponentStats(
       })
       break
     }
-    case 'MOSFET': {
+    case 'MOSFET':
+    case 'PMOSFET': {
       const isOn = state?.isOn ?? state?.status === 'on'
       status = isOn ? { label: 'On', tone: 'active' } : { label: 'Off', tone: 'idle' }
       details.push({
@@ -392,6 +415,15 @@ function buildComponentStats(
       if (state?.backEMF !== undefined) {
         details.push({ label: 'Back EMF', value: formatVoltage(state.backEMF), accent: 'voltage' })
       }
+      break
+    }
+    case 'StepperMotor': {
+      const coilA = state?.stepperCoilA ?? state?.coilPair === 'A'
+      const coilB = state?.stepperCoilB ?? state?.coilPair === 'B'
+      const active = coilA || coilB
+      status = active ? { label: 'Stepping', tone: 'active' } : { label: 'Idle', tone: 'idle' }
+      details.push({ label: 'Coil A', value: coilA ? 'Energized' : 'Off', accent: coilA ? 'success' : 'idle' })
+      details.push({ label: 'Coil B', value: coilB ? 'Energized' : 'Off', accent: coilB ? 'success' : 'idle' })
       break
     }
     case 'PowerSupply': {

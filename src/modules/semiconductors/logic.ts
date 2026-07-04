@@ -34,6 +34,22 @@ export const SEMICONDUCTOR_ANCHOR_LOGIC: AnchorLogicProfile[] = [
     sim: 'systems/chain/solver/engine.ts → MOSFET stamp',
   },
   {
+    anchorId: 'PNPTransistor',
+    domain: 'semiconductors',
+    category: 'semiconductors',
+    kicadSymbol: 'Device/Q_PNP.kicad_sym',
+    chain: 'systems/chain/components/registry.ts → C↔E',
+    sim: 'systems/chain/solver/engine.ts → PNPTransistor stamp',
+  },
+  {
+    anchorId: 'PMOSFET',
+    domain: 'semiconductors',
+    category: 'semiconductors',
+    kicadSymbol: 'Device/Q_PMOS.kicad_sym',
+    chain: 'systems/chain/components/registry.ts → D↔S',
+    sim: 'systems/chain/solver/engine.ts → PMOSFET stamp',
+  },
+  {
     anchorId: 'OpAmp',
     domain: 'semiconductors',
     category: 'semiconductors',

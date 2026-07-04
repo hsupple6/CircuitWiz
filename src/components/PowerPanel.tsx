@@ -7,6 +7,8 @@ interface PowerPanelProps {
   gridData: GridCell[][]
   embedded?: boolean
   floating?: boolean
+  stacked?: boolean
+  onExpandedChange?: (expanded: boolean) => void
   onUpdatePowerSupply: (
     componentId: string,
     patch: { voltage: number; current: number }
@@ -21,6 +23,8 @@ export function PowerPanel({
   gridData,
   embedded = false,
   floating = false,
+  stacked = false,
+  onExpandedChange,
   onUpdatePowerSupply,
 }: PowerPanelProps) {
   const [isExpanded, setIsExpanded] = useState(false)
@@ -60,18 +64,30 @@ export function PowerPanel({
     onUpdatePowerSupply(selected.componentId, { voltage, current })
   }
 
-  const handleHeaderToggle = () => setIsExpanded((prev) => !prev)
+  const handleHeaderToggle = () => {
+    setIsExpanded((prev) => {
+      const next = !prev
+      onExpandedChange?.(next)
+      return next
+    })
+  }
 
   return (
     <aside
-      className={`power-panel flex w-full flex-col ${embedded || floating ? 'min-h-0 shrink-0' : ''}`}
+      className={`power-panel flex w-full flex-col ${
+        stacked ? 'h-full min-h-0 flex-1' : embedded || floating ? 'min-h-0 shrink-0' : ''
+      }`}
       aria-label="Power supplies"
     >
       <div
         className={`flex flex-col overflow-hidden ${
-          floating
+          stacked || floating ? 'h-full min-h-0 flex-1' : ''
+        } ${
+          floating && !stacked
             ? 'min-h-0'
-            : 'carbon-card border-primary-400/15 shadow-xl shadow-black/40 dark:bg-dark-card'
+            : !stacked
+              ? 'carbon-card border-primary-400/15 shadow-xl shadow-black/40 dark:bg-dark-card'
+              : ''
         }`}
       >
         <div
@@ -106,7 +122,13 @@ export function PowerPanel({
         </div>
 
         {isExpanded && (
-          <div className="border-t border-white/[0.06] px-4 py-3 space-y-3 max-h-[min(36vh,280px)] overflow-y-auto">
+          <div
+            className={`border-t border-white/[0.06] px-4 py-3 space-y-3 ${
+              stacked
+                ? 'flex min-h-0 flex-1 flex-col overflow-y-auto'
+                : 'max-h-[min(36vh,280px)] overflow-y-auto'
+            }`}
+          >
             {supplies.length === 0 ? (
               <p className="text-xs leading-relaxed text-zinc-500">
                 Place a Power Supply from the palette to configure voltage and current here.

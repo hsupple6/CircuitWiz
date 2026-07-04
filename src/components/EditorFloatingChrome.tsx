@@ -26,7 +26,7 @@ export function EditorFloatingChrome({
       <button
         type="button"
         onClick={onBack}
-        className="group/back absolute left-4 top-4 z-[60] flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium text-gray-800 dark:text-zinc-100"
+        className="group/back absolute left-4 top-4 z-workspace-chrome flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium text-gray-800 dark:text-zinc-100"
         aria-label={backLabel}
       >
         <span
@@ -38,7 +38,7 @@ export function EditorFloatingChrome({
       </button>
 
       <header
-        className={`group/header absolute left-1/2 top-4 z-50 inline-flex h-14 max-w-[calc(100%-2rem)] -translate-x-1/2 items-center rounded-full border border-gray-200/70 bg-white/92 px-4 shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-xl transition-[box-shadow,max-width] duration-300 ease-out hover:shadow-[0_12px_40px_rgba(0,0,0,0.14)] focus-within:shadow-[0_12px_40px_rgba(0,0,0,0.14)] dark:border-white/[0.08] dark:bg-zinc-950/88 dark:shadow-black/45 dark:hover:shadow-black/55 sm:max-w-[min(calc(100%-2rem),960px)] sm:px-5 ${className}`}
+        className={`group/header absolute left-1/2 top-4 z-workspace-chrome inline-flex h-14 max-w-[calc(100%-2rem)] -translate-x-1/2 items-center rounded-full border border-gray-200/70 bg-white/92 px-4 shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-xl transition-[box-shadow,max-width] duration-300 ease-out hover:shadow-[0_12px_40px_rgba(0,0,0,0.14)] focus-within:shadow-[0_12px_40px_rgba(0,0,0,0.14)] dark:border-white/[0.08] dark:bg-zinc-950/88 dark:shadow-black/45 dark:hover:shadow-black/55 sm:max-w-[min(calc(100%-2rem),960px)] sm:px-5 ${className}`}
       >
         <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
           <h1 className="truncate text-base font-semibold text-gray-900 dark:text-zinc-100 sm:max-w-[12rem] sm:text-lg lg:max-w-[16rem]">

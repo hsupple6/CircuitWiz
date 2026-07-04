@@ -16,6 +16,7 @@ import { ClaudeApiError } from '../agent/claude/types'
 import { runSwitchControlledLedPlacementTest } from '../agent/schematic/devTestCases'
 import { appendAgentDevLog } from '../services/agentDevLog'
 import { clearProductSuiteSession } from '../agent/product/operations'
+import { startMultiMicrocontrollerGPIO } from '../systems/ElectricalSystem'
 
 export type AgentRevealPhase = 'hidden' | 'header' | 'expanded'
 
@@ -42,6 +43,10 @@ interface AgentContextValue {
   setIsExpanded: (value: boolean | ((prev: boolean) => boolean)) => void
   toggleExpanded: () => void
   ensureExpanded: () => void
+  hideAgent: () => void
+  showAgentChrome: () => void
+  projectsAgentColumnOpen: boolean
+  setProjectsAgentColumnOpen: (open: boolean) => void
   chat: AgentChatEntry[]
   isLoading: boolean
   isStreaming: boolean
@@ -115,6 +120,7 @@ export function AgentProvider({
   const [error, setError] = useState<string | null>(null)
   const [productSuiteOpen, setProductSuiteOpen] = useState(false)
   const [productSuiteLoading, setProductSuiteLoading] = useState(false)
+  const [projectsAgentColumnOpen, setProjectsAgentColumnOpen] = useState(false)
 
   const claudeHistoryRef = useRef<ClaudeMessage[]>([])
   const abortRef = useRef<AbortController | null>(null)
@@ -126,15 +132,7 @@ export function AgentProvider({
   projectContextRef.current = projectContext
 
   useEffect(() => {
-    const headerTimer = window.setTimeout(() => setRevealPhase('header'), 80)
-    const expandTimer = window.setTimeout(() => {
-      setRevealPhase('expanded')
-      setIsExpanded(true)
-    }, 520)
-
     return () => {
-      window.clearTimeout(headerTimer)
-      window.clearTimeout(expandTimer)
       abortRef.current?.abort()
     }
   }, [])
@@ -147,6 +145,15 @@ export function AgentProvider({
   const ensureExpanded = useCallback(() => {
     setRevealPhase('expanded')
     setIsExpanded(true)
+  }, [])
+
+  const hideAgent = useCallback(() => {
+    setRevealPhase('hidden')
+    setIsExpanded(false)
+  }, [])
+
+  const showAgentChrome = useCallback(() => {
+    setRevealPhase('expanded')
   }, [])
 
   const openProductSuite = useCallback(() => {
@@ -297,6 +304,12 @@ export function AgentProvider({
         if (result.uiActions?.some((a: AgentUiAction) => a.type === 'open_product_suite')) {
           setProductSuiteOpen(true)
           setProductSuiteLoading(false)
+        }
+
+        for (const action of result.uiActions ?? []) {
+          if (action.type === 'flash_program') {
+            startMultiMicrocontrollerGPIO(action.componentId, action.code)
+          }
         }
 
         setChat((prev) => {
@@ -458,6 +471,10 @@ export function AgentProvider({
       setIsExpanded,
       toggleExpanded,
       ensureExpanded,
+      hideAgent,
+      showAgentChrome,
+      projectsAgentColumnOpen,
+      setProjectsAgentColumnOpen,
       chat,
       isLoading,
       isStreaming,
@@ -481,6 +498,9 @@ export function AgentProvider({
       isExpanded,
       toggleExpanded,
       ensureExpanded,
+      hideAgent,
+      showAgentChrome,
+      projectsAgentColumnOpen,
       chat,
       isLoading,
       isStreaming,

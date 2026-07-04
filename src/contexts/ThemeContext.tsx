@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { ACCENT_PRESETS, DEFAULT_ACCENT, applyAccentColor, normalizeAccentHex } from '../utils/accentColor'
 import {
   COLOR_MODE_STORAGE_KEY,
@@ -18,11 +18,35 @@ function loadInitialColorMode(): ColorMode {
   return parseColorMode(stored)
 }
 
-function applyDocumentColorMode(mode: ColorMode) {
-  document.documentElement.classList.toggle('dark', mode === 'dark')
-  localStorage.setItem(COLOR_MODE_STORAGE_KEY, mode)
-  localStorage.setItem(WIRE_COLOR_MODE_STORAGE_KEY, mode)
-  localStorage.setItem('theme', mode)
+const THEME_TRANSITION_MS = 500
+
+function applyDocumentColorMode(mode: ColorMode, animate = false) {
+  const root = document.documentElement
+  let transitionTimer: ReturnType<typeof setTimeout> | undefined
+
+  const apply = () => {
+    root.classList.toggle('dark', mode === 'dark')
+    localStorage.setItem(COLOR_MODE_STORAGE_KEY, mode)
+    localStorage.setItem(WIRE_COLOR_MODE_STORAGE_KEY, mode)
+    localStorage.setItem('theme', mode)
+  }
+
+  if (animate) {
+    root.classList.add('theme-transition')
+    apply()
+    transitionTimer = window.setTimeout(() => {
+      root.classList.remove('theme-transition')
+    }, THEME_TRANSITION_MS)
+  } else {
+    apply()
+  }
+
+  return () => {
+    if (transitionTimer !== undefined) {
+      window.clearTimeout(transitionTimer)
+      root.classList.remove('theme-transition')
+    }
+  }
 }
 
 interface ThemeContextType {
@@ -58,9 +82,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   })
 
   const isDark = colorMode === 'dark'
+  const isInitialColorMode = useRef(true)
 
   useEffect(() => {
-    applyDocumentColorMode(colorMode)
+    const cleanup = applyDocumentColorMode(colorMode, !isInitialColorMode.current)
+    isInitialColorMode.current = false
+    return cleanup
   }, [colorMode])
 
   useEffect(() => {

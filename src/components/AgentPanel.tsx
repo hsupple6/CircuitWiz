@@ -18,15 +18,18 @@ import {
   getAnthropicApiKeySetupHint,
 } from '../services/anthropicEnv'
 import { AgentDevPanel } from './AgentDevPanel'
+import { MarkdownPreview } from './MarkdownPreview'
 
 export function AgentPanel({
   embedded = false,
   floating = false,
+  docked = false,
   onHeaderToggle,
   className = '',
 }: {
   embedded?: boolean
   floating?: boolean
+  docked?: boolean
   onHeaderToggle?: () => void
   className?: string
 }) {
@@ -92,8 +95,8 @@ export function AgentPanel({
     }
   }
 
-  const showBody = revealPhase === 'expanded' && isExpanded
-  const headerVisible = revealPhase !== 'hidden'
+  const showBody = docked || (revealPhase === 'expanded' && isExpanded)
+  const headerVisible = !docked && revealPhase !== 'hidden'
   const hasRunningTool = chat.some((entry) => entry.role === 'tool' && entry.status === 'running')
 
   const handleHeaderToggle = () => {
@@ -113,7 +116,7 @@ export function AgentPanel({
     <aside
       className={`agent-panel flex min-h-0 w-full flex-col ${
         embedded || floating ? 'h-full flex-1 p-0' : 'h-full p-4'
-      } ${headerVisible ? 'agent-panel--visible' : ''} ${className}`}
+      } ${docked || headerVisible ? 'agent-panel--visible' : ''} ${className}`}
       aria-label="Carbon Agent"
     >
       <div
@@ -125,6 +128,7 @@ export function AgentPanel({
               }`
         }`}
       >
+        {!docked && (
         <div
           role="button"
           tabIndex={0}
@@ -163,9 +167,10 @@ export function AgentPanel({
             <ChevronDown className="h-4 w-4 shrink-0 text-zinc-500" />
           )}
         </div>
+        )}
 
         <div
-          className={`agent-panel-body min-h-0 flex-1 border-t border-white/[0.06] ${
+          className={`agent-panel-body min-h-0 flex-1 ${docked ? '' : 'border-t border-white/[0.06]'} ${
             showBody ? 'agent-panel-body--expanded' : ''
           }`}
         >
@@ -243,9 +248,15 @@ export function AgentPanel({
                           : 'mr-6 bg-carbon-elevated text-zinc-300'
                     }`}
                   >
-                    <span className="whitespace-pre-wrap break-words">{entry.text}</span>
-                    {entry.id === streamingMessageId && isStreaming && entry.role === 'assistant' && (
-                      <span className="agent-stream-cursor ml-0.5 inline-block text-primary-400" />
+                    {entry.role === 'assistant' ? (
+                      <>
+                        <MarkdownPreview content={entry.text} variant="agent" />
+                        {entry.id === streamingMessageId && isStreaming && (
+                          <span className="agent-stream-cursor ml-0.5 inline-block text-primary-400" />
+                        )}
+                      </>
+                    ) : (
+                      <span className="whitespace-pre-wrap break-words">{entry.text}</span>
                     )}
                   </div>
                 )

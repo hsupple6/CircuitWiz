@@ -1,0 +1,94 @@
+{
+  "module": "RGBLED",
+  "gridX": 5,
+  "gridY": 1,
+  "background": "#141414",
+  "css": "border-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.35);",
+  "category": "output",
+  "subcategory": "light",
+  "description": "Common-cathode RGB LED — independent R/G/B anodes, shared cathode",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "LED_POSITIVE",
+      "pin": "R",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "css": "border-radius: 2px 0 0 2px; border: 1px solid #333; border-right: none; background: linear-gradient(90deg, #c0c0c0 0%, #c0c0c0 50%, #141414 50%, #141414 100%);"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "LED_POSITIVE",
+      "pin": "G",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "css": "border: 1px solid #333; border-left: none; border-right: none; background: linear-gradient(90deg, #c0c0c0 0%, #c0c0c0 50%, #141414 50%, #141414 100%);"
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "type": "RGB_LED_BODY",
+      "pin": "",
+      "isConnectable": false,
+      "css": "border: 1px solid #333; border-left: none; border-right: none; background: linear-gradient(180deg, #222 0%, #141414 28%, #141414 100%);"
+    },
+    {
+      "x": 3,
+      "y": 0,
+      "type": "LED_POSITIVE",
+      "pin": "B",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "css": "border: 1px solid #333; border-left: none; border-right: none; background: linear-gradient(90deg, #c0c0c0 0%, #c0c0c0 50%, #141414 50%, #141414 100%);"
+    },
+    {
+      "x": 4,
+      "y": 0,
+      "type": "LED_NEGATIVE",
+      "pin": "COM",
+      "isConnectable": true,
+      "isPowerable": false,
+      "isGroundable": true,
+      "css": "border-radius: 0 2px 2px 0; border: 1px solid #333; border-left: none; background: linear-gradient(90deg, #141414 0%, #141414 50%, #c0c0c0 50%, #c0c0c0 100%);"
+    }
+  ],
+  "properties": {
+    "forwardVoltageR": {
+      "type": "number",
+      "default": 2.0,
+      "min": 1.5,
+      "max": 3.0,
+      "unit": "V",
+      "description": "Red channel forward voltage"
+    },
+    "forwardVoltageG": {
+      "type": "number",
+      "default": 3.0,
+      "min": 2.0,
+      "max": 4.0,
+      "unit": "V",
+      "description": "Green channel forward voltage"
+    },
+    "forwardVoltageB": {
+      "type": "number",
+      "default": 3.0,
+      "min": 2.0,
+      "max": 4.0,
+      "unit": "V",
+      "description": "Blue channel forward voltage"
+    },
+    "maxCurrent": {
+      "type": "number",
+      "default": 0.02,
+      "min": 0.005,
+      "max": 0.05,
+      "unit": "A",
+      "description": "Maximum forward current per channel"
+    }
+  }
+}

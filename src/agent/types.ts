@@ -35,6 +35,7 @@ export interface AgentProjectContext {
   folder: ProjectFolder
   activeSchematicId?: string | null
   activeDocumentId?: string | null
+  activeProgramId?: string | null
 }
 
 /** @deprecated Use AgentProjectContext */
@@ -42,6 +43,7 @@ export type AgentPlanSpaceContext = AgentProjectContext
 
 export type AgentUiAction =
   | { type: 'open_product_suite' }
+  | { type: 'flash_program'; schematicId: string; componentId: string; code: string }
 
 export interface AgentToolResult {
   success: boolean
@@ -52,12 +54,13 @@ export interface AgentToolResult {
   uiAction?: AgentUiAction
   activeSchematicId?: string | null
   activeDocumentId?: string | null
+  activeProgramId?: string | null
 }
 
 export type AgentToolHandler<TArgs = Record<string, unknown>> = (
   context: AgentProjectContext,
   args: TArgs
-) => AgentToolResult
+) => AgentToolResult | Promise<AgentToolResult>
 
 export interface AgentTool<TArgs = Record<string, unknown>> extends AgentToolSchema {
   execute: AgentToolHandler<TArgs>
@@ -90,7 +93,7 @@ export const PIPELINE_STAGE_TOOL_CATEGORIES: Record<PipelineStage, string[]> = {
   elicitation: ['requirements', 'product', 'document', 'plan_space', 'project'],
   system_design: ['plan_space', 'document', 'catalog', 'project'],
   schematic: ['schematic', 'catalog', 'validation', 'project'],
-  code_architecture: ['firmware', 'schematic', 'document', 'validation', 'project'],
+  code_architecture: ['program', 'schematic', 'document', 'validation', 'project'],
   bom: ['bom', 'catalog', 'schematic', 'project'],
-  assembly: ['assembly', 'document', 'firmware', 'validation', 'project'],
+  assembly: ['assembly', 'document', 'program', 'validation', 'project'],
 }

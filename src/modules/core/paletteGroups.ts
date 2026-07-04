@@ -11,6 +11,7 @@ export const PALETTE_SUBGROUPS: Record<string, Array<{ id: string; label: string
     { id: 'transistors', label: 'Transistors' },
   ],
   power: [{ id: 'batteries', label: 'Batteries' }],
+  connectors: [],
   drivers: [
     { id: 'stepper', label: 'Stepper' },
     { id: 'brushed', label: 'Brushed' },

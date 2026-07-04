@@ -133,10 +133,13 @@ export function propagateVoltages(ctx: PropagateContext): {
     const specialized = new Set([
       'Resistor',
       'LED',
+      'RGBLED',
       'Diode',
       'ZenerDiode',
       'NPNTransistor',
+      'PNPTransistor',
       'MOSFET',
+      'PMOSFET',
       'OpAmp',
       'BridgeRectifier',
       'Capacitor',

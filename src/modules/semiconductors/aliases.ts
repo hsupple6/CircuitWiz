@@ -82,6 +82,22 @@ export const semiconductorAliases: AliasSpec[] = [
     keywords: ['phototransistor', 'optical', 'sensor'],
   },
   {
+    name: '2N3906 PNP Transistor',
+    anchor: 'PNPTransistor',
+    category: 'semiconductors',
+    paletteGroup: 'transistors',
+    description: 'General-purpose PNP BJT (2N3906)',
+    keywords: ['2n3906', 'pnp', 'transistor'],
+  },
+  {
+    name: 'IRF9540 P-Channel MOSFET',
+    anchor: 'PMOSFET',
+    category: 'semiconductors',
+    paletteGroup: 'transistors',
+    description: 'P-channel power MOSFET (IRF9540)',
+    keywords: ['irf9540', 'pmos', 'p-channel', 'high-side'],
+  },
+  {
     name: 'Buffer Amplifier',
     anchor: 'OpAmp',
     category: 'semiconductors',

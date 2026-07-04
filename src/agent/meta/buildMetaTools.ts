@@ -108,7 +108,7 @@ export function buildMetaAgentTools(getTools: () => AgentTool[]): AgentTool[] {
 
     makeTool(
       'agent_load_tool_categories',
-      'Load one or more tool categories for this session. After loading, category tools become callable on the next step. Typical flows: schematic work → project + catalog + schematic; firmware → project + firmware + schematic.',
+      'Load one or more tool categories for this session. After loading, category tools become callable on the next step. Typical flows: schematic work → project + catalog + schematic; firmware → project + program + schematic.',
       AGENT_META_CATEGORY,
       [
         {

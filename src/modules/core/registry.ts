@@ -14,6 +14,7 @@ import { driverAnchors } from '../drivers/anchors'
 import { sensorAnchors } from '../sensors/index'
 import { microcontrollerAnchors } from '../microcontrollers/index'
 import { organizationAnchors } from '../organization/index'
+import { connectorAnchors } from '../connectors/index'
 
 export type { ModuleRegistryEntry } from './registryTypes'
 
@@ -27,6 +28,7 @@ export const baseModuleRegistry: Record<string, ModuleRegistryEntry> = {
   ...driverAnchors,
   ...sensorAnchors,
   ...organizationAnchors,
+  ...connectorAnchors,
 }
 
 export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
@@ -85,7 +87,9 @@ export const getCategories = (): string[] => {
 
 export const OUTPUT_MODULE_NAMES = new Set([
   'LED',
+  'RGBLED',
   'Motor',
+  'StepperMotor',
   'Buzzer',
   'Speaker',
   'Servo',
