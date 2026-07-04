@@ -1,0 +1,12 @@
+/**
+ * Style Lab — experimental schematic overrides on top of schematic.css.
+ * Scoped under .schematic-style-dev; uses !important to beat production defaults.
+ */
+
+.schematic-style-dev.schematic-workspace,
+.schematic-style-dev .schematic-workspace {
+  /* Override tokens here while experimenting, e.g.:
+  --schematic-bg: #0a0a0c;
+  --schematic-grid-line: rgb(var(--accent-glow) / 0.3);
+  */
+}

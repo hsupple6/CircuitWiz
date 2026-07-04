@@ -1,5 +1,7 @@
 // Module System Type Definitions
 
+import type { WireColorId } from '../../theme/colors'
+
 export interface ModuleGridCell {
   x: number
   y: number
@@ -134,6 +136,7 @@ export interface WireSegment {
   current: number
   power: number
   color: string
+  colorId?: WireColorId
   thickness: number
   gauge: number
   maxCurrent: number
@@ -152,6 +155,7 @@ export interface WireConnection {
   current: number
   power: number
   color: string
+  colorId?: WireColorId
   thickness: number
   gauge: number
   maxCurrent: number

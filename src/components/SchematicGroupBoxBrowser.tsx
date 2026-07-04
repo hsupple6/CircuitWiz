@@ -23,7 +23,7 @@ export function SchematicGroupBoxBrowser({
   const [expanded, setExpanded] = useState(true)
 
   return (
-    <div className="border-t border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface flex flex-col max-h-64">
+    <div className="border-t border-black/[0.06] bg-white dark:border-white/[0.06] dark:bg-carbon-card flex flex-col max-h-64 shrink-0">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}

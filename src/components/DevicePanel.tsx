@@ -17,6 +17,14 @@ import {
 } from '../systems/ElectricalSystem'
 import { crdtService } from '../services/CRDTService'
 import { formatCurrent, formatPower, formatVoltage } from '../utils/electricalFormatting'
+import { useTheme } from '../contexts/ThemeContext'
+import {
+  WIRE_COLORS,
+  getWireColorHex,
+  resolveWireStrokeColor,
+  wireColorPatch,
+  type WireColorId,
+} from '../theme/colors'
 import type { Program } from '../types/workspace'
 import { gpioPinNumber } from '../systems/chain/components/registry'
 
@@ -72,10 +80,12 @@ interface DevicePanelProps {
   onSimulationStateChange?: (state: SimulationState) => void
   onWiresChange?: (wires: WireConnection[]) => void
   embedded?: boolean
+  floating?: boolean
 }
 
-export function DevicePanel({ gridData, wires, componentStates, projectPrograms, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange, onWiresChange, embedded = false }: DevicePanelProps) {
-  const [isExpanded, setIsExpanded] = useState(!embedded)
+export function DevicePanel({ gridData, wires, componentStates, projectPrograms, onMicrocontrollerHighlight, onMicrocontrollerClick, onModalStateChange, onSimulationStateChange, onWiresChange, embedded = false, floating = false }: DevicePanelProps) {
+  const { wireColorMode } = useTheme()
+  const [isExpanded, setIsExpanded] = useState(!(embedded || floating))
   const [activeTab, setActiveTab] = useState<'microcontrollers' | 'wires' | 'simulation'>('microcontrollers')
   const [expandedMicrocontroller, setExpandedMicrocontroller] = useState<string | null>(null)
   const [showCodingModal, setShowCodingModal] = useState(false)
@@ -153,14 +163,39 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
   ]
 
   // Wire update functions
-  const updateWireColor = useCallback((wireId: string, newColor: string) => {
+  const updateWireColor = useCallback((wireId: string, colorId: WireColorId) => {
+    const patch = wireColorPatch(colorId, wireColorMode)
     const updatedWires = wires.map(wire => {
-      // Update the wire and all its children
       if (wire.id === wireId || wire.parentId === wireId || (wire.childIds && wire.childIds.includes(wireId))) {
-        return { 
-          ...wire, 
-          color: newColor, 
-          segments: wire.segments.map(segment => ({ ...segment, color: newColor })) 
+        return {
+          ...wire,
+          colorId: patch.colorId,
+          color: patch.color,
+          segments: wire.segments.map(segment => ({
+            ...segment,
+            colorId: patch.colorId,
+            color: patch.color,
+          })),
+        }
+      }
+      return wire
+    })
+    onWiresChange?.(updatedWires)
+    setEditingWireColor(null)
+  }, [wires, onWiresChange, wireColorMode])
+
+  const updateWireColorHex = useCallback((wireId: string, hex: string) => {
+    const updatedWires = wires.map(wire => {
+      if (wire.id === wireId || wire.parentId === wireId || (wire.childIds && wire.childIds.includes(wireId))) {
+        return {
+          ...wire,
+          colorId: undefined,
+          color: hex,
+          segments: wire.segments.map(segment => ({
+            ...segment,
+            colorId: undefined,
+            color: hex,
+          })),
         }
       }
       return wire
@@ -989,21 +1024,27 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
       {/* Main Panel */}
       <div
         className={
-          embedded
-            ? 'flex w-full flex-col overflow-hidden bg-carbon-card/80 dark:bg-dark-surface'
-            : 'absolute top-4 left-4 bg-white dark:bg-dark-surface rounded-lg shadow-lg border border-gray-200 dark:border-dark-border z-50 min-w-[300px] max-w-[400px]'
+          floating
+            ? 'flex min-h-0 w-full flex-col overflow-hidden'
+            : embedded
+              ? 'flex w-full flex-col overflow-hidden bg-white dark:bg-carbon-card/80 dark:bg-dark-surface'
+              : 'absolute top-4 left-4 bg-white dark:bg-dark-surface rounded-lg shadow-lg border border-gray-200 dark:border-dark-border z-50 min-w-[300px] max-w-[400px]'
         }
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-white/[0.03] dark:hover:bg-dark-card transition-colors shrink-0"
+          className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-card transition-colors shrink-0"
           onClick={() => setIsExpanded(!isExpanded)}
         >
           <div className="flex items-center gap-2">
             <Cpu className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             <span className="font-medium text-sm text-gray-900 dark:text-dark-text-primary">Device Panel</span>
           </div>
-          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          {isExpanded ? (
+            <ChevronDown className="w-4 h-4 text-gray-500 dark:text-zinc-400" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-gray-500 dark:text-zinc-400" />
+          )}
         </div>
 
         {isExpanded && (
@@ -1546,7 +1587,7 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                                 className={`w-4 h-4 rounded cursor-pointer hover:scale-125 transition-transform border-2 ${
                                   editingWireColor === wire.id ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'
                                 }`}
-                                style={{ backgroundColor: wire.color }}
+                                style={{ backgroundColor: resolveWireStrokeColor(wire, wireColorMode) }}
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   e.preventDefault()
@@ -1623,27 +1664,16 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                               <div className="text-xs font-medium mb-2">Choose Wire Color:</div>
                               
                               {/* Predefined colors */}
-                              <div className="grid grid-cols-5 gap-1 mb-3">
-                                {[
-                                  { name: 'White', color: '#ffffff' },
-                                  { name: 'Brown', color: '#8B4513' },
-                                  { name: 'Black', color: '#000000' },
-                                  { name: 'Red', color: '#ff0000' },
-                                  { name: 'Orange', color: '#ff8800' },
-                                  { name: 'Yellow', color: '#ffff00' },
-                                  { name: 'Green', color: '#00ff00' },
-                                  { name: 'Blue', color: '#0000ff' },
-                                  { name: 'Purple', color: '#8800ff' },
-                                  { name: 'Pink', color: '#ff00ff' }
-                                ].map(({ name, color }) => (
+                              <div className="grid grid-cols-4 gap-1 mb-3">
+                                {WIRE_COLORS.map((def) => (
                                   <div
-                                    key={color}
+                                    key={def.id}
                                     className="w-6 h-6 rounded cursor-pointer border-2 border-gray-300 hover:scale-110 transition-transform"
-                                    style={{ backgroundColor: color }}
-                                    title={name}
+                                    style={{ backgroundColor: getWireColorHex(def.id, wireColorMode) }}
+                                    title={def.name}
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      updateWireColor(wire.id, color)
+                                      updateWireColor(wire.id, def.id)
                                     }}
                                   />
                                 ))}
@@ -1662,7 +1692,7 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                                       if (e.key === 'Enter') {
                                         const hexValue = (e.target as HTMLInputElement).value
                                         if (/^#[0-9A-Fa-f]{6}$/.test(hexValue)) {
-                                          updateWireColor(wire.id, hexValue)
+                                          updateWireColorHex(wire.id, hexValue)
                                         }
                                       }
                                     }}
@@ -1674,7 +1704,7 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                                       const input = (e.target as HTMLElement).parentElement?.querySelector('input') as HTMLInputElement
                                       const hexValue = input.value
                                       if (/^#[0-9A-Fa-f]{6}$/.test(hexValue)) {
-                                        updateWireColor(wire.id, hexValue)
+                                        updateWireColorHex(wire.id, hexValue)
                                       }
                                     }}
                                   >

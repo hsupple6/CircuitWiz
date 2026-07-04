@@ -53,7 +53,7 @@
   }
 
   .carbon-card {
-    @apply rounded-xl border border-white/[0.06] bg-carbon-card/80 backdrop-blur-sm;
+    @apply rounded-xl border border-gray-200 bg-white/95 backdrop-blur-sm dark:border-white/[0.06] dark:bg-carbon-card/80;
   }
   
   .nav-item {
@@ -283,11 +283,9 @@
   @keyframes wirePulse {
     0% {
       opacity: 0.4;
-      filter: drop-shadow(0 0 8px #00ff00);
     }
     100% {
       opacity: 0.8;
-      filter: drop-shadow(0 0 16px #00ff00) drop-shadow(0 0 24px #00ff00);
     }
   }
   

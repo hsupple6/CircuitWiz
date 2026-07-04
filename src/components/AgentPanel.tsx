@@ -21,10 +21,12 @@ import { AgentDevPanel } from './AgentDevPanel'
 
 export function AgentPanel({
   embedded = false,
+  floating = false,
   onHeaderToggle,
   className = '',
 }: {
   embedded?: boolean
+  floating?: boolean
   onHeaderToggle?: () => void
   className?: string
 }) {
@@ -110,11 +112,19 @@ export function AgentPanel({
   return (
     <aside
       className={`agent-panel flex min-h-0 w-full flex-col ${
-        embedded ? 'h-full flex-1 p-0' : 'h-full p-4'
+        embedded || floating ? 'h-full flex-1 p-0' : 'h-full p-4'
       } ${headerVisible ? 'agent-panel--visible' : ''} ${className}`}
       aria-label="Carbon Agent"
     >
-      <div className={`carbon-card flex min-h-0 flex-col overflow-hidden border-primary-400/15 shadow-xl shadow-black/40 dark:bg-dark-card ${embedded && showBody ? 'h-full flex-1' : embedded ? '' : 'flex-1'}`}>
+      <div
+        className={`flex min-h-0 flex-col overflow-hidden ${
+          floating
+            ? 'h-full min-h-0'
+            : `carbon-card border-primary-400/15 shadow-xl shadow-black/40 dark:bg-dark-card ${
+                embedded && showBody ? 'h-full flex-1' : embedded ? '' : 'flex-1'
+              }`
+        }`}
+      >
         <div
           role="button"
           tabIndex={0}
@@ -132,8 +142,8 @@ export function AgentPanel({
             <Sparkles className="h-4 w-4 text-primary-400" />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold text-zinc-100">Carbon Agent</h2>
-            <p className="truncate text-xs text-zinc-500">{statusLabel}</p>
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-zinc-100">Carbon Agent</h2>
+            <p className="truncate text-xs text-gray-500 dark:text-zinc-500">{statusLabel}</p>
           </div>
           <button
             type="button"

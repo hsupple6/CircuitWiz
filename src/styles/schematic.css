@@ -1,0 +1,49 @@
+/**
+ * Production schematic workspace styling — shared by real projects and Style Lab.
+ */
+
+.schematic-workspace {
+  --schematic-bg: #ffffff;
+  --schematic-grid-line: rgba(107, 114, 128, 0.35);
+  --schematic-accent: var(--accent-hex);
+  --schematic-glow: rgb(var(--accent-glow) / 0.25);
+  background-color: var(--schematic-bg);
+}
+
+.dark .schematic-workspace {
+  --schematic-bg: #0a0a0c;
+  --schematic-grid-line: rgb(var(--accent-glow) / 0.22);
+  --schematic-glow: rgb(var(--accent-glow) / 0.35);
+}
+
+.schematic-workspace .schematic-grid-bg {
+  opacity: 0.55;
+  background-image:
+    linear-gradient(to right, var(--schematic-grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--schematic-grid-line) 1px, transparent 1px);
+}
+
+.schematic-workspace [data-grid-cell] > div {
+  border-radius: 6px;
+  outline: 1px solid rgb(var(--accent-glow) / 0.08);
+}
+
+.schematic-workspace [data-grid-cell] span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  color: var(--schematic-accent);
+  text-shadow: 0 0 8px var(--schematic-glow);
+}
+
+.schematic-workspace .kicad-symbol svg {
+  filter: drop-shadow(0 0 6px var(--schematic-glow));
+}
+
+.schematic-workspace .kicad-symbol svg path,
+.schematic-workspace .kicad-symbol svg line,
+.schematic-workspace .kicad-symbol svg polyline,
+.schematic-workspace .kicad-symbol svg rect,
+.schematic-workspace .kicad-symbol svg circle {
+  stroke: var(--schematic-accent);
+}

@@ -14,6 +14,7 @@ import {
   FolderOpen,
   Pencil,
   Tag,
+  Paintbrush,
 } from 'lucide-react'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -22,11 +23,9 @@ import { AppearancePanel } from './components/AppearancePanel'
 import { AgentDevPanel, AgentDevToggle } from './components/AgentDevPanel'
 import { AgentProvider } from './contexts/AgentContext'
 import { ProductSuiteHost } from './components/ProductSuiteHost'
-import { RightWorkspaceRail } from './components/RightWorkspaceRail'
 import { CarbonLogo } from './components/CarbonLogo'
 import { ProjectGrid } from './components/ProjectGrid'
-import { ComponentPalette } from './components/ComponentPalette'
-import { SchematicGroupBoxBrowser } from './components/SchematicGroupBoxBrowser'
+import { ComponentsFloatingPanel } from './components/ComponentsFloatingPanel'
 import { ProjectPreview } from './components/ProjectPreview'
 import { ProjectFolderView } from './components/ProjectFolderView'
 import { DocumentEditor } from './components/DocumentEditor'
@@ -36,8 +35,7 @@ import { ResistanceSelector } from './components/ResistanceSelector'
 import { CapacitanceSelector } from './components/CapacitanceSelector'
 import { InductanceSelector } from './components/InductanceSelector'
 import { ACSourceSelector } from './components/ACSourceSelector'
-import { HoverStatsPanel } from './components/HoverStatsPanel'
-import { ResizableSidebar } from './components/ResizableSidebar'
+import { EditorFloatingChrome } from './components/EditorFloatingChrome'
 import type { HoverStats } from './utils/hoverStats'
 import type { ComponentState } from './systems/ElectricalSystem'
 import { ModuleDefinition } from './modules/types'
@@ -64,6 +62,11 @@ import {
   createLocalProjectFolder,
 } from './services/localProjectStorage'
 import { ensureExamplesProject, hasExamplesProject } from './examples/examplesProject'
+import {
+  loadStyleDevSchematic,
+  resetStyleDevSchematic,
+  saveStyleDevSchematic,
+} from './services/styleDevStorage'
 
 interface SaveStatusProps {
   isSaving: boolean
@@ -167,6 +170,7 @@ function AppContent() {
   const [labelMode, setLabelMode] = useState(false)
   const [labels, setLabels] = useState<SchematicCellLabel[]>([])
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null)
+  const [workspaceOverlay, setWorkspaceOverlay] = useState<HTMLDivElement | null>(null)
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean
@@ -182,6 +186,7 @@ function AppContent() {
     hasUnsavedChanges: false,
   })
   const [agentDevOpen, setAgentDevOpen] = useState(false)
+  const [styleDevSchematic, setStyleDevSchematic] = useState<Schematic | null>(null)
   const [, setLastSavedState] = useState<Record<string, unknown> | null>(null)
 
   const selectedSchematic = useMemo(() => {
@@ -219,7 +224,7 @@ function AppContent() {
   }, [projectFolders, searchQuery])
 
   const handleZoomIn = useCallback(() => setZoom((z) => Math.min(z + 0.1, 3)), [])
-  const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z - 0.1, 0.25)), [])
+  const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z - 0.1, 0.6)), [])
   const handleZoomReset = useCallback(() => setZoom(1), [])
 
   const persistSession = useCallback((
@@ -275,6 +280,17 @@ function AppContent() {
     }
 
     if (!session) return
+
+    if (session.activeView === 'style-dev') {
+      const devSchematic = loadStyleDevSchematic()
+      setStyleDevSchematic(devSchematic)
+      setActiveView('style-dev')
+      setSelectedFolder(null)
+      setSelectedItemId(devSchematic.id)
+      setGroupBoxes(devSchematic.groupBoxes ?? [])
+      setLabels(devSchematic.labels ?? [])
+      return
+    }
 
     if (session.selectedFolderId) {
       const folder = folders.find((f) => f.id === session.selectedFolderId)
@@ -333,8 +349,96 @@ function AppContent() {
     setSelectedFolder(null)
     setSelectedItemId(null)
     setSelectedModule(null)
+    setStyleDevSchematic(null)
     persistSession(projectFolders, null, null, 'folders')
   }
+
+  const handleOpenStyleDev = () => {
+    const schematic = loadStyleDevSchematic()
+    setStyleDevSchematic(schematic)
+    setSelectedFolder(null)
+    setSelectedItemId(schematic.id)
+    setActiveView('style-dev')
+    setGroupBoxes(schematic.groupBoxes ?? [])
+    setLabels(schematic.labels ?? [])
+    setSelectedGroupBoxId(null)
+    setSelectedLabelId(null)
+    setSelectedModule(null)
+    setSaveStatus({ isSaving: false, lastSaved: new Date(), error: null, hasUnsavedChanges: false })
+    persistSession(projectFolders, null, schematic.id, 'style-dev')
+  }
+
+  const handleResetStyleDevLayout = () => {
+    const schematic = resetStyleDevSchematic()
+    setStyleDevSchematic(schematic)
+    setGroupBoxes(schematic.groupBoxes ?? [])
+    setLabels(schematic.labels ?? [])
+    setSaveStatus({ isSaving: false, lastSaved: new Date(), error: null, hasUnsavedChanges: false })
+  }
+
+  const handleStyleDevDataChange = useCallback(
+    (projectData: {
+      gridData?: unknown[][]
+      wires?: unknown[]
+      componentStates?: Record<string, unknown>
+      groupBoxes?: SchematicGroupBox[]
+      labels?: SchematicCellLabel[]
+      hasUnsavedChanges?: boolean
+      triggerUnsavedCheck?: boolean
+    }) => {
+      if (!styleDevSchematic) return
+
+      if (projectData.hasUnsavedChanges !== undefined) {
+        setSaveStatus((prev) => ({
+          ...prev,
+          hasUnsavedChanges: projectData.hasUnsavedChanges || false,
+        }))
+        if (projectData.hasUnsavedChanges) return
+      }
+      if (projectData.triggerUnsavedCheck) {
+        setSaveStatus((prev) => ({ ...prev, hasUnsavedChanges: true }))
+        return
+      }
+
+      try {
+        setSaveStatus({ isSaving: true, lastSaved: null, error: null, hasUnsavedChanges: false })
+
+        const occupiedComponents = projectData.gridData
+          ? extractOccupiedComponents(projectData.gridData as never)
+          : []
+
+        const updatedSchematic: Schematic = {
+          ...styleDevSchematic,
+          gridData: (projectData.gridData as Schematic['gridData']) || styleDevSchematic.gridData,
+          wires: (projectData.wires as Schematic['wires']) || styleDevSchematic.wires,
+          componentStates:
+            (projectData.componentStates as Schematic['componentStates']) ||
+            styleDevSchematic.componentStates,
+          groupBoxes: projectData.groupBoxes ?? styleDevSchematic.groupBoxes ?? [],
+          labels: projectData.labels ?? styleDevSchematic.labels ?? [],
+          occupiedComponents,
+          metadata: { ...styleDevSchematic.metadata, updatedAt: new Date().toISOString() },
+        }
+
+        saveStyleDevSchematic(updatedSchematic)
+        setStyleDevSchematic(updatedSchematic)
+        setSaveStatus({
+          isSaving: false,
+          lastSaved: new Date(),
+          error: null,
+          hasUnsavedChanges: false,
+        })
+      } catch {
+        setSaveStatus((prev) => ({
+          ...prev,
+          isSaving: false,
+          error: 'Save failed',
+          hasUnsavedChanges: true,
+        }))
+      }
+    },
+    [styleDevSchematic]
+  )
 
   const handleBackToFolder = () => {
     if (!selectedFolder) return
@@ -928,49 +1032,33 @@ function AppContent() {
 
   const wrapWorkspaceLayout = (
     content: React.ReactNode,
-    options?: { carbonHeader?: React.ReactNode; showDevicePanel?: boolean; showPowerPanel?: boolean }
+    options?: { carbonHeader?: React.ReactNode }
   ) =>
     options?.carbonHeader ? (
-      <div className="grid h-screen grid-rows-[auto_1fr] overflow-hidden bg-black">
+      <div className="grid h-screen grid-rows-[auto_1fr] overflow-hidden bg-gray-50 dark:bg-black">
         {options.carbonHeader}
-        <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            {content}
-          </div>
-          <RightWorkspaceRail
-            showDevicePanel={options.showDevicePanel}
-            showPowerPanel={options.showPowerPanel}
-          />
-        </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{content}</div>
       </div>
     ) : (
-      <div className="flex h-screen overflow-hidden">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{content}</div>
-        <RightWorkspaceRail
-          showDevicePanel={options?.showDevicePanel}
-          showPowerPanel={options?.showPowerPanel}
-        />
-      </div>
+      <div className="flex h-screen flex-col overflow-hidden">{content}</div>
     )
 
   let workspaceContent: React.ReactNode
   let carbonHeader: React.ReactNode | undefined
-  let showDevicePanel = false
-  let showPowerPanel = false
 
   const editorTopBar = (title: string, backLabel: string, onBack: () => void, showSave = false) => (
-    <div className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-white/[0.06] bg-black px-4">
+    <div className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-gray-200 bg-white px-4 dark:border-white/[0.06] dark:bg-black">
       <div className="flex items-center gap-4">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 text-zinc-400 hover:text-primary-300 transition-colors"
+          className="flex items-center gap-2 text-gray-600 transition-colors hover:text-primary-600 dark:text-zinc-400 dark:hover:text-primary-300"
         >
           <ArrowLeft className="h-5 w-5" />
           {backLabel}
         </button>
-        <div className="h-6 w-px bg-white/10" />
+        <div className="h-6 w-px bg-gray-200 dark:bg-white/10" />
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold text-zinc-100">{title}</h1>
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-zinc-100">{title}</h1>
           {showSave && (
             <SaveStatus
               isSaving={saveStatus.isSaving}
@@ -1006,12 +1094,39 @@ function AppContent() {
               Label
             </button>
             <div className="h-6 w-px bg-white/10" />
-            <div className="text-sm text-zinc-500 font-mono truncate max-w-[240px]">
+            <div className="text-sm text-gray-500 dark:text-zinc-500 font-mono truncate max-w-[240px]">
               {hoverStats
                 ? `${hoverStats.title}${hoverStats.status ? ` · ${hoverStats.status.label}` : ''}`
                 : hoveredPosition
                   ? `(${hoveredPosition.x}, ${hoveredPosition.y})`
                   : 'Hover for live stats'}
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={handleZoomOut} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-secondary" title="Zoom Out">
+                <ZoomOut className="h-5 w-5" />
+              </button>
+              <span className="text-sm text-gray-500 min-w-[3rem] text-center">{Math.round(zoom * 100)}%</span>
+              <button onClick={handleZoomIn} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-secondary" title="Zoom In">
+                <ZoomIn className="h-5 w-5" />
+              </button>
+              <button onClick={handleZoomReset} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-secondary" title="Reset Zoom">
+                <Maximize2 className="h-5 w-5" />
+              </button>
+            </div>
+          </>
+        )}
+        {activeView === 'style-dev' && (
+          <>
+            <button
+              type="button"
+              onClick={handleResetStyleDevLayout}
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 transition-colors hover:border-primary-400/50 hover:text-primary-700 dark:border-white/[0.1] dark:text-zinc-400 dark:hover:border-primary-400/30 dark:hover:text-primary-300"
+            >
+              Reset layout
+            </button>
+            <div className="h-6 w-px bg-white/10" />
+            <div className="text-sm text-gray-500 dark:text-zinc-500 font-mono truncate max-w-[240px]">
+              {hoveredPosition ? `(${hoveredPosition.x}, ${hoveredPosition.y})` : 'Style Lab sandbox'}
             </div>
             <div className="flex items-center gap-2">
               <button onClick={handleZoomOut} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-secondary" title="Zoom Out">
@@ -1041,73 +1156,252 @@ function AppContent() {
     </div>
   )
 
-  // Schematic editor
-  if (activeView === 'schematic' && selectedFolder && selectedSchematic) {
-    showDevicePanel = true
-    showPowerPanel = true
+  const editorSaveStatus = (
+    <SaveStatus
+      isSaving={saveStatus.isSaving}
+      lastSaved={saveStatus.lastSaved}
+      error={saveStatus.error}
+      hasUnsavedChanges={saveStatus.hasUnsavedChanges}
+    />
+  )
 
+  const canvasEditorToolbar = (
+    <>
+      {activeView === 'schematic' && (
+        <>
+          <button
+            onClick={() => {
+              setLabelMode((prev) => {
+                const next = !prev
+                if (next) {
+                  setSelectedModule(null)
+                  setPassiveValueSelector(null)
+                }
+                return next
+              })
+            }}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
+              labelMode
+                ? 'bg-primary-500 text-white hover:bg-primary-600'
+                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-200'
+            }`}
+            title={labelMode ? 'Exit label mode' : 'Add labels to grid cells'}
+          >
+            <Tag className="h-4 w-4" />
+            <span className="hidden sm:inline">Label</span>
+          </button>
+          <div className="hidden h-5 w-px bg-gray-200 dark:bg-white/10 md:block" />
+          <div className="hidden text-sm text-gray-500 dark:text-zinc-500 font-mono truncate max-w-[200px] lg:block xl:max-w-[240px]">
+            {hoverStats
+              ? `${hoverStats.title}${hoverStats.status ? ` · ${hoverStats.status.label}` : ''}`
+              : hoveredPosition
+                ? `(${hoveredPosition.x}, ${hoveredPosition.y})`
+                : 'Hover for live stats'}
+          </div>
+          <div className="flex items-center gap-0.5 sm:gap-1">
+            <button onClick={handleZoomOut} className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-zinc-200" title="Zoom Out">
+              <ZoomOut className="h-4 w-4 sm:h-5 sm:w-5" />
+            </button>
+            <span className="min-w-[2.5rem] text-center text-xs text-gray-500 sm:min-w-[3rem] sm:text-sm">{Math.round(zoom * 100)}%</span>
+            <button onClick={handleZoomIn} className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-zinc-200" title="Zoom In">
+              <ZoomIn className="h-4 w-4 sm:h-5 sm:w-5" />
+            </button>
+            <button onClick={handleZoomReset} className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-zinc-200" title="Reset Zoom">
+              <Maximize2 className="h-4 w-4 sm:h-5 sm:w-5" />
+            </button>
+          </div>
+        </>
+      )}
+      {activeView === 'style-dev' && (
+        <>
+          <button
+            type="button"
+            onClick={handleResetStyleDevLayout}
+            className="rounded-full border border-gray-300/80 px-3 py-1.5 text-sm text-gray-600 transition-colors hover:border-primary-400/50 hover:bg-gray-50 hover:text-primary-700 dark:border-white/[0.12] dark:text-zinc-400 dark:hover:border-primary-400/30 dark:hover:bg-white/[0.04] dark:hover:text-primary-300"
+          >
+            Reset layout
+          </button>
+          <div className="hidden h-5 w-px bg-gray-200 dark:bg-white/10 md:block" />
+          <div className="hidden text-sm text-gray-500 dark:text-zinc-500 font-mono truncate max-w-[200px] md:block">
+            {hoveredPosition ? `(${hoveredPosition.x}, ${hoveredPosition.y})` : 'Style Lab sandbox'}
+          </div>
+          <div className="flex items-center gap-0.5 sm:gap-1">
+            <button onClick={handleZoomOut} className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-zinc-200" title="Zoom Out">
+              <ZoomOut className="h-4 w-4 sm:h-5 sm:w-5" />
+            </button>
+            <span className="min-w-[2.5rem] text-center text-xs text-gray-500 sm:min-w-[3rem] sm:text-sm">{Math.round(zoom * 100)}%</span>
+            <button onClick={handleZoomIn} className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-zinc-200" title="Zoom In">
+              <ZoomIn className="h-4 w-4 sm:h-5 sm:w-5" />
+            </button>
+            <button onClick={handleZoomReset} className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-zinc-200" title="Reset Zoom">
+              <Maximize2 className="h-4 w-4 sm:h-5 sm:w-5" />
+            </button>
+          </div>
+        </>
+      )}
+      <AppearancePanel />
+      <AgentDevToggle onClick={() => setAgentDevOpen(true)} />
+    </>
+  )
+
+  // Style Lab — isolated schematic for CSS experiments
+  if (activeView === 'style-dev' && styleDevSchematic) {
     workspaceContent = (
-      <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-dark-bg">
-        {editorTopBar(selectedSchematic.name, selectedFolder.name, handleBackToFolder, true)}
-        <div className="flex min-h-0 flex-1" data-resizable-row>
-          <ResizableSidebar defaultWidth={320} minWidth={220} maxWidthFraction={0.5}>
-            <ComponentPalette selectedModule={selectedModule} onModuleSelect={handleModuleSelect} />
-            <SchematicGroupBoxBrowser
-              groupBoxes={groupBoxes}
-              selectedId={selectedGroupBoxId}
-              onSelect={setSelectedGroupBoxId}
-              onUpdate={(id, patch) =>
-                setGroupBoxes((prev) => prev.map((box) => (box.id === id ? { ...box, ...patch } : box)))
-              }
-              onDelete={(id) => {
-                setGroupBoxes((prev) => prev.filter((box) => box.id !== id))
-                if (selectedGroupBoxId === id) setSelectedGroupBoxId(null)
-              }}
-              onFocus={(box) => setFocusGroupBoxRequest(box)}
-            />
-          </ResizableSidebar>
-          <div className="flex-1 overflow-hidden min-w-0">
-            <ProjectGrid
+      <div ref={setWorkspaceOverlay} className="relative flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
+        <div className="absolute inset-0 overflow-hidden">
+          <ProjectGrid
               project={{
-                id: 1,
-                name: selectedSchematic.name,
-                lastModified: selectedSchematic.metadata.updatedAt,
-                preview: selectedSchematic.description || '',
-                gridSize: selectedSchematic.metadata.gridSize,
+                id: 0,
+                name: styleDevSchematic.name,
+                lastModified: styleDevSchematic.metadata.updatedAt,
+                preview: styleDevSchematic.description || '',
+                gridSize: styleDevSchematic.metadata.gridSize,
               }}
               selectedModule={selectedModule}
               onModuleSelect={handleModuleSelect}
               onComponentStatesChange={setComponentStates}
-              initialGridData={selectedSchematic.gridData || []}
-              initialWires={selectedSchematic.wires || []}
-              initialComponentStates={selectedSchematic.componentStates || {}}
-              initialGroupBoxes={selectedSchematic.groupBoxes || []}
-              initialLabels={selectedSchematic.labels || []}
-              schematicUpdatedAt={selectedSchematic.metadata.updatedAt}
+              initialGridData={styleDevSchematic.gridData || []}
+              initialWires={styleDevSchematic.wires || []}
+              initialComponentStates={styleDevSchematic.componentStates || {}}
+              initialGroupBoxes={styleDevSchematic.groupBoxes || []}
+              initialLabels={styleDevSchematic.labels || []}
+              schematicUpdatedAt={styleDevSchematic.metadata.updatedAt}
               groupBoxes={groupBoxes}
               onGroupBoxesChange={setGroupBoxes}
               labels={labels}
               onLabelsChange={setLabels}
-              labelMode={labelMode}
-              onLabelModeChange={setLabelMode}
-              selectedLabelId={selectedLabelId}
-              onSelectedLabelIdChange={setSelectedLabelId}
-              selectedGroupBoxId={selectedGroupBoxId}
-              onSelectedGroupBoxIdChange={setSelectedGroupBoxId}
-              focusGroupBoxRequest={focusGroupBoxRequest}
-              onFocusGroupBoxHandled={() => setFocusGroupBoxRequest(null)}
-              projectId={selectedSchematic.id}
-              getAccessToken={getAccessToken}
-              onProjectDataChange={handleSchematicDataChange}
+              labelMode={false}
+              selectedLabelId={null}
+              selectedGroupBoxId={null}
+              projectId={styleDevSchematic.id}
+              onProjectDataChange={handleStyleDevDataChange}
               zoom={zoom}
               onZoomChange={setZoom}
               onHoveredPositionChange={setHoveredPosition}
-              onHoverStatsChange={setHoverStats}
-              projectPrograms={selectedFolder.programs}
+              styleDevMode
+              showWorkspacePanels
+              workspaceOverlay={workspaceOverlay}
             />
-          </div>
-          <HoverStatsPanel stats={hoverStats} />
         </div>
+
+        <EditorFloatingChrome
+          title="Style Lab"
+          backLabel="Your Projects"
+          onBack={handleBackToFolders}
+          showSave
+          saveStatus={editorSaveStatus}
+          toolbar={canvasEditorToolbar}
+        />
+
+        <ComponentsFloatingPanel
+          selectedModule={selectedModule}
+          onModuleSelect={handleModuleSelect}
+        />
+        {passiveValueSelector && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-dark-surface rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4">
+                {passiveValueSelectorTitle(passiveValueSelector, selectedModule?.module)}
+              </h3>
+              {passiveValueSelector === 'resistor' && (
+                <ResistanceSelector currentResistance={selectedResistance} onResistanceChange={handleResistanceSelect} onClose={() => setPassiveValueSelector(null)} />
+              )}
+              {passiveValueSelector === 'capacitor' && (
+                <CapacitanceSelector currentCapacitance={selectedCapacitance} onCapacitanceChange={handleCapacitanceSelect} onClose={() => setPassiveValueSelector(null)} />
+              )}
+              {passiveValueSelector === 'inductor' && (
+                <InductanceSelector currentInductance={selectedInductance} onInductanceChange={handleInductanceSelect} onClose={() => setPassiveValueSelector(null)} />
+              )}
+              {passiveValueSelector === 'ac' && (
+                <ACSourceSelector
+                  currentSettings={{
+                    vrms: selectedACVrms,
+                    frequency: selectedACFrequency,
+                    waveform: selectedACWaveform,
+                  }}
+                  onApply={({ vrms, frequency, waveform }) =>
+                    handleACSourceSelect(vrms, frequency, waveform)
+                  }
+                  onClose={() => setPassiveValueSelector(null)}
+                />
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  } else if (activeView === 'schematic' && selectedFolder && selectedSchematic) {
+    workspaceContent = (
+      <div ref={setWorkspaceOverlay} className="relative flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
+        <div className="absolute inset-0 overflow-hidden">
+          <ProjectGrid
+            project={{
+              id: 1,
+              name: selectedSchematic.name,
+              lastModified: selectedSchematic.metadata.updatedAt,
+              preview: selectedSchematic.description || '',
+              gridSize: selectedSchematic.metadata.gridSize,
+            }}
+            selectedModule={selectedModule}
+            onModuleSelect={handleModuleSelect}
+            onComponentStatesChange={setComponentStates}
+            initialGridData={selectedSchematic.gridData || []}
+            initialWires={selectedSchematic.wires || []}
+            initialComponentStates={selectedSchematic.componentStates || {}}
+            initialGroupBoxes={selectedSchematic.groupBoxes || []}
+            initialLabels={selectedSchematic.labels || []}
+            schematicUpdatedAt={selectedSchematic.metadata.updatedAt}
+            groupBoxes={groupBoxes}
+            onGroupBoxesChange={setGroupBoxes}
+            labels={labels}
+            onLabelsChange={setLabels}
+            labelMode={labelMode}
+            onLabelModeChange={setLabelMode}
+            selectedLabelId={selectedLabelId}
+            onSelectedLabelIdChange={setSelectedLabelId}
+            selectedGroupBoxId={selectedGroupBoxId}
+            onSelectedGroupBoxIdChange={setSelectedGroupBoxId}
+            focusGroupBoxRequest={focusGroupBoxRequest}
+            onFocusGroupBoxHandled={() => setFocusGroupBoxRequest(null)}
+            projectId={selectedSchematic.id}
+            getAccessToken={getAccessToken}
+            onProjectDataChange={handleSchematicDataChange}
+            zoom={zoom}
+            onZoomChange={setZoom}
+            onHoveredPositionChange={setHoveredPosition}
+            onHoverStatsChange={setHoverStats}
+            projectPrograms={selectedFolder.programs}
+            showWorkspacePanels
+            workspaceOverlay={workspaceOverlay}
+          />
+        </div>
+
+        <EditorFloatingChrome
+          title={selectedSchematic.name}
+          backLabel={selectedFolder.name}
+          onBack={handleBackToFolder}
+          showSave
+          saveStatus={editorSaveStatus}
+          toolbar={canvasEditorToolbar}
+        />
+
+        <ComponentsFloatingPanel
+          selectedModule={selectedModule}
+          onModuleSelect={handleModuleSelect}
+          groupBoxBrowser={{
+            groupBoxes,
+            selectedId: selectedGroupBoxId,
+            onSelect: setSelectedGroupBoxId,
+            onUpdate: (id, patch) =>
+              setGroupBoxes((prev) => prev.map((box) => (box.id === id ? { ...box, ...patch } : box))),
+            onDelete: (id) => {
+              setGroupBoxes((prev) => prev.filter((box) => box.id !== id))
+              if (selectedGroupBoxId === id) setSelectedGroupBoxId(null)
+            },
+            onFocus: (box) => setFocusGroupBoxRequest(box),
+          }}
+        />
+
         {passiveValueSelector && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white dark:bg-dark-surface rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -1222,17 +1516,17 @@ function AppContent() {
     )
   } else {
     carbonHeader = (
-      <header className="flex shrink-0 items-center gap-x-4 bg-black px-4 py-3 sm:gap-x-6 sm:px-6">
+      <header className="flex shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 py-3 dark:border-white/[0.06] dark:bg-black sm:gap-x-6 sm:px-6">
         <CarbonLogo size="lg" />
         <div className="flex flex-1 items-center gap-x-4 lg:gap-x-6">
           <div className="relative ml-auto flex flex-1 max-w-xl">
-            <Search className="pointer-events-none absolute inset-y-0 left-0 h-full w-5 text-zinc-500 pl-3" />
+            <Search className="pointer-events-none absolute inset-y-0 left-0 h-full w-5 text-gray-400 pl-3 dark:text-zinc-500" />
             <input
               type="search"
               placeholder="Search projects..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="block h-10 w-full rounded-lg border border-white/[0.08] bg-carbon-surface py-0 pl-10 pr-4 text-sm text-zinc-100 placeholder-zinc-500 focus:border-primary-400/50 focus:outline-none focus:ring-1 focus:ring-primary-400/30"
+              className="block h-10 w-full rounded-lg border border-gray-200 bg-gray-50 py-0 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-primary-400/50 focus:outline-none focus:ring-1 focus:ring-primary-400/30 dark:border-white/[0.08] dark:bg-carbon-surface dark:text-zinc-100 dark:placeholder-zinc-500"
             />
           </div>
           <AppearancePanel />
@@ -1241,17 +1535,17 @@ function AppContent() {
     )
 
     workspaceContent = (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-carbon-matte">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-100 dark:bg-carbon-matte">
       <div
         className="pointer-events-none absolute -bottom-[45%] -right-[25%] h-[min(1100px,95vw)] w-[min(1100px,95vw)] rounded-full carbon-orb"
         aria-hidden
       />
 
       <div className="relative shrink-0 pt-8 pb-6">
-        <h1 className="px-4 text-3xl font-bold tracking-tight text-zinc-50 sm:px-6 sm:text-4xl lg:px-8">
+        <h1 className="px-4 text-3xl font-bold tracking-tight text-gray-900 dark:text-zinc-50 sm:px-6 sm:text-4xl lg:px-8">
           Your Projects
         </h1>
-        <p className="mt-3 max-w-2xl px-4 text-base text-zinc-400 sm:px-6 lg:px-8">
+        <p className="mt-3 max-w-2xl px-4 text-base text-gray-600 dark:text-zinc-400 sm:px-6 lg:px-8">
           Each project is a folder containing schematics, programs, documents, and a plan space
         </p>
       </div>
@@ -1263,9 +1557,26 @@ function AppContent() {
               onClick={handleCreateFolder}
             >
               <div className="flex h-48 flex-col items-center justify-center">
-                <Plus className="h-12 w-12 text-zinc-600 transition-colors group-hover:text-primary-400" />
-                <h3 className="mt-4 text-lg font-medium text-zinc-100">New Project</h3>
-                <p className="mt-2 text-center text-sm text-zinc-500">Create a new project folder</p>
+                <Plus className="h-12 w-12 text-gray-400 transition-colors group-hover:text-primary-500 dark:text-zinc-600 dark:group-hover:text-primary-400" />
+                <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-zinc-100">New Project</h3>
+                <p className="mt-2 text-center text-sm text-gray-500 dark:text-zinc-500">Create a new project folder</p>
+              </div>
+            </div>
+
+            <div
+              className="carbon-card group cursor-pointer overflow-hidden border-fuchsia-400/20 transition-all hover:border-fuchsia-400/40 hover:shadow-[0_0_40px_rgb(217,70,239/0.08)]"
+              onClick={handleOpenStyleDev}
+            >
+              <div className="relative flex h-48 flex-col items-center justify-center bg-gradient-to-br from-fuchsia-950/40 via-black to-cyan-950/30">
+                <div className="pointer-events-none absolute inset-0 opacity-40 carbon-rotate-ombre" aria-hidden />
+                <Paintbrush className="relative h-12 w-12 text-fuchsia-400 transition-transform group-hover:scale-110" />
+                <h3 className="relative mt-4 text-lg font-medium text-gray-900 dark:text-zinc-100">Style Lab</h3>
+                <p className="relative mt-2 max-w-[200px] text-center text-sm text-gray-500 dark:text-zinc-500">
+                  Dev sandbox — tweak schematic CSS with live overrides
+                </p>
+              </div>
+              <div className="border-t border-white/[0.06] px-4 py-3">
+                <span className="text-xs font-medium uppercase tracking-wider text-fuchsia-400/80">Dev</span>
               </div>
             </div>
 
@@ -1290,8 +1601,8 @@ function AppContent() {
                 <div className="relative mb-8 overflow-hidden rounded-2xl border border-white/[0.06] bg-carbon-card py-12 text-center">
                   <div className="pointer-events-none absolute -top-16 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full carbon-orb-sm" aria-hidden />
                   <CarbonLogo size="xl" className="mb-6 block mx-auto" />
-                  <h3 className="mb-2 text-2xl font-bold text-zinc-50">Welcome to Carbon</h3>
-                  <p className="mx-auto mb-6 max-w-md text-zinc-400">
+                  <h3 className="mb-2 text-2xl font-bold text-gray-900 dark:text-zinc-50">Welcome to Carbon</h3>
+                  <p className="mx-auto mb-6 max-w-md text-gray-600 dark:text-zinc-400">
                     Open the <strong className="text-primary-300">Examples</strong> folder for preset simulation test circuits, or create your own project.
                   </p>
                   <button
@@ -1303,7 +1614,7 @@ function AppContent() {
                   </button>
                 </div>
                 <div className="carbon-card rounded-xl p-6">
-                  <h4 className="mb-4 text-lg font-semibold text-zinc-100">Try These Sample Projects</h4>
+                  <h4 className="mb-4 text-lg font-semibold text-gray-900 dark:text-zinc-100">Try These Sample Projects</h4>
                   <div className="grid gap-4 md:grid-cols-2">
                     <SampleCard title="LED Blink Circuit" description="A simple circuit to blink an LED using Arduino" onClick={() => createSampleFolder('led-blink')} />
                     <SampleCard title="Temperature Sensor" description="Read temperature with a sensor and display on serial" onClick={() => createSampleFolder('temperature-sensor')} />
@@ -1322,7 +1633,7 @@ function AppContent() {
       projectContext={agentProjectContext}
       onProjectUpdate={handleAgentProjectUpdate}
     >
-      {wrapWorkspaceLayout(workspaceContent, { carbonHeader, showDevicePanel, showPowerPanel })}
+      {wrapWorkspaceLayout(workspaceContent, { carbonHeader })}
       <ProductSuiteHost onProjectUpdate={handleAgentProjectUpdate} />
       {deleteModal?.isOpen && (
         <DeleteModal modal={deleteModal} onClose={() => setDeleteModal(null)} onConfirm={confirmDelete} />
@@ -1334,10 +1645,10 @@ function AppContent() {
 
 function SampleCard({ title, description, onClick }: { title: string; description: string; onClick: () => void }) {
   return (
-    <div className="rounded-lg border border-white/[0.06] bg-carbon-surface p-4">
-      <h5 className="mb-2 font-medium text-zinc-100">{title}</h5>
-      <p className="mb-3 text-sm text-zinc-400">{description}</p>
-      <button onClick={onClick} className="text-sm font-medium text-primary-400 hover:text-primary-300">Try This Project →</button>
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-white/[0.06] dark:bg-carbon-surface">
+      <h5 className="mb-2 font-medium text-gray-900 dark:text-zinc-100">{title}</h5>
+      <p className="mb-3 text-sm text-gray-600 dark:text-zinc-400">{description}</p>
+      <button onClick={onClick} className="text-sm font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300">Try This Project →</button>
     </div>
   )
 }
@@ -1382,7 +1693,7 @@ function FolderCard({
 
   return (
     <div className="carbon-card group cursor-pointer overflow-hidden transition-all hover:border-primary-400/20 hover:shadow-[0_0_40px_rgb(var(--accent-glow)/0.06)]" onClick={onClick}>
-      <div className="relative h-48 overflow-hidden bg-carbon-surface">
+      <div className="relative h-48 overflow-hidden bg-gray-100 dark:bg-carbon-surface">
         <div className="pointer-events-none absolute -bottom-8 -right-8 h-32 w-32 rounded-full carbon-orb-sm" aria-hidden />
         {firstSchematic ? (
           <div className="absolute inset-0 opacity-20">
@@ -1400,7 +1711,7 @@ function FolderCard({
         >
           <Trash2 className="h-4 w-4" />
         </button>
-        <div className="absolute top-2 right-2 rounded bg-black/70 px-2 py-1 text-xs text-zinc-400 backdrop-blur-sm">
+        <div className="absolute top-2 right-2 rounded bg-white/90 px-2 py-1 text-xs text-gray-600 backdrop-blur-sm dark:bg-black/70 dark:text-zinc-400">
           {folder.schematics.length} schematic{folder.schematics.length !== 1 ? 's' : ''} · {folder.programs.length} program{folder.programs.length !== 1 ? 's' : ''} · {folder.documents.length} doc{folder.documents.length !== 1 ? 's' : ''}
         </div>
       </div>
@@ -1425,14 +1736,14 @@ function FolderCard({
                   setIsEditing(false)
                 }
               }}
-              className="min-w-0 flex-1 rounded border border-primary-400/40 bg-carbon-surface px-2 py-1 text-lg font-semibold text-zinc-100 outline-none focus:ring-1 focus:ring-primary-400/50"
+              className="min-w-0 flex-1 rounded border border-primary-400/40 bg-white px-2 py-1 text-lg font-semibold text-gray-900 outline-none focus:ring-1 focus:ring-primary-400/50 dark:bg-carbon-surface dark:text-zinc-100"
             />
           ) : (
-            <h3 className="min-w-0 flex-1 truncate text-lg font-semibold text-zinc-100">{folder.name}</h3>
+            <h3 className="min-w-0 flex-1 truncate text-lg font-semibold text-gray-900 dark:text-zinc-100">{folder.name}</h3>
           )}
           <button
             type="button"
-            className="shrink-0 rounded-md p-1.5 text-zinc-500 opacity-0 transition-all hover:bg-white/[0.06] hover:text-primary-400 group-hover:opacity-100"
+            className="shrink-0 rounded-md p-1.5 text-gray-500 opacity-0 transition-all hover:bg-gray-100 hover:text-primary-600 group-hover:opacity-100 dark:text-zinc-500 dark:hover:bg-white/[0.06] dark:hover:text-primary-400"
             onClick={(e) => {
               e.stopPropagation()
               setIsEditing(true)
@@ -1442,9 +1753,9 @@ function FolderCard({
             <Pencil className="h-4 w-4" />
           </button>
         </div>
-        <p className="mt-1 text-sm text-zinc-500">Last modified {formatDate(folder.metadata.updatedAt)}</p>
+        <p className="mt-1 text-sm text-gray-500 dark:text-zinc-500">Last modified {formatDate(folder.metadata.updatedAt)}</p>
         {folder.description && (
-          <p className="mt-2 line-clamp-2 text-sm text-zinc-400">{folder.description}</p>
+          <p className="mt-2 line-clamp-2 text-sm text-gray-600 dark:text-zinc-400">{folder.description}</p>
         )}
       </div>
     </div>

@@ -1,20 +1,55 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { ACCENT_PRESETS, DEFAULT_ACCENT, applyAccentColor, normalizeAccentHex } from '../utils/accentColor'
+import {
+  COLOR_MODE_STORAGE_KEY,
+  DEFAULT_COLOR_MODE,
+  WIRE_COLOR_MODE_STORAGE_KEY,
+  parseColorMode,
+  type ColorMode,
+} from '../theme/colors'
 
 const ACCENT_STORAGE_KEY = 'carbon-accent-color'
 
+function loadInitialColorMode(): ColorMode {
+  const stored =
+    localStorage.getItem(COLOR_MODE_STORAGE_KEY) ??
+    localStorage.getItem(WIRE_COLOR_MODE_STORAGE_KEY) ??
+    localStorage.getItem('theme')
+  return parseColorMode(stored)
+}
+
+function applyDocumentColorMode(mode: ColorMode) {
+  document.documentElement.classList.toggle('dark', mode === 'dark')
+  localStorage.setItem(COLOR_MODE_STORAGE_KEY, mode)
+  localStorage.setItem(WIRE_COLOR_MODE_STORAGE_KEY, mode)
+  localStorage.setItem('theme', mode)
+}
+
 interface ThemeContextType {
+  colorMode: ColorMode
   isDark: boolean
   accentColor: string
   accentPresets: typeof ACCENT_PRESETS
+  /** Wire palette variant — follows app color mode */
+  wireColorMode: ColorMode
+  setColorMode: (mode: ColorMode) => void
   setAccentColor: (hex: string) => void
   resetAccentColor: () => void
+  /** @deprecated Use setColorMode */
+  setWireColorMode: (mode: ColorMode) => void
+  resetColorMode: () => void
+  /** @deprecated Use resetColorMode */
+  resetWireColorMode: () => void
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [isDark] = useState(true)
+  const [colorMode, setColorModeState] = useState<ColorMode>(() => {
+    const mode = loadInitialColorMode()
+    applyDocumentColorMode(mode)
+    return mode
+  })
   const [accentColor, setAccentColorState] = useState(() => {
     const saved = localStorage.getItem(ACCENT_STORAGE_KEY)
     const initial = saved ? normalizeAccentHex(saved) : DEFAULT_ACCENT
@@ -22,15 +57,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return initial
   })
 
+  const isDark = colorMode === 'dark'
+
   useEffect(() => {
-    document.documentElement.classList.add('dark')
-    localStorage.setItem('theme', 'dark')
-  }, [])
+    applyDocumentColorMode(colorMode)
+  }, [colorMode])
 
   useEffect(() => {
     const normalized = applyAccentColor(accentColor)
     localStorage.setItem(ACCENT_STORAGE_KEY, normalized)
   }, [accentColor])
+
+  const setColorMode = (mode: ColorMode) => {
+    setColorModeState(mode)
+  }
 
   const setAccentColor = (hex: string) => {
     setAccentColorState(normalizeAccentHex(hex))
@@ -40,19 +80,28 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setAccentColorState(DEFAULT_ACCENT)
   }
 
-  return (
-    <ThemeContext.Provider
-      value={{
-        isDark,
-        accentColor,
-        accentPresets: ACCENT_PRESETS,
-        setAccentColor,
-        resetAccentColor,
-      }}
-    >
-      {children}
-    </ThemeContext.Provider>
+  const resetColorMode = () => {
+    setColorModeState(DEFAULT_COLOR_MODE)
+  }
+
+  const value = useMemo(
+    () => ({
+      colorMode,
+      isDark,
+      accentColor,
+      accentPresets: ACCENT_PRESETS,
+      wireColorMode: colorMode,
+      setColorMode,
+      setAccentColor,
+      resetAccentColor,
+      setWireColorMode: setColorMode,
+      resetColorMode,
+      resetWireColorMode: resetColorMode,
+    }),
+    [colorMode, isDark, accentColor]
   )
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
 
 export function useTheme() {

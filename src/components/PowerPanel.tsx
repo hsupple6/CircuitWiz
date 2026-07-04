@@ -6,6 +6,7 @@ import type { GridCell } from '../systems/ElectricalSystem'
 interface PowerPanelProps {
   gridData: GridCell[][]
   embedded?: boolean
+  floating?: boolean
   onUpdatePowerSupply: (
     componentId: string,
     patch: { voltage: number; current: number }
@@ -19,9 +20,10 @@ function formatModuleLabel(module: PlacedPowerSupply['module']): string {
 export function PowerPanel({
   gridData,
   embedded = false,
+  floating = false,
   onUpdatePowerSupply,
 }: PowerPanelProps) {
-  const [isExpanded, setIsExpanded] = useState(true)
+  const [isExpanded, setIsExpanded] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [voltageInput, setVoltageInput] = useState('5')
   const [currentInput, setCurrentInput] = useState('1')
@@ -62,10 +64,16 @@ export function PowerPanel({
 
   return (
     <aside
-      className={`power-panel flex w-full flex-col ${embedded ? 'shrink-0' : ''}`}
+      className={`power-panel flex w-full flex-col ${embedded || floating ? 'min-h-0 shrink-0' : ''}`}
       aria-label="Power supplies"
     >
-      <div className="carbon-card flex flex-col overflow-hidden border-primary-400/15 shadow-xl shadow-black/40 dark:bg-dark-card">
+      <div
+        className={`flex flex-col overflow-hidden ${
+          floating
+            ? 'min-h-0'
+            : 'carbon-card border-primary-400/15 shadow-xl shadow-black/40 dark:bg-dark-card'
+        }`}
+      >
         <div
           role="button"
           tabIndex={0}
@@ -83,8 +91,8 @@ export function PowerPanel({
             <Zap className="h-4 w-4 text-amber-400" />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold text-zinc-100">Power</h2>
-            <p className="truncate text-xs text-zinc-500">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-zinc-100">Power</h2>
+            <p className="truncate text-xs text-gray-500 dark:text-zinc-500">
               {supplies.length === 0
                 ? 'No power sources placed'
                 : `${supplies.length} source${supplies.length === 1 ? '' : 's'} on schematic`}

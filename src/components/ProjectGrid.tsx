@@ -4,14 +4,18 @@ import { ModuleDefinition, WireConnection, WireSegment, WiringState } from '../m
 import { GPIOState } from '../services/QEMUEmulatorReal'
 import { DynamicGPIOState } from '../services/DynamicGPIO'
 import { useTheme } from '../contexts/ThemeContext'
+import {
+  DEFAULT_WIRE_COLOR_ID,
+  resolveWireStrokeColor,
+  simulationWireColors,
+  wireColorPatch,
+  type WireColorId,
+} from '../theme/colors'
 import { useAgent } from '../contexts/AgentContext'
 import { calculateElectricalFlow, ComponentState } from '../systems/ElectricalSystem'
 import { ElectricalValidator } from './ElectricalValidator'
-import { DevicePanel } from './DevicePanel'
-import { PowerPanel } from './PowerPanel'
-import { DEVICE_PANEL_SLOT_ID, POWER_PANEL_SLOT_ID } from './VerticalSplitPane'
+import { WorkspaceFloatingPanels } from './WorkspaceFloatingPanels'
 import { ElectricalNotifications } from './ElectricalNotifications'
-import { CircuitTutorial } from './CircuitTutorial'
 import { logger } from '../services/Logger'
 import { crdtService } from '../services/CRDTService'
 import { getCRDTSaveService } from '../services/CRDTSaveService'
@@ -52,6 +56,8 @@ import {
 import { PowerSupplyLabelsLayer } from './PowerSupplyLabelsLayer'
 
 const GRID_PADDING = 4
+const MIN_ZOOM = 0.6
+const MAX_ZOOM = 3
 const DEFAULT_CELL_SIZE_PX = () => (window.innerWidth * 2.5) / 100
 /** Max schematic grid dimension — must exceed agent placement origin (≥50). */
 const GRID_MAX_SIZE = 200
@@ -120,6 +126,12 @@ interface ProjectGridProps {
   projectPrograms?: Program[]
   /** Bumps when schematic is updated externally (e.g. agent tools) — triggers grid resync. */
   schematicUpdatedAt?: string
+  /** Style Lab — wraps grid in .schematic-style-dev for CSS override experiments. */
+  styleDevMode?: boolean
+  /** Float device, power, and agent panels over the grid (full-width canvas). */
+  showWorkspacePanels?: boolean
+  /** Positioning root for floating panels — must match the workspace overlay used by ComponentPalette. */
+  workspaceOverlay?: HTMLElement | null
 }
 
 interface GridCell {
@@ -304,8 +316,11 @@ export function ProjectGrid({
   onSelectedLabelIdChange,
   projectPrograms,
   schematicUpdatedAt,
+  styleDevMode = false,
+  showWorkspacePanels = false,
+  workspaceOverlay = null,
 }: ProjectGridProps) {
-  const { isDark } = useTheme()
+  const { wireColorMode } = useTheme()
   const { isLoading: agentBusy } = useAgent()
   const gridRef = useRef<HTMLDivElement>(null)
   const gridLayerRef = useRef<HTMLDivElement>(null)
@@ -320,19 +335,29 @@ export function ProjectGrid({
     }
     return { width: 50, height: 50 }
   })
+  const [hoverStats, setHoverStats] = useState<HoverStats | null>(null)
   const [internalZoom, setInternalZoom] = useState(1)
   
   // Use external zoom if provided, otherwise use internal zoom
   const zoom = externalZoom !== undefined ? externalZoom : internalZoom
   
-  // Update zoom function that handles both internal and external zoom
   const updateZoom = useCallback((newZoom: number) => {
+    const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom))
     if (onZoomChange) {
-      onZoomChange(newZoom)
+      onZoomChange(clamped)
     } else {
-      setInternalZoom(newZoom)
+      setInternalZoom(clamped)
     }
   }, [onZoomChange])
+
+  const emitHoverStats = useCallback(
+    (stats: HoverStats | null) => {
+      setHoverStats(stats)
+      onHoverStatsChange?.(stats)
+    },
+    [onHoverStatsChange]
+  )
+
   const [gridData, setGridData] = useState<GridCell[][]>(() => {
     // Use initial data if provided, otherwise create empty grid
     if (initialGridData && initialGridData.length > 0) {
@@ -387,7 +412,6 @@ export function ProjectGrid({
   const [wirePreview, setWirePreview] = useState<Array<{ x: number; y: number }> | null>(null)
   const [snapToGrid] = useState(true) // Keep for internal logic but don't expose UI
   const [electricalValidations, setElectricalValidations] = useState<any[]>([])
-  const [showTutorial, setShowTutorial] = useState(false)
   const [hoveredTile, setHoveredTile] = useState<{ x: number; y: number; cell: GridCell | null } | null>(null)
   const [componentStates, setComponentStates] = useState<Map<string, ComponentState>>(() => {
     if (initialComponentStates) {
@@ -651,7 +675,6 @@ export function ProjectGrid({
     return { startX, endX, startY, endY }
   }, [gridOffset, zoom, gridSize.width, gridSize.height, cellSizePx])
 
-  const gridLineColor = isDark ? '#d1d5db' : '#9ca3af'
   const gridTransform = `scale(${zoom}) translate(${gridOffset.x + GRID_PADDING / zoom}px, ${gridOffset.y + GRID_PADDING / zoom}px)`
 
   const zoomToLastPlaced = useCallback(() => {
@@ -875,11 +898,11 @@ export function ProjectGrid({
       const zoomStep = 0.1
       
       if (delta < 0) {
-        const newZoom = Math.min(zoom + zoomStep, 3)
+        const newZoom = Math.min(zoom + zoomStep, MAX_ZOOM)
         zoomAtPoint(newZoom, e.clientX, e.clientY)
         expandGrid(newZoom)
       } else {
-        const newZoom = Math.max(zoom - zoomStep, 0.25)
+        const newZoom = Math.max(zoom - zoomStep, MIN_ZOOM)
         zoomAtPoint(newZoom, e.clientX, e.clientY)
         expandGrid(newZoom)
       }
@@ -921,7 +944,7 @@ export function ProjectGrid({
         const zoomStep = (scale - 1) * 0.5
         
         if (Math.abs(zoomStep) > 0.05) { // Only zoom if significant change
-          const newZoom = Math.max(0.25, Math.min(3, zoom + zoomStep))
+          const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom + zoomStep))
           const centerX = (touch1.clientX + touch2.clientX) / 2
           const centerY = (touch1.clientY + touch2.clientY) / 2
           zoomAtPoint(newZoom, centerX, centerY)
@@ -1121,12 +1144,12 @@ export function ProjectGrid({
       const cell = gridData[y]?.[x]
       setHoveredTile({ x, y, cell: cell || null })
       onHoveredPositionChange?.({ x, y })
-      onHoverStatsChange?.(buildHoverStats(x, y, gridData, wires, componentStates))
+      emitHoverStats(buildHoverStats(x, y, gridData, wires, componentStates))
     } else {
       setHoveredTile(null)
       setHoverState(null)
       onHoveredPositionChange?.(null)
-      onHoverStatsChange?.(null)
+      emitHoverStats(null)
     }
     
     // Handle delete mode hover
@@ -1155,7 +1178,7 @@ export function ProjectGrid({
       const currentSegments = [...wiringState.currentConnection.segments, { x: wireGridX, y: wireGridY }]
       setWirePreview(currentSegments)
     }
-  }, [selectedModule, wiringState, screenToGridCoords, deleteMode, gridData, gridSize.width, gridSize.height, wires, componentStates, onHoveredPositionChange, onHoverStatsChange])
+  }, [selectedModule, wiringState, screenToGridCoords, deleteMode, gridData, gridSize.width, gridSize.height, wires, componentStates, onHoveredPositionChange, emitHoverStats])
 
   // Handle clicking on connectable cells for wiring - removed (handled by grid click handler)
 
@@ -1553,6 +1576,7 @@ export function ProjectGrid({
           current: Math.max(...network.map(wire => wire.current)),
           power: network.reduce((sum, wire) => sum + wire.power, 0),
           color: parentWire.color, // Use parent wire's color
+          colorId: parentWire.colorId,
           thickness: parentWire.thickness,
           gauge: parentWire.gauge,
           maxCurrent: parentWire.maxCurrent,
@@ -1666,23 +1690,31 @@ export function ProjectGrid({
     })
 
     // Determine wire color and gauge from existing wires or use defaults
-    let wireColor = '#666666' // Default gray
+    let wireColorId: WireColorId | undefined = DEFAULT_WIRE_COLOR_ID
+    let wireColor = wireColorPatch(DEFAULT_WIRE_COLOR_ID, wireColorMode).color
     let wireGauge = 14 // Default 14 AWG
     let wireThickness = 3 // Default thickness
     
     // Inherit properties from existing wires if connecting to them
     if (startWire) {
-      wireColor = startWire.color
+      wireColorId = startWire.colorId ?? wireColorId
+      wireColor = resolveWireStrokeColor(startWire, wireColorMode)
       wireGauge = startWire.gauge
       wireThickness = startWire.thickness
     } else if (endWire) {
-      wireColor = endWire.color
+      wireColorId = endWire.colorId ?? wireColorId
+      wireColor = resolveWireStrokeColor(endWire, wireColorMode)
       wireGauge = endWire.gauge
       wireThickness = endWire.thickness
     } else {
-      // Use power/ground colors for component connections
-      wireColor = wireIsPowered ? '#00ff00' : wireIsGrounded ? '#ff0000' : '#666666'
-      // Default to 14 AWG wire
+      // Use palette colors for power/ground connections
+      if (wireIsPowered) {
+        wireColorId = 'green'
+        wireColor = wireColorPatch('green', wireColorMode).color
+      } else if (wireIsGrounded) {
+        wireColorId = 'red'
+        wireColor = wireColorPatch('red', wireColorMode).color
+      }
       wireGauge = 14
       wireThickness = 3
     }
@@ -1710,6 +1742,7 @@ export function ProjectGrid({
         current: wireCurrent,
         power: wireVoltage * wireCurrent,
         color: wireColor,
+        colorId: wireColorId,
         thickness: wireThickness,
         gauge: wireGauge,
         maxCurrent: 15, // Default for 14 AWG
@@ -1752,6 +1785,7 @@ export function ProjectGrid({
       current: wireCurrent,
       power: wireVoltage * wireCurrent,
       color: wireColor,
+      colorId: wireColorId,
       thickness: wireThickness,
       gauge: wireGauge,
       maxCurrent: 15, // Default for 14 AWG
@@ -1775,6 +1809,7 @@ export function ProjectGrid({
         current: wireCurrent,
         power: wireVoltage * wireCurrent,
         color: wireColor,
+        colorId: wireColorId,
         thickness: wireThickness,
         gauge: wireGauge,
         maxCurrent: 15, // Default for 14 AWG
@@ -2046,8 +2081,8 @@ export function ProjectGrid({
     setWirePreview(null)
     setHoveredTile(null)
     onHoveredPositionChange?.(null)
-    onHoverStatsChange?.(null)
-  }, [onHoveredPositionChange, onHoverStatsChange])
+    emitHoverStats(null)
+  }, [onHoveredPositionChange, emitHoverStats])
 
 
   // Handle ESC key to cancel wiring and close color picker
@@ -2221,6 +2256,8 @@ export function ProjectGrid({
 
   // Render wire segment
   const renderWireSegment = (segment: WireSegment, wireId: string) => {
+    const simColors = simulationWireColors(wireColorMode)
+    const baseStroke = resolveWireStrokeColor(segment, wireColorMode)
     const startX = segment.from.x * cellSizePx + cellSizePx / 2
     const startY = segment.from.y * cellSizePx + cellSizePx / 2
     const endX = segment.to.x * cellSizePx + cellSizePx / 2
@@ -2256,14 +2293,13 @@ export function ProjectGrid({
             y1={startY}
             x2={endX}
             y2={endY}
-            stroke="#00ff00"
+            stroke={simColors.active}
             strokeWidth={(segment.thickness || 3) + 2}
             strokeLinecap="round"
             className="pointer-events-none"
             style={{
-              filter: 'drop-shadow(0 0 12px #00ff00)',
               opacity: 0.6,
-              animation: 'wirePulse 1s ease-in-out infinite alternate'
+              animation: 'wirePulse 1s ease-in-out infinite alternate',
             }}
           />
         )}
@@ -2275,18 +2311,16 @@ export function ProjectGrid({
           x2={endX}
           y2={endY}
           stroke={
-            isWireActive ? '#00ff00' : // Bright green when active
-            isWireInactive ? '#666666' : // Gray when inactive
-            segment.color || '#666666' // Default color
+            isWireActive ? simColors.active :
+            isWireInactive ? simColors.inactive :
+            baseStroke
           }
           strokeWidth={segment.thickness || 3}
           strokeLinecap="round"
           className="cursor-pointer"
           style={{
-            filter: isWireActive ? 'drop-shadow(0 0 8px #00ff00) drop-shadow(0 0 16px #00ff00)' : 
-                   segment.isPowered ? 'drop-shadow(0 0 6px #00ff00)' : 'none',
             pointerEvents: 'stroke',
-            opacity: isWireInactive ? 0.3 : 1
+            opacity: isWireInactive ? 0.3 : 1,
           }}
           onClick={(e) => {
             e.stopPropagation()
@@ -2857,10 +2891,10 @@ const GridCell = React.memo(({
   )
 })
 
-  return (
+  const gridShell = (
     <div 
       ref={gridRef}
-      className={`relative w-full h-full overflow-hidden bg-gray-100 dark:bg-dark-bg ${
+      className={`schematic-workspace relative w-full h-full overflow-hidden ${
         isPanning ? 'cursor-grabbing' : 
         deleteMode ? 'cursor-pointer' :
         wiringState.isWiring ? 'cursor-crosshair' :
@@ -2884,11 +2918,6 @@ const GridCell = React.memo(({
         validations={electricalValidations}
         onDismiss={(id) => setElectricalValidations(prev => prev.filter(v => v.id !== id))}
       />
-      
-      {/* Tutorial Modal */}
-      {showTutorial && (
-        <CircuitTutorial onClose={() => setShowTutorial(false)} />
-      )}
       
       {/* Wire Layer */}
       <svg 
@@ -2984,16 +3013,12 @@ const GridCell = React.memo(({
       >
         {/* Grid background — shares the same transform + vw cell size as components */}
         <div
-          className="absolute opacity-30 pointer-events-none"
+          className="schematic-grid-bg absolute pointer-events-none"
           style={{
             left: '-500vw',
             top: '-500vw',
             width: '1000vw',
             height: '1000vw',
-            backgroundImage: `
-              linear-gradient(to right, ${gridLineColor} 1px, transparent 1px),
-              linear-gradient(to bottom, ${gridLineColor} 1px, transparent 1px)
-            `,
             backgroundSize: '2.5vw 2.5vw',
             backgroundRepeat: 'repeat',
           }}
@@ -3113,45 +3138,11 @@ const GridCell = React.memo(({
         )}
       </div>
 
-      {/* Device Panel — portaled into right rail when slot exists */}
-      {(() => {
-        const slot =
-          typeof document !== 'undefined' ? document.getElementById(DEVICE_PANEL_SLOT_ID) : null
-        const panel = (
-          <DevicePanel
-            embedded={Boolean(slot)}
-            gridData={gridData}
-            wires={wires}
-            componentStates={componentStates}
-            projectPrograms={projectPrograms}
-            onMicrocontrollerHighlight={setHighlightedMicrocontroller}
-            onMicrocontrollerClick={(microcontroller) => {
-              console.log('Microcontroller clicked:', microcontroller)
-            }}
-            onModalStateChange={setIsModalOpen}
-            onSimulationStateChange={setSimulationState}
-            onWiresChange={setWires}
-          />
-        )
-        return slot ? createPortal(panel, slot) : panel
-      })()}
-
-      {/* Power Panel — above agent in right rail */}
-      {(() => {
-        const slot =
-          typeof document !== 'undefined' ? document.getElementById(POWER_PANEL_SLOT_ID) : null
-        const panel = (
-          <PowerPanel
-            embedded={Boolean(slot)}
-            gridData={gridData}
-            onUpdatePowerSupply={handlePowerSupplyUpdate}
-          />
-        )
-        return slot ? createPortal(panel, slot) : null
-      })()}
-
-      {/* Control Buttons */}
-      <div className="absolute top-4 right-4 flex gap-2 z-[100]" data-control-buttons>
+      {/* Control Buttons — aligned with floating panel top (top-4) */}
+      <div
+        className={`absolute top-4 flex gap-2 z-[100] ${showWorkspacePanels ? 'right-[calc(min(360px,100%-1rem)+1rem)]' : 'right-4'}`}
+        data-control-buttons
+      >
         {/* Delete Mode Button */}
         <button
           onClick={toggleDeleteMode}
@@ -3165,30 +3156,65 @@ const GridCell = React.memo(({
           <Eraser className="h-4 w-4" />
           {deleteMode ? 'Exit Delete' : 'Delete'}
         </button>
-        
-        {/* Tutorial Button */}
-        <button
-          onClick={() => setShowTutorial(true)}
-          className="px-3 py-2 bg-green-500 text-white rounded-lg shadow-lg hover:bg-green-600 transition-colors text-sm"
-        >
-          📚 Tutorial
-        </button>
       </div>
 
-      {/* Zoom to last placed component */}
-      <button
-        onClick={zoomToLastPlaced}
-        disabled={!lastPlacedObject}
-        className={`absolute bottom-4 right-4 z-[100] p-3 rounded-lg shadow-lg transition-all bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 ${
-          lastPlacedObject ? 'hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer' : 'cursor-default'
-        }`}
-        style={{ opacity: lastPlacedObject ? 1 : 0.25 }}
-        title={lastPlacedObject ? 'Zoom to last placed component' : 'Place a component first'}
-        data-control-buttons
-      >
-        <Focus className="h-5 w-5" />
-      </button>
+      {!showWorkspacePanels && (
+        <button
+          onClick={zoomToLastPlaced}
+          disabled={!lastPlacedObject}
+          className={`absolute bottom-4 right-4 z-[100] rounded-lg border border-gray-200 bg-white p-3 shadow-lg transition-all dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 ${
+            lastPlacedObject
+              ? 'cursor-pointer text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+              : 'cursor-default text-gray-700 opacity-25'
+          }`}
+          title={lastPlacedObject ? 'Zoom to last placed component' : 'Place a component first'}
+          data-control-buttons
+        >
+          <Focus className="h-5 w-5" />
+        </button>
+      )}
 
     </div>
+  )
+
+  const workspaceFloatingPanels =
+    showWorkspacePanels && workspaceOverlay ? (
+      <WorkspaceFloatingPanels
+        gridData={gridData}
+        wires={wires}
+        componentStates={componentStates}
+        projectPrograms={projectPrograms}
+        onMicrocontrollerHighlight={setHighlightedMicrocontroller}
+        onModalStateChange={setIsModalOpen}
+        onSimulationStateChange={setSimulationState}
+        onWiresChange={setWires}
+        onUpdatePowerSupply={handlePowerSupplyUpdate}
+        onRecenter={zoomToLastPlaced}
+        recenterEnabled={!!lastPlacedObject}
+        hoverStats={hoverStats}
+      />
+    ) : null
+
+  const portaledWorkspacePanels =
+    workspaceFloatingPanels && workspaceOverlay
+      ? createPortal(workspaceFloatingPanels, workspaceOverlay)
+      : null
+
+  if (styleDevMode) {
+    return (
+      <>
+        <div className="schematic-style-dev h-full w-full" data-style-dev>
+          {gridShell}
+        </div>
+        {portaledWorkspacePanels}
+      </>
+    )
+  }
+
+  return (
+    <>
+      {gridShell}
+      {portaledWorkspacePanels}
+    </>
   )
 }

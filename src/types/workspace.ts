@@ -328,7 +328,14 @@ export interface ProjectFolder {
   }
 }
 
-export type WorkspaceView = 'folders' | 'folder' | 'schematic' | 'document' | 'program' | 'plan-space'
+export type WorkspaceView =
+  | 'folders'
+  | 'folder'
+  | 'schematic'
+  | 'document'
+  | 'program'
+  | 'plan-space'
+  | 'style-dev'
 
 export type WorkspaceItemType = 'schematic' | 'document' | 'program' | 'plan-space'
 

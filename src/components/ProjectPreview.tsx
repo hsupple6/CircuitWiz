@@ -1,4 +1,5 @@
 import { useTheme } from '../contexts/ThemeContext'
+import { resolveWireStrokeColor } from '../theme/colors'
 import { WireConnection } from '../modules/types'
 
 interface ProjectPreviewProps {
@@ -8,7 +9,7 @@ interface ProjectPreviewProps {
 }
 
 export function ProjectPreview({ gridData, wires = [], className = '' }: ProjectPreviewProps) {
-  const { isDark } = useTheme()
+  const { isDark, wireColorMode } = useTheme()
 
   const getPreviewData = () => {
     if (!gridData || gridData.length === 0) return []
@@ -132,7 +133,7 @@ export function ProjectPreview({ gridData, wires = [], className = '' }: Project
                   y1={`${startYPercent}%`}
                   x2={`${endXPercent}%`}
                   y2={`${endYPercent}%`}
-                  stroke={segment.color || '#666666'}
+                  stroke={resolveWireStrokeColor(segment, wireColorMode)}
                   strokeWidth="2"
                   opacity="0.6"
                 />

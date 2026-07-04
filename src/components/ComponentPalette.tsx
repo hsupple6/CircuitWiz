@@ -199,8 +199,8 @@ export function ComponentPalette({ selectedModule, onModuleSelect }: ComponentPa
   const isExpanded = (id: string) => isSearching || expandedGroups.has(id)
 
   return (
-    <div className="flex-1 min-h-0 w-full bg-white dark:bg-dark-surface flex flex-col">
-      <div className="p-4 border-b border-gray-200 dark:border-dark-border space-y-3">
+    <div className="flex h-full min-h-0 w-full flex-col bg-white dark:bg-carbon-card">
+      <div className="p-4 border-b border-black/[0.06] dark:border-white/[0.06] space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">Components</h2>
           <p className="text-sm text-gray-500 dark:text-dark-text-muted">Click to select, then place on grid</p>

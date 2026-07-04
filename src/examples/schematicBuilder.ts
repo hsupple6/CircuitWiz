@@ -6,6 +6,13 @@ import {
   type Schematic,
   type SchematicGroupBox,
 } from '../types/workspace'
+import {
+  DEFAULT_WIRE_COLOR_ID,
+  DEFAULT_WIRE_COLOR_MODE,
+  inferWireColorId,
+  wireColorPatch,
+  type WireColorId,
+} from '../theme/colors'
 
 const DEFAULT_GRID = { width: 50, height: 50 }
 
@@ -172,8 +179,12 @@ export function placeModule(
 
 export function wireBetween(
   points: Array<{ x: number; y: number }>,
-  opts: { color?: string; powered?: boolean; grounded?: boolean } = {}
+  opts: { color?: string; colorId?: WireColorId; powered?: boolean; grounded?: boolean } = {}
 ): WireConnection {
+  const resolvedColorId = opts.colorId ?? inferWireColorId(opts.color)
+  const resolvedColor = resolvedColorId
+    ? wireColorPatch(resolvedColorId, DEFAULT_WIRE_COLOR_MODE).color
+    : opts.color ?? wireColorPatch(DEFAULT_WIRE_COLOR_ID, DEFAULT_WIRE_COLOR_MODE).color
   const expanded: Array<{ x: number; y: number }> = []
   for (let i = 0; i < points.length; i++) {
     const point = points[i]
@@ -202,7 +213,8 @@ export function wireBetween(
       voltage: opts.powered ? 5 : 0,
       current: 0,
       power: 0,
-      color: opts.color ?? '#666666',
+      color: resolvedColor,
+      colorId: resolvedColorId,
       thickness: 3,
       gauge: 14,
       maxCurrent: 15,
@@ -220,7 +232,8 @@ export function wireBetween(
     voltage: 0,
     current: 0,
     power: 0,
-    color: opts.color ?? '#666666',
+    color: resolvedColor,
+    colorId: resolvedColorId,
     thickness: 3,
     gauge: 14,
     maxCurrent: 15,
