@@ -1,0 +1,26 @@
+{
+  "module": "Brushed Motor Driver",
+  "logicModule": "BrushedDriver",
+  "gridX": 3,
+  "gridY": 3,
+  "background": "#1a1a2e",
+  "css": "border-radius: 6px; border: 2px solid #6366F1;",
+  "category": "drivers",
+  "description": "Brushed DC H-bridge — PWM/DIR inputs drive OUT1/OUT2 to a brushed motor",
+  "grid": [
+    { "x": 0, "y": 0, "type": "DRIVER_PWR", "pin": "VM", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#DC2626;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:6px 0 0 0;" },
+    { "x": 1, "y": 0, "type": "BODY", "pin": "HB", "isConnectable": false, "css": "background:#312E81;color:#C4B5FD;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 2, "y": 0, "type": "GND", "pin": "GND", "isConnectable": true, "isPowerable": false, "isGroundable": true, "css": "background:#4C1D95;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 6px 0 0;" },
+    { "x": 0, "y": 1, "type": "DRIVER_CTRL", "pin": "IN1", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#2563EB;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 1, "y": 1, "type": "BODY", "pin": "", "isConnectable": false, "isClickable": true, "css": "background:#1E1B4B;border:1px solid #6366F1;" },
+    { "x": 2, "y": 1, "type": "DRIVER_OUT", "pin": "OUT1", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#059669;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 0, "y": 2, "type": "DRIVER_CTRL", "pin": "IN2", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#2563EB;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 0 0 6px;" },
+    { "x": 1, "y": 2, "type": "BODY", "pin": "", "isConnectable": false, "css": "background:#1E1B4B;" },
+    { "x": 2, "y": 2, "type": "DRIVER_OUT", "pin": "OUT2", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#059669;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 0 6px 0;" }
+  ],
+  "properties": {
+    "vth": { "default": 1.8, "unit": "V", "description": "Logic input threshold" },
+    "rdsOn": { "default": 0.2, "unit": "Ω", "description": "Output switch on-resistance" },
+    "supplyVoltage": { "default": 12, "unit": "V", "description": "Motor supply VM" }
+  }
+}

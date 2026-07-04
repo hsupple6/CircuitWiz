@@ -1,0 +1,22 @@
+{
+  "module": "LED Driver",
+  "logicModule": "LEDDriver",
+  "gridX": 3,
+  "gridY": 2,
+  "background": "#14532D",
+  "css": "border-radius: 6px; border: 2px solid #22C55E;",
+  "category": "drivers",
+  "description": "PWM LED driver — logic/PWM input switches VIN to LED output",
+  "grid": [
+    { "x": 0, "y": 0, "type": "DRIVER_PWR", "pin": "VIN", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#DC2626;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:6px 0 0 0;" },
+    { "x": 1, "y": 0, "type": "BODY", "pin": "LD", "isConnectable": false, "css": "background:#166534;color:#BBF7D0;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 2, "y": 0, "type": "GND", "pin": "GND", "isConnectable": true, "isPowerable": false, "isGroundable": true, "css": "background:#4C1D95;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 6px 0 0;" },
+    { "x": 0, "y": 1, "type": "DRIVER_CTRL", "pin": "PWM", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#2563EB;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 0 0 6px;" },
+    { "x": 1, "y": 1, "type": "BODY", "pin": "", "isConnectable": false, "css": "background:#14532D;" },
+    { "x": 2, "y": 1, "type": "DRIVER_OUT", "pin": "OUT", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#F59E0B;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 0 6px 0;" }
+  ],
+  "properties": {
+    "vth": { "default": 1.8, "unit": "V", "description": "PWM input threshold" },
+    "rdsOn": { "default": 0.5, "unit": "Ω", "description": "Output switch on-resistance" }
+  }
+}

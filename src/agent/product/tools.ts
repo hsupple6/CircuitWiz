@@ -58,6 +58,8 @@ QUESTIONS (phase "questions"): Use when opening the full questionnaire. REQUIRED
 
 If you already know the idea from chat (e.g. "e ink tagging"), pass idea + questions in one call with phase "questions" and skip the blank suite.
 
+NEVER call this if the project already has a saved product definition — use product_get_definition instead. Only open once per product planning flow.
+
 After calling this tool, stop — the human reviews answers in the suite UI.`,
     'product',
     [
@@ -108,6 +110,17 @@ After calling this tool, stop — the human reviews answers in the suite UI.`,
 
       if (phase === 'questions' && questions.length === 0) {
         return fail('questions phase requires at least one tailored question.')
+      }
+
+      const existingDefinition = getProductDefinition(ctx.folder)
+      if (existingDefinition?.metadata.completedAt) {
+        return fail(
+          'Product definition already saved for this project. Use product_get_definition — do not re-open the suite unless the user explicitly asks to revise requirements.'
+        )
+      }
+
+      if (getProductSuiteSession(ctx.folder)) {
+        return fail('Product suite is already open. Wait for the user to complete or close it.')
       }
 
       const folder = openProductSuiteSession(ctx.folder, { phase, idea, prefill, questions })

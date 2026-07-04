@@ -20,6 +20,8 @@ export interface ModuleGridCell {
 
 export interface ModuleDefinition {
   module: string
+  /** When set, chain/sim/body labels use this anchor instead of `module`. */
+  logicModule?: string
   gridX: number
   gridY: number
   grid: ModuleGridCell[]

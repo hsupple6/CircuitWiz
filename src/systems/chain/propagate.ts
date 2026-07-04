@@ -1,4 +1,5 @@
 import type { WireConnection } from '../../modules/types'
+import { resolveLogicModule } from '../../modules/logicModule'
 import { isGroundReference } from './terminals'
 import type { GridCellLike, SolvedComponentState } from './types'
 import { posKey } from './utils'
@@ -115,7 +116,7 @@ export function propagateVoltages(ctx: PropagateContext): {
 
     const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
     const moduleCell = cell.moduleDefinition.grid[cell.cellIndex ?? 0]
-    const moduleType = cell.moduleDefinition.module
+    const moduleType = resolveLogicModule(cell.moduleDefinition)
     const v = ctx.netVoltages[net] ?? 0
     const grounded = isGroundReference(moduleCell) || isNetGrounded(net, ctx.groundNet, ctx.gridData, ctx.posToNet)
 

@@ -1,10 +1,11 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { clearProductSuiteSession } from '../agent/product/operations'
 import { useAgent } from '../contexts/AgentContext'
 import { ProductSuite } from './ProductSuite'
+import type { ProjectFolder } from '../types/workspace'
 
 interface ProductSuiteHostProps {
-  onProjectUpdate: (folder: import('../types/workspace').ProjectFolder) => void
+  onProjectUpdate: (folder: ProjectFolder) => void
 }
 
 export function ProductSuiteHost({ onProjectUpdate }: ProductSuiteHostProps) {
@@ -14,24 +15,30 @@ export function ProductSuiteHost({ onProjectUpdate }: ProductSuiteHostProps) {
     productSuiteLoading,
     closeProductSuite,
     submitProductIdea,
+    submitProductSuiteCompletion,
   } = useAgent()
 
+  const saveStartedRef = useRef(false)
   const folder = projectContext?.folder
   const session = folder?.productSuiteSession
 
   const handleClose = useCallback(() => {
-    if (folder) {
-      onProjectUpdate(clearProductSuiteSession(folder))
+    const current = projectContext?.folder
+    if (current?.productSuiteSession) {
+      onProjectUpdate(clearProductSuiteSession(current))
     }
     closeProductSuite()
-  }, [folder, onProjectUpdate, closeProductSuite])
+  }, [projectContext?.folder, onProjectUpdate, closeProductSuite])
 
   const handleSave = useCallback(
-    (updated: import('../types/workspace').ProjectFolder) => {
-      onProjectUpdate(updated)
-      closeProductSuite()
+    (updated: ProjectFolder) => {
+      if (saveStartedRef.current) return
+      saveStartedRef.current = true
+      void submitProductSuiteCompletion(updated).finally(() => {
+        saveStartedRef.current = false
+      })
     },
-    [onProjectUpdate, closeProductSuite]
+    [submitProductSuiteCompletion]
   )
 
   if (!productSuiteOpen || !folder) return null

@@ -1,5 +1,6 @@
 import React from 'react'
 import { ModuleDefinition } from '../modules/types'
+import { resolveLogicModule } from '../modules/logicModule'
 import { InductorBodyLabel } from './InductorBodyLabel'
 import { CapacitorBodyLabel } from './CapacitorBodyLabel'
 import { ResistorBodyLabel } from './ResistorBodyLabel'
@@ -22,6 +23,8 @@ interface DynamicModuleProps {
 }
 
 export function DynamicModule({ definition, className = '', style = {} }: DynamicModuleProps) {
+  const logicName = resolveLogicModule(definition)
+
   return (
     <div
       className={`relative ${className}`}
@@ -64,9 +67,9 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
             `}
           >
             {/* Pin Label */}
-            {getDisplayPin(definition.module, cell.pin) && (
+            {getDisplayPin(definition.module, cell.pin, definition.logicModule) && (
               <span className="text-white font-bold text-xs leading-none">
-                {getDisplayPin(definition.module, cell.pin)}
+                {getDisplayPin(definition.module, cell.pin, definition.logicModule)}
               </span>
             )}
             
@@ -76,14 +79,14 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
             )}
             
             {/* Group box preview label */}
-            {definition.module === 'Group Box' && cell.x === 0 && cell.y === 0 && (
+            {logicName === 'Group Box' && cell.x === 0 && cell.y === 0 && (
               <div className="absolute top-0.5 left-1 text-[8px] font-semibold text-indigo-600 bg-white/70 px-1 rounded">
                 Region
               </div>
             )}
             
             {/* SMD resistor label on body */}
-            {definition.module === 'Resistor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
+            {logicName === 'Resistor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
               <ResistorBodyLabel
                 compact
                 resistance={resolveCellResistance(
@@ -93,7 +96,7 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
             )}
             
             {/* SMD capacitor label on body */}
-            {definition.module === 'Capacitor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
+            {logicName === 'Capacitor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
               <CapacitorBodyLabel
                 compact
                 capacitance={(cell as { capacitance?: number }).capacitance ?? 0.0001}
@@ -101,7 +104,7 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
             )}
             
             {/* SMD inductor label on body */}
-            {definition.module === 'Inductor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
+            {logicName === 'Inductor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
               <InductorBodyLabel
                 compact
                 inductance={(cell as { inductance?: number }).inductance ?? 0.001}
@@ -109,7 +112,7 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
             )}
             
             {/* SMD LED indicator on body */}
-            {definition.module === 'LED' && cell.type === 'LED_BODY' && cell.x === 1 && cell.y === 0 && (
+            {logicName === 'LED' && cell.type === 'LED_BODY' && cell.x === 1 && cell.y === 0 && (
               <LedBodyIndicator
                 compact
                 color={resolveLedColor(
@@ -120,84 +123,84 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
               />
             )}
 
-            {definition.module === 'Diode' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
+            {logicName === 'Diode' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
               <DiodeBodyLabel compact forwardVoltage={0.7} />
             )}
 
-            {definition.module === 'ACSource' && cell.x === 0 && cell.y === 0 && (
+            {logicName === 'ACSource' && cell.x === 0 && cell.y === 0 && (
               <ACSourceBodyLabel
                 compact
                 properties={definition.properties as Record<string, unknown> | undefined}
               />
             )}
 
-            {definition.module === 'ZenerDiode' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
+            {logicName === 'ZenerDiode' && cell.type === 'BODY' && cell.x === 1 && cell.y === 0 && (
               <ZenerDiodeBodyLabel compact zenerVoltage={5.1} />
             )}
 
-            {definition.module === 'NPNTransistor' && cell.x === 1 && cell.y === 0 && (
+            {logicName === 'NPNTransistor' && cell.x === 1 && cell.y === 0 && (
               <SemiconductorPinPad label="C" edge="top" />
             )}
-            {definition.module === 'NPNTransistor' && cell.x === 0 && cell.y === 1 && (
+            {logicName === 'NPNTransistor' && cell.x === 0 && cell.y === 1 && (
               <SemiconductorPinPad label="B" edge="left" />
             )}
-            {definition.module === 'NPNTransistor' && cell.x === 1 && cell.y === 2 && (
+            {logicName === 'NPNTransistor' && cell.x === 1 && cell.y === 2 && (
               <SemiconductorPinPad label="E" edge="bottom" />
             )}
-            {definition.module === 'NPNTransistor' && cell.x === 1 && cell.y === 1 && (
+            {logicName === 'NPNTransistor' && cell.x === 1 && cell.y === 1 && (
               <TransistorBodyLabel />
             )}
 
-            {definition.module === 'MOSFET' && cell.x === 1 && cell.y === 0 && (
+            {logicName === 'MOSFET' && cell.x === 1 && cell.y === 0 && (
               <SemiconductorPinPad label="D" edge="top" />
             )}
-            {definition.module === 'MOSFET' && cell.x === 0 && cell.y === 1 && (
+            {logicName === 'MOSFET' && cell.x === 0 && cell.y === 1 && (
               <SemiconductorPinPad label="G" edge="left" />
             )}
-            {definition.module === 'MOSFET' && cell.x === 1 && cell.y === 2 && (
+            {logicName === 'MOSFET' && cell.x === 1 && cell.y === 2 && (
               <SemiconductorPinPad label="S" edge="bottom" />
             )}
-            {definition.module === 'MOSFET' && cell.x === 1 && cell.y === 1 && (
+            {logicName === 'MOSFET' && cell.x === 1 && cell.y === 1 && (
               <MosfetBodyLabel />
             )}
 
-            {definition.module === 'OpAmp' && cell.x === 1 && cell.y === 0 && (
+            {logicName === 'OpAmp' && cell.x === 1 && cell.y === 0 && (
               <SemiconductorPinPad label="V+" edge="top" />
             )}
-            {definition.module === 'OpAmp' && cell.x === 0 && cell.y === 1 && (
+            {logicName === 'OpAmp' && cell.x === 0 && cell.y === 1 && (
               <SemiconductorPinPad label="−" edge="left" />
             )}
-            {definition.module === 'OpAmp' && cell.x === 2 && cell.y === 1 && (
+            {logicName === 'OpAmp' && cell.x === 2 && cell.y === 1 && (
               <SemiconductorPinPad label="OUT" edge="right" />
             )}
-            {definition.module === 'OpAmp' && cell.x === 0 && cell.y === 2 && (
+            {logicName === 'OpAmp' && cell.x === 0 && cell.y === 2 && (
               <SemiconductorPinPad label="+" edge="left" />
             )}
-            {definition.module === 'OpAmp' && cell.x === 1 && cell.y === 2 && (
+            {logicName === 'OpAmp' && cell.x === 1 && cell.y === 2 && (
               <SemiconductorPinPad label="V−" edge="bottom" />
             )}
-            {definition.module === 'OpAmp' && cell.x === 1 && cell.y === 1 && (
+            {logicName === 'OpAmp' && cell.x === 1 && cell.y === 1 && (
               <OpAmpBodyLabel />
             )}
 
-            {definition.module === 'BridgeRectifier' && cell.x === 0 && cell.y === 0 && (
+            {logicName === 'BridgeRectifier' && cell.x === 0 && cell.y === 0 && (
               <SemiconductorPinPad label="AC1" edge="top" />
             )}
-            {definition.module === 'BridgeRectifier' && cell.x === 2 && cell.y === 0 && (
+            {logicName === 'BridgeRectifier' && cell.x === 2 && cell.y === 0 && (
               <SemiconductorPinPad label="AC2" edge="top" />
             )}
-            {definition.module === 'BridgeRectifier' && cell.x === 0 && cell.y === 2 && (
+            {logicName === 'BridgeRectifier' && cell.x === 0 && cell.y === 2 && (
               <SemiconductorPinPad label="−" edge="bottom" />
             )}
-            {definition.module === 'BridgeRectifier' && cell.x === 2 && cell.y === 2 && (
+            {logicName === 'BridgeRectifier' && cell.x === 2 && cell.y === 2 && (
               <SemiconductorPinPad label="+" edge="bottom" />
             )}
-            {definition.module === 'BridgeRectifier' && cell.x === 1 && cell.y === 1 && (
+            {logicName === 'BridgeRectifier' && cell.x === 1 && cell.y === 1 && (
               <BridgeRectifierBodyLabel />
             )}
             
             {/* Motor label (for preview) */}
-            {definition.module === 'Motor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 1 && (
+            {logicName === 'Motor' && cell.type === 'BODY' && cell.x === 1 && cell.y === 1 && (
               <div className="absolute inset-0 flex items-end justify-center pb-1">
                 <div className="text-white text-xs font-bold bg-black bg-opacity-70 px-1 rounded">
                   Motor

@@ -19,10 +19,13 @@
     "@auth0/nextjs-auth0": "^4.9.0",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.2.0",
+    "kicad-toolkit": "^1.0.28",
     "lucide-react": "^0.294.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-script": "^2.0.5"
+    "react-markdown": "^10.1.0",
+    "react-script": "^2.0.5",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.37",

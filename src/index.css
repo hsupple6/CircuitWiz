@@ -46,6 +46,12 @@
     transition: background-color 0.2s ease, border-color 0.2s ease;
   }
 
+  .kicad-symbol svg {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
   .carbon-card {
     @apply rounded-xl border border-white/[0.06] bg-carbon-card/80 backdrop-blur-sm;
   }

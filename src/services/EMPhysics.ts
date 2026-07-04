@@ -1,3 +1,5 @@
+import { resolveLogicModule } from '../modules/logicModule'
+
 export function OhmLawCurrent(voltage: number, resistance: number) {
   return voltage / resistance
 }
@@ -357,12 +359,12 @@ function detectAndCombineParallelResistors(occupiedComponents: any[], _wires: an
   const parallelBranches: any[] = [];
   
   // Group components by type
-  const resistors = occupiedComponents.filter(comp => 
-    comp.moduleDefinition?.module === 'Resistor'
+  const resistors = occupiedComponents.filter(comp =>
+    comp.moduleDefinition && resolveLogicModule(comp.moduleDefinition) === 'Resistor'
   );
-  
-  const nonResistors = occupiedComponents.filter(comp => 
-    comp.moduleDefinition?.module !== 'Resistor'
+
+  const nonResistors = occupiedComponents.filter(comp =>
+    !comp.moduleDefinition || resolveLogicModule(comp.moduleDefinition) !== 'Resistor'
   );
   
   // Add non-resistor components to processed list

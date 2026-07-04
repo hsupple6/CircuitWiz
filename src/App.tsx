@@ -42,6 +42,11 @@ import type { HoverStats } from './utils/hoverStats'
 import type { ComponentState } from './systems/ElectricalSystem'
 import { ModuleDefinition } from './modules/types'
 import {
+  getPassiveValueKind,
+  passiveValueSelectorTitle,
+  type PassiveValueKind,
+} from './modules/passiveValueKind'
+import {
   ProjectFolder,
   Schematic,
   WorkspaceView,
@@ -143,9 +148,7 @@ function AppContent() {
   const [searchQuery, setSearchQuery] = useState('')
 
   const [selectedModule, setSelectedModule] = useState<ModuleDefinition | null>(null)
-  const [passiveValueSelector, setPassiveValueSelector] = useState<
-    'resistor' | 'capacitor' | 'inductor' | 'ac' | null
-  >(null)
+  const [passiveValueSelector, setPassiveValueSelector] = useState<PassiveValueKind | null>(null)
   const [selectedResistance, setSelectedResistance] = useState(1000)
   const [selectedCapacitance, setSelectedCapacitance] = useState(0.0001)
   const [selectedInductance, setSelectedInductance] = useState(0.001)
@@ -592,34 +595,39 @@ function AppContent() {
   const handleModuleSelect = (module: ModuleDefinition | null) => {
     setSelectedModule(module)
     if (module) setLabelMode(false)
-    if (module?.module === 'Resistor') setPassiveValueSelector('resistor')
-    else if (module?.module === 'Capacitor') setPassiveValueSelector('capacitor')
-    else if (module?.module === 'Inductor') setPassiveValueSelector('inductor')
-    else if (module?.module === 'ACSource') setPassiveValueSelector('ac')
-    else setPassiveValueSelector(null)
+    setPassiveValueSelector(getPassiveValueKind(module))
   }
 
   const handleResistanceSelect = (resistance: number) => {
     setSelectedResistance(resistance)
     setPassiveValueSelector(null)
-    if (selectedModule?.module === 'Resistor') {
-      setSelectedModule({ ...selectedModule, properties: { ...(selectedModule as any).properties, resistance } } as ModuleDefinition)
+    if (selectedModule && getPassiveValueKind(selectedModule) === 'resistor') {
+      setSelectedModule({
+        ...selectedModule,
+        properties: { ...(selectedModule as ModuleDefinition & { properties?: Record<string, unknown> }).properties, resistance },
+      } as ModuleDefinition)
     }
   }
 
   const handleCapacitanceSelect = (capacitance: number) => {
     setSelectedCapacitance(capacitance)
     setPassiveValueSelector(null)
-    if (selectedModule?.module === 'Capacitor') {
-      setSelectedModule({ ...selectedModule, properties: { ...(selectedModule as any).properties, capacitance } } as ModuleDefinition)
+    if (selectedModule && getPassiveValueKind(selectedModule) === 'capacitor') {
+      setSelectedModule({
+        ...selectedModule,
+        properties: { ...(selectedModule as ModuleDefinition & { properties?: Record<string, unknown> }).properties, capacitance },
+      } as ModuleDefinition)
     }
   }
 
   const handleInductanceSelect = (inductance: number) => {
     setSelectedInductance(inductance)
     setPassiveValueSelector(null)
-    if (selectedModule?.module === 'Inductor') {
-      setSelectedModule({ ...selectedModule, properties: { ...(selectedModule as any).properties, inductance } } as ModuleDefinition)
+    if (selectedModule && getPassiveValueKind(selectedModule) === 'inductor') {
+      setSelectedModule({
+        ...selectedModule,
+        properties: { ...(selectedModule as ModuleDefinition & { properties?: Record<string, unknown> }).properties, inductance },
+      } as ModuleDefinition)
     }
   }
 
@@ -909,8 +917,8 @@ function AppContent() {
         options?.openSchematicId ?? selectedItemId,
         options?.openSchematicId ? 'schematic' : activeView
       )
+      setSelectedFolder((prev) => (prev?.id === folder.id ? folder : prev))
       if (options?.openSchematicId) {
-        setSelectedFolder(folder)
         setActiveView('schematic')
         setSelectedItemId(options.openSchematicId)
       }
@@ -1104,10 +1112,7 @@ function AppContent() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white dark:bg-dark-surface rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4">
-                {passiveValueSelector === 'resistor' && 'Select Resistor Value'}
-                {passiveValueSelector === 'capacitor' && 'Select Capacitance'}
-                {passiveValueSelector === 'inductor' && 'Select Inductance'}
-                {passiveValueSelector === 'ac' && 'Configure AC Source'}
+                {passiveValueSelectorTitle(passiveValueSelector, selectedModule?.module)}
               </h3>
               {passiveValueSelector === 'resistor' && (
                 <ResistanceSelector currentResistance={selectedResistance} onResistanceChange={handleResistanceSelect} onClose={() => setPassiveValueSelector(null)} />

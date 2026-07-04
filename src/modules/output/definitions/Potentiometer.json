@@ -4,8 +4,7 @@
   "gridY": 1,
   "background": "#292524",
   "css": "border-radius: 50%; border: 2px solid #78716C;",
-  "category": "output",
-  "subcategory": "rotary",
+  "category": "passives",
   "description": "Rotary potentiometer — voltage divider (A, wiper, B)",
   "grid": [
     {

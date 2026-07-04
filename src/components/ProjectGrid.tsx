@@ -18,7 +18,9 @@ import { getCRDTSaveService } from '../services/CRDTSaveService'
 import { Eraser, Focus } from 'lucide-react'
 import { ComponentStatsBadge } from './ComponentStatsBadge'
 import { InductorBodyLabel } from './InductorBodyLabel'
-import { OUTPUT_MODULE_NAMES } from '../modules/registry'
+import { isOutputModule } from '../modules/registry'
+import { resolveLogicModule } from '../modules/logicModule'
+import { getPassiveValueKind } from '../modules/passiveValueKind'
 import { SchematicGroupBoxLayer } from './SchematicGroupBoxLayer'
 import { SchematicLabelLayer } from './SchematicLabelLayer'
 import { createSchematicGroupBox, createSchematicCellLabel, type SchematicGroupBox, type SchematicCellLabel, type Program } from '../types/workspace'
@@ -156,7 +158,8 @@ function getModuleNumericProperty(properties: Record<string, unknown> | undefine
 
 function buildPlacedModuleDefinition(module: ModuleDefinition): ModuleDefinition {
   const props = (module as ModuleDefinition & { properties?: Record<string, unknown> }).properties
-  if (module.module === 'Resistor') {
+  const logic = resolveLogicModule(module)
+  if (logic === 'Resistor') {
     return {
       ...module,
       properties: {
@@ -165,7 +168,7 @@ function buildPlacedModuleDefinition(module: ModuleDefinition): ModuleDefinition
       },
     } as ModuleDefinition
   }
-  if (module.module === 'Capacitor') {
+  if (logic === 'Capacitor') {
     return {
       ...module,
       properties: {
@@ -174,7 +177,7 @@ function buildPlacedModuleDefinition(module: ModuleDefinition): ModuleDefinition
       },
     } as ModuleDefinition
   }
-  if (module.module === 'Inductor') {
+  if (logic === 'Inductor') {
     return {
       ...module,
       properties: {
@@ -183,7 +186,7 @@ function buildPlacedModuleDefinition(module: ModuleDefinition): ModuleDefinition
       },
     } as ModuleDefinition
   }
-  if (module.module === 'ACSource') {
+  if (logic === 'ACSource') {
     return applyACSourceProperties(module, readACSourceSettings(props))
   }
   return module
@@ -1993,13 +1996,13 @@ export function ProjectGrid({
                     cellIndex: cellIndex,
                     isClickable: moduleCell?.isClickable || false,
                     ...(moduleCell?.isOn !== undefined ? { isOn: moduleCell.isOn } : {}),
-                    ...(selectedModule.module === 'Resistor' ? {
+                    ...(getPassiveValueKind(selectedModule) === 'resistor' ? {
                       resistance: getModuleNumericProperty(placedProps, 'resistance', 1000),
                     } : {}),
-                    ...(selectedModule.module === 'Capacitor' ? {
+                    ...(getPassiveValueKind(selectedModule) === 'capacitor' ? {
                       capacitance: getModuleNumericProperty(placedProps, 'capacitance', 0.0001),
                     } : {}),
-                    ...(selectedModule.module === 'Inductor' ? {
+                    ...(getPassiveValueKind(selectedModule) === 'inductor' ? {
                       inductance: getModuleNumericProperty(placedProps, 'inductance', 0.001),
                     } : {}),
                   }
@@ -2373,7 +2376,7 @@ export function ProjectGrid({
 
   const getCellPin = (definition: any, x: number, y: number) => {
     const cell = getCellFromDefinition(definition, x, y)
-    return getDisplayPin(definition.module, cell.pin)
+    return getDisplayPin(definition.module, cell.pin, definition.logicModule)
   }
 
   // Parse inline CSS (same as in DynamicModule)
@@ -2574,6 +2577,7 @@ const GridCell = React.memo(({
         
         const relativeX = x - moduleOrigin.x
         const relativeY = y - moduleOrigin.y
+        const logicMod = resolveLogicModule(cell.moduleDefinition)
         const isPowered = cell?.isPowered || false
         
         // Check if this cell is part of a highlighted microcontroller
@@ -2608,10 +2612,10 @@ const GridCell = React.memo(({
             {/* Show pin label if this cell has one (custom overlays handle Motor phase pads) */}
             {getCellPin(cell.moduleDefinition, relativeX, relativeY) &&
               !(
-                cell.moduleDefinition.module === 'Motor' && relativeY === 0
+                logicMod === 'Motor' && relativeY === 0
               ) &&
               !(
-                cell.moduleDefinition.module === 'Servo' && relativeY === 0
+                logicMod === 'Servo' && relativeY === 0
               ) && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-white font-bold text-xs leading-none">
@@ -2621,7 +2625,7 @@ const GridCell = React.memo(({
             )}
 
             {/* Brushless motor — phase wire pads */}
-            {cell.moduleDefinition.module === 'Motor' && relativeY === 0 && (
+            {logicMod === 'Motor' && relativeY === 0 && (
               <MotorPhasePad
                 label={
                   relativeX === 0 ? 'IN1' : relativeX === 1 ? 'IN2' : 'IN3'
@@ -2630,7 +2634,7 @@ const GridCell = React.memo(({
             )}
 
             {/* Brushless motor body + shaft (center anchor) */}
-            {cell.moduleDefinition.module === 'Motor' &&
+            {logicMod === 'Motor' &&
               relativeX === 1 &&
               relativeY === 1 && (
                 <MotorBodyLabel
@@ -2639,14 +2643,14 @@ const GridCell = React.memo(({
               )}
 
             {/* Servo — pin pads + body */}
-            {cell.moduleDefinition.module === 'Servo' && relativeY === 0 && (
+            {logicMod === 'Servo' && relativeY === 0 && (
               <ServoPinPad
                 label={
                   relativeX === 0 ? 'VCC' : relativeX === 1 ? 'GND' : 'PWM'
                 }
               />
             )}
-            {cell.moduleDefinition.module === 'Servo' &&
+            {logicMod === 'Servo' &&
               relativeX === 1 &&
               relativeY === 1 && (
                 <ServoBodyLabel
@@ -2659,19 +2663,19 @@ const GridCell = React.memo(({
               )}
             
             {/* SMD resistor: color bands + value on body cell */}
-            {cell.moduleDefinition.module === 'Resistor' && relativeX === 1 && relativeY === 0 && (
+            {logicMod === 'Resistor' && relativeX === 1 && relativeY === 0 && (
               <ResistorBodyLabel
                 resistance={resolveCellResistance(cell.resistance, cell.moduleDefinition.properties)}
               />
             )}
 
-            {cell.moduleDefinition.module === 'ACSource' && relativeX === 0 && relativeY === 0 && (
+            {logicMod === 'ACSource' && relativeX === 0 && relativeY === 0 && (
               <ACSourceBodyLabel
                 properties={cell.moduleDefinition.properties as Record<string, unknown> | undefined}
               />
             )}
             
-            {cell.moduleDefinition.module === 'Capacitor' && relativeX === 1 && relativeY === 0 && (
+            {logicMod === 'Capacitor' && relativeX === 1 && relativeY === 0 && (
               <CapacitorBodyLabel
                 capacitance={
                   cell.capacitance ??
@@ -2679,7 +2683,7 @@ const GridCell = React.memo(({
                 }
               />
             )}
-            {cell.moduleDefinition.module === 'Inductor' && relativeX === 1 && relativeY === 0 && (
+            {logicMod === 'Inductor' && relativeX === 1 && relativeY === 0 && (
               <InductorBodyLabel
                 inductance={
                   cell.inductance ??
@@ -2688,7 +2692,7 @@ const GridCell = React.memo(({
               />
             )}
 
-            {cell.moduleDefinition.module === 'Diode' && relativeX === 1 && relativeY === 0 && (
+            {logicMod === 'Diode' && relativeX === 1 && relativeY === 0 && (
               <DiodeBodyLabel
                 forwardVoltage={getModuleNumericProperty(
                   cell.moduleDefinition.properties,
@@ -2698,7 +2702,7 @@ const GridCell = React.memo(({
               />
             )}
 
-            {cell.moduleDefinition.module === 'ZenerDiode' && relativeX === 1 && relativeY === 0 && (
+            {logicMod === 'ZenerDiode' && relativeX === 1 && relativeY === 0 && (
               <ZenerDiodeBodyLabel
                 zenerVoltage={getModuleNumericProperty(
                   cell.moduleDefinition.properties,
@@ -2708,84 +2712,83 @@ const GridCell = React.memo(({
               />
             )}
 
-            {cell.moduleDefinition.module === 'NPNTransistor' && relativeX === 1 && relativeY === 0 && (
+            {logicMod === 'NPNTransistor' && relativeX === 1 && relativeY === 0 && (
               <SemiconductorPinPad label="C" edge="top" />
             )}
-            {cell.moduleDefinition.module === 'NPNTransistor' && relativeX === 0 && relativeY === 1 && (
+            {logicMod === 'NPNTransistor' && relativeX === 0 && relativeY === 1 && (
               <SemiconductorPinPad label="B" edge="left" />
             )}
-            {cell.moduleDefinition.module === 'NPNTransistor' && relativeX === 1 && relativeY === 2 && (
+            {logicMod === 'NPNTransistor' && relativeX === 1 && relativeY === 2 && (
               <SemiconductorPinPad label="E" edge="bottom" />
             )}
-            {cell.moduleDefinition.module === 'NPNTransistor' && relativeX === 1 && relativeY === 1 && (
+            {logicMod === 'NPNTransistor' && relativeX === 1 && relativeY === 1 && (
               <TransistorBodyLabel />
             )}
 
-            {cell.moduleDefinition.module === 'MOSFET' && relativeX === 1 && relativeY === 0 && (
+            {logicMod === 'MOSFET' && relativeX === 1 && relativeY === 0 && (
               <SemiconductorPinPad label="D" edge="top" />
             )}
-            {cell.moduleDefinition.module === 'MOSFET' && relativeX === 0 && relativeY === 1 && (
+            {logicMod === 'MOSFET' && relativeX === 0 && relativeY === 1 && (
               <SemiconductorPinPad label="G" edge="left" />
             )}
-            {cell.moduleDefinition.module === 'MOSFET' && relativeX === 1 && relativeY === 2 && (
+            {logicMod === 'MOSFET' && relativeX === 1 && relativeY === 2 && (
               <SemiconductorPinPad label="S" edge="bottom" />
             )}
-            {cell.moduleDefinition.module === 'MOSFET' && relativeX === 1 && relativeY === 1 && (
+            {logicMod === 'MOSFET' && relativeX === 1 && relativeY === 1 && (
               <MosfetBodyLabel />
             )}
 
-            {cell.moduleDefinition.module === 'OpAmp' && relativeX === 1 && relativeY === 0 && (
+            {logicMod === 'OpAmp' && relativeX === 1 && relativeY === 0 && (
               <SemiconductorPinPad label="V+" edge="top" />
             )}
-            {cell.moduleDefinition.module === 'OpAmp' && relativeX === 0 && relativeY === 1 && (
+            {logicMod === 'OpAmp' && relativeX === 0 && relativeY === 1 && (
               <SemiconductorPinPad label="−" edge="left" />
             )}
-            {cell.moduleDefinition.module === 'OpAmp' && relativeX === 2 && relativeY === 1 && (
+            {logicMod === 'OpAmp' && relativeX === 2 && relativeY === 1 && (
               <SemiconductorPinPad label="OUT" edge="right" />
             )}
-            {cell.moduleDefinition.module === 'OpAmp' && relativeX === 0 && relativeY === 2 && (
+            {logicMod === 'OpAmp' && relativeX === 0 && relativeY === 2 && (
               <SemiconductorPinPad label="+" edge="left" />
             )}
-            {cell.moduleDefinition.module === 'OpAmp' && relativeX === 1 && relativeY === 2 && (
+            {logicMod === 'OpAmp' && relativeX === 1 && relativeY === 2 && (
               <SemiconductorPinPad label="V−" edge="bottom" />
             )}
-            {cell.moduleDefinition.module === 'OpAmp' && relativeX === 1 && relativeY === 1 && (
+            {logicMod === 'OpAmp' && relativeX === 1 && relativeY === 1 && (
               <OpAmpBodyLabel />
             )}
 
-            {cell.moduleDefinition.module === 'BridgeRectifier' && relativeX === 0 && relativeY === 0 && (
+            {logicMod === 'BridgeRectifier' && relativeX === 0 && relativeY === 0 && (
               <SemiconductorPinPad label="AC1" edge="top" />
             )}
-            {cell.moduleDefinition.module === 'BridgeRectifier' && relativeX === 2 && relativeY === 0 && (
+            {logicMod === 'BridgeRectifier' && relativeX === 2 && relativeY === 0 && (
               <SemiconductorPinPad label="AC2" edge="top" />
             )}
-            {cell.moduleDefinition.module === 'BridgeRectifier' && relativeX === 0 && relativeY === 2 && (
+            {logicMod === 'BridgeRectifier' && relativeX === 0 && relativeY === 2 && (
               <SemiconductorPinPad label="−" edge="bottom" />
             )}
-            {cell.moduleDefinition.module === 'BridgeRectifier' && relativeX === 2 && relativeY === 2 && (
+            {logicMod === 'BridgeRectifier' && relativeX === 2 && relativeY === 2 && (
               <SemiconductorPinPad label="+" edge="bottom" />
             )}
-            {cell.moduleDefinition.module === 'BridgeRectifier' && relativeX === 1 && relativeY === 1 && (
+            {logicMod === 'BridgeRectifier' && relativeX === 1 && relativeY === 1 && (
               <BridgeRectifierBodyLabel />
             )}
 
             {/* Output V / I / P stats (Buzzer, Speaker, Servo, Potentiometer) */}
             {(() => {
-              const mod = cell.moduleDefinition.module
-              if (!OUTPUT_MODULE_NAMES.has(mod)) return null
+              if (!isOutputModule(cell.moduleDefinition)) return null
               const showStats =
-                (mod === 'Buzzer' && relativeX === 1 && relativeY === 0) ||
-                (mod === 'Speaker' && relativeX === 1 && relativeY === 0) ||
-                (mod === 'Servo' && relativeX === 1 && relativeY === 1) ||
-                (mod === 'Potentiometer' && relativeX === 1 && relativeY === 0)
+                (logicMod === 'Buzzer' && relativeX === 1 && relativeY === 0) ||
+                (logicMod === 'Speaker' && relativeX === 1 && relativeY === 0) ||
+                (logicMod === 'Servo' && relativeX === 1 && relativeY === 1) ||
+                (logicMod === 'Potentiometer' && relativeX === 1 && relativeY === 0)
               if (!showStats) return null
               const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
               const outputState = componentStates.get(cellComponentId)
-              return <ComponentStatsBadge state={outputState ?? null} label={mod} />
+              return <ComponentStatsBadge state={outputState ?? null} label={cell.moduleDefinition.module} />
             })()}
             
             {/* Show LED state indicator */}
-            {cell.moduleDefinition.module === 'LED' && relativeX === 1 && relativeY === 0 && (() => {
+            {logicMod === 'LED' && relativeX === 1 && relativeY === 0 && (() => {
               const cellComponentId = `${cell.componentId}-${cell.cellIndex || 0}`
               const ledState = componentStates.get(cellComponentId)
               const isOn = ledState?.isOn || false
@@ -2806,9 +2809,9 @@ const GridCell = React.memo(({
             })()}
             
             {/* Show switch state indicator */}
-            {(cell.moduleDefinition.module === 'Switch' ||
-              cell.moduleDefinition.module === 'Push Button' ||
-              cell.moduleDefinition.module === 'Limit Switch') &&
+            {(logicMod === 'Switch' ||
+              logicMod === 'Push Button' ||
+              logicMod === 'Limit Switch') &&
               relativeX === 1 &&
               relativeY === 0 &&
               (() => {

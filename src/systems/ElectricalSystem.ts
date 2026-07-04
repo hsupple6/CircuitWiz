@@ -11,16 +11,17 @@
 
 // Import existing types from the modules
 import { WireConnection } from '../modules/types'
+import { resolveLogicModule } from '../modules/logicModule'
 import { logger } from '../services/Logger'
 import { findCircuitPathways, CalculateCircuit, convertGridToNodes } from '../services/EMPhysics'
 import { checkContinuity } from '../systems/chain/graph'
 import { isActivePowerSourceTerminal } from '../utils/powerSupplies'
 import { solveCircuit } from '../services/CircuitSolver'
 import { extractOccupiedComponents } from '../utils/gridUtils'
-import { LEDVoltageFlow } from '../modules/definitions/Functions/LED'
-import { ResistorVoltageFlow } from '../modules/definitions/Functions/Resistor'
-import { MicrocontrollerVoltageFlow } from '../modules/definitions/Functions/Microcontroller'
-import { calculateMotorElectricalProperties } from '../modules/definitions/Functions/Motor'
+import { LEDVoltageFlow } from '../modules/output/voltageFlow/LED'
+import { ResistorVoltageFlow } from '../modules/passives/voltageFlow/Resistor'
+import { MicrocontrollerVoltageFlow } from '../modules/microcontrollers/voltageFlow/Microcontroller'
+import { calculateMotorElectricalProperties } from '../modules/output/voltageFlow/Motor'
 import { dynamicGPIO, DynamicGPIOState, multiMCUGPIO } from '../services/DynamicGPIO'
 
 export interface ComponentState {
@@ -259,7 +260,7 @@ export function findParallelResistors(
   gridData.forEach((row, y) => {
     if (!row || !Array.isArray(row)) return
     row.forEach((cell, x) => {
-      if (cell?.occupied && cell.componentId && cell.moduleDefinition?.module === 'Resistor') {
+      if (cell?.occupied && cell.componentId && cell.moduleDefinition && resolveLogicModule(cell.moduleDefinition) === 'Resistor') {
         // Find all terminal positions for this resistor
         const terminals = findResistorTerminals(cell, gridData)
         resistors.push({
@@ -1172,7 +1173,7 @@ export function calculateSystematicVoltageFlow(
   const occupiedComponents = extractOccupiedComponents(gridData)
   let resistorCount = 0
   occupiedComponents.forEach(comp => {
-    if (comp.moduleDefinition.module === 'Resistor') {
+    if (comp.moduleDefinition && resolveLogicModule(comp.moduleDefinition) === 'Resistor') {
       resistorCount++
     }
   })

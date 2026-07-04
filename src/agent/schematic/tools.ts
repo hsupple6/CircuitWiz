@@ -79,7 +79,7 @@ export const schematicAgentTools: AgentTool[] = [
 
   makeTool(
     'schematic_place_component',
-    'Place a component from the module catalog onto the schematic grid. Supports all modules including MOSFET (pins G/D/S), transistors, semiconductors, passives, and power sources. Use catalog_get_module to discover pin names and property keys.',
+    'Place a component from the module catalog onto the schematic grid. Supports all modules including MOSFET (pins G/D/S), transistors, semiconductors, passives, and power sources. Use catalog_lookup_components to resolve names, then catalog_get_module for pin names and property keys.',
     'schematic',
     [
       { name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false },

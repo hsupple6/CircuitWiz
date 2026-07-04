@@ -1,4 +1,5 @@
 import type { WireConnection } from '../../modules/types'
+import { resolveLogicModule } from '../../modules/logicModule'
 import { getComponentConductivity } from './components/registry'
 import type { CircuitGraph, GraphTerminal, GridCellLike, InternalEdge, SourceChain } from './types'
 import { classifyTerminalPolarity, isConnectable, isGroundReference } from './terminals'
@@ -15,7 +16,7 @@ function collectComponentTerminals(
       if (cell?.componentId !== componentId || !cell.moduleDefinition) return
       const moduleCell = cell.moduleDefinition.grid[cell.cellIndex ?? 0]
       if (!isConnectable(moduleCell)) return
-      const moduleType = cell.moduleDefinition.module
+      const moduleType = resolveLogicModule(cell.moduleDefinition)
       terminals.push({
         key: posKey(x, y),
         x,
@@ -63,7 +64,7 @@ export function buildCircuitGraph(
       if (!isConnectable(moduleCell)) return
 
       const key = posKey(x, y)
-      const moduleType = cell.moduleDefinition.module
+      const moduleType = resolveLogicModule(cell.moduleDefinition)
       terminals.set(key, {
         key,
         x,
@@ -136,7 +137,7 @@ export function findSourceChains(gridData: GridCellLike[][]): SourceChain[] {
       if (!cell?.occupied || !cell.componentId || !cell.moduleDefinition) return
       if (processed.has(cell.componentId)) return
 
-      const moduleType = cell.moduleDefinition.module
+      const moduleType = resolveLogicModule(cell.moduleDefinition)
       const powerModules = ['Battery', 'PowerSupply', 'ACSource']
       if (!powerModules.includes(moduleType)) return
 

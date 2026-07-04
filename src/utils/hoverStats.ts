@@ -1,4 +1,5 @@
 import type { WireConnection, WireSegment, ModuleDefinition } from '../modules/types'
+import { resolveLogicModule } from '../modules/logicModule'
 import type { ComponentState } from '../systems/ElectricalSystem'
 import { formatCapacitance } from '../components/CapacitanceSelector'
 import { formatInductance } from '../components/InductanceSelector'
@@ -195,6 +196,10 @@ function buildComponentStats(
   componentStates: Map<string, ComponentState>
 ): HoverStats {
   const moduleName = cell.moduleDefinition?.module ?? cell.componentType ?? 'Component'
+  const logicModule =
+    cell.moduleDefinition?.module != null
+      ? resolveLogicModule(cell.moduleDefinition as ModuleDefinition)
+      : moduleName
   const componentId = cell.componentId!
   const cellIndex = cell.cellIndex ?? 0
   const origin = findModuleOrigin(gridData, x, y, componentId)
@@ -214,7 +219,7 @@ function buildComponentStats(
   let status: HoverStats['status']
   let metrics = primaryMetrics(voltage, current, power)
 
-  switch (moduleName) {
+  switch (logicModule) {
     case 'LED': {
       const forwardV = state?.forwardVoltage ?? getNumericProperty(cell.moduleDefinition?.properties, 'forwardVoltage', 2)
       const anodeV = state?.inputVoltage ?? state?.outputVoltage ?? voltage

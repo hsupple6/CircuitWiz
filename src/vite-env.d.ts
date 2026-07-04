@@ -11,3 +11,9 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+declare module 'kicad-toolkit' {
+  export const KicadParser: {
+    parseArrayBuffer(fileName: string, buffer: ArrayBuffer): unknown[]
+  }
+}

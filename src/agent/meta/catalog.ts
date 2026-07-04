@@ -10,7 +10,7 @@ export const AGENT_TOOL_CATEGORIES = [
   },
   {
     id: 'catalog',
-    description: 'Search the module catalog for names, pins, and properties',
+    description: 'Look up components by name (fuzzy batch lookup), get module pins/properties, keyword search',
   },
   {
     id: 'plan_space',

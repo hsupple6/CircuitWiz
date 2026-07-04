@@ -2,41 +2,88 @@ import { AgentTool } from '../types'
 import { fail, makeTool, okRead } from '../helpers'
 import { moduleRegistry, getModule, getCategories, resolveModuleName } from '../../modules/registry'
 import { listConnectablePins } from '../../utils/pinNames'
+import {
+  DEFAULT_LOOKUP_MAX_RESULTS,
+  DEFAULT_LOOKUP_MIN_SCORE,
+  lookupComponents,
+} from './lookup'
 
 export const catalogAgentTools: AgentTool[] = [
   makeTool(
-    'catalog_list_modules',
-    'List all available component modules. Includes disabled modules (e.g. ESP32) so AI can place them programmatically.',
+    'catalog_lookup_components',
+    `Resolve component names before placing parts. Pass the parts you need (e.g. ["10k resistor", "Arduino Uno", "red LED"]) — returns closest catalog matches per query with fuzzy tolerance for typos and synonyms. If nothing matches, the result includes Nothing for "<query>". Prefer this over listing the whole catalog. Follow up with catalog_get_module for exact pin names.`,
     'catalog',
     [
-      { name: 'category', type: 'string', description: 'Filter by category (optional)', required: false },
-      { name: 'includeDisabled', type: 'boolean', description: 'Include disabled modules (default true)', required: false },
+      {
+        name: 'queries',
+        type: 'array',
+        description: 'Component names or descriptions to look up (batch supported)',
+        required: true,
+        items: {
+          name: 'query',
+          type: 'string',
+          description: 'One component lookup string',
+          required: true,
+        },
+      },
+      {
+        name: 'maxResults',
+        type: 'number',
+        description: `Max matches per query (default ${DEFAULT_LOOKUP_MAX_RESULTS})`,
+        required: false,
+      },
+      {
+        name: 'minScore',
+        type: 'number',
+        description: `Minimum fuzzy match score 0–1 (default ${DEFAULT_LOOKUP_MIN_SCORE})`,
+        required: false,
+      },
+      {
+        name: 'includeDisabled',
+        type: 'boolean',
+        description: 'Include disabled modules (default true)',
+        required: false,
+      },
     ],
     (_ctx, args) => {
-      const includeDisabled = args.includeDisabled !== false
-      const category = args.category as string | undefined
-      const entries = Object.entries(moduleRegistry)
-        .filter(([, e]) => includeDisabled || !e.disabled)
-        .filter(([, e]) => !category || e.category === category)
+      if (!Array.isArray(args.queries) || args.queries.length === 0) {
+        return fail('queries must be a non-empty array of lookup strings')
+      }
 
-      return okRead(_ctx, 'Modules listed.', {
-        modules: entries.map(([name, entry]) => ({
-          name,
-          category: entry.category,
-          subcategory: entry.subcategory,
-          keywords: entry.keywords,
-          disabled: entry.disabled ?? false,
-          gridSize: { x: entry.definition.gridX, y: entry.definition.gridY },
-          pinCount: entry.definition.grid.filter((c) => c.isConnectable).length,
-        })),
-        categories: getCategories(),
+      const queries = args.queries
+        .filter((q): q is string => typeof q === 'string')
+        .map((q) => q.trim())
+        .filter(Boolean)
+
+      if (queries.length === 0) {
+        return fail('queries must contain at least one non-empty string')
+      }
+
+      const maxResults =
+        typeof args.maxResults === 'number' && args.maxResults > 0
+          ? Math.min(Math.floor(args.maxResults), 20)
+          : DEFAULT_LOOKUP_MAX_RESULTS
+
+      const minScore =
+        typeof args.minScore === 'number' && args.minScore >= 0 && args.minScore <= 1
+          ? args.minScore
+          : DEFAULT_LOOKUP_MIN_SCORE
+
+      const includeDisabled = args.includeDisabled !== false
+      const lookups = lookupComponents(queries, Object.entries(moduleRegistry), {
+        maxResults,
+        minScore,
+        includeDisabled,
       })
+
+      const matchedCount = lookups.filter((l) => l.matches.length > 0).length
+      return okRead(_ctx, `Resolved ${matchedCount}/${lookups.length} lookups.`, { lookups })
     }
   ),
 
   makeTool(
     'catalog_get_module',
-    'Get full details for a module including pin definitions (relX/relY relative to placement origin) and properties.',
+    'Get full details for a module including pin definitions (relX/relY relative to placement origin) and properties. Use catalog_lookup_components first to resolve the exact catalog name.',
     'catalog',
     [{ name: 'moduleName', type: 'string', description: 'Module name', required: true }],
     (_ctx, args) => {
@@ -61,7 +108,7 @@ export const catalogAgentTools: AgentTool[] = [
 
   makeTool(
     'catalog_search_modules',
-    'Search modules by keyword (e.g. "e-ink", "wifi", "battery", "i2c").',
+    'Keyword search across the catalog (single query). For batch part resolution before placement, prefer catalog_lookup_components.',
     'catalog',
     [
       { name: 'query', type: 'string', description: 'Search query', required: true },

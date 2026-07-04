@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react'
 import { ProjectFolder } from '../types/workspace'
 import { ProjectPreview } from './ProjectPreview'
 import { ProductDefinitionCard, ProductDefinitionModal } from './ProductDefinitionView'
+import { MarkdownPreview } from './MarkdownPreview'
 
 interface ProjectFolderViewProps {
   folder: ProjectFolder
@@ -302,10 +303,14 @@ export function ProjectFolderView({
                   className="card overflow-hidden hover:shadow-lg transition-all cursor-pointer group"
                   onClick={() => onOpenDocument(doc.id)}
                 >
-                  <div className="h-36 bg-gradient-to-br from-amber-50 to-orange-100 dark:from-amber-900/20 dark:to-orange-900/20 p-4 flex flex-col">
-                    <p className="text-sm text-gray-600 dark:text-dark-text-secondary line-clamp-5 flex-1 whitespace-pre-wrap">
-                      {doc.content || 'Empty document'}
-                    </p>
+                  <div className="h-36 overflow-hidden border-b border-white/[0.04] bg-gradient-to-br from-[#121218] to-[#0c0c10] p-3 dark:from-[#121218] dark:to-[#0c0c10]">
+                    <div className="pointer-events-none line-clamp-[7]">
+                      <MarkdownPreview
+                        content={doc.content}
+                        variant="card"
+                        emptyLabel="Empty document"
+                      />
+                    </div>
                   </div>
                   <div className="p-3 relative">
                     <button

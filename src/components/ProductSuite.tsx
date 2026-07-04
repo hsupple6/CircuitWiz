@@ -150,21 +150,23 @@ export function ProductSuite({
   }, [idea, onIdeaSubmitted])
 
   const handleComplete = useCallback(async () => {
+    if (saving) return
     const trimmedIdea = idea.trim() || session?.idea?.trim() || 'Untitled product'
     setSaving(true)
 
-    const { completeProductDefinition } = await import('../agent/product/operations')
-    const summary = buildSummary(trimmedIdea, resolvedAnswers)
-    const updated = completeProductDefinition(folder, {
-      idea: trimmedIdea,
-      summary,
-      answers: resolvedAnswers,
-    })
-
-    onSave(updated)
-    setSaving(false)
-    onClose()
-  }, [idea, session?.idea, resolvedAnswers, folder, onSave, onClose])
+    try {
+      const { completeProductDefinition } = await import('../agent/product/operations')
+      const summary = buildSummary(trimmedIdea, resolvedAnswers)
+      const updated = completeProductDefinition(folder, {
+        idea: trimmedIdea,
+        summary,
+        answers: resolvedAnswers,
+      })
+      onSave(updated)
+    } finally {
+      setSaving(false)
+    }
+  }, [saving, idea, session?.idea, resolvedAnswers, folder, onSave])
 
   if (!showWeave && session && !isBlankPhase && questions.length === 0) {
     return (

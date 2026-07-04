@@ -1,0 +1,29 @@
+{
+  "module": "Stepper Driver",
+  "logicModule": "StepperDriver",
+  "gridX": 3,
+  "gridY": 4,
+  "background": "#1a1a2e",
+  "css": "border-radius: 6px; border: 2px solid #4C1D95;",
+  "category": "drivers",
+  "description": "Stepper driver — STEP/DIR/EN in; A+/A−/B+/B− to bipolar stepper coils",
+  "grid": [
+    { "x": 0, "y": 0, "type": "DRIVER_PWR", "pin": "VM", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#DC2626;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:6px 0 0 0;" },
+    { "x": 1, "y": 0, "type": "BODY", "pin": "STP", "isConnectable": false, "css": "background:#312E81;color:#C4B5FD;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 2, "y": 0, "type": "GND", "pin": "GND", "isConnectable": true, "isPowerable": false, "isGroundable": true, "css": "background:#4C1D95;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 6px 0 0;" },
+    { "x": 0, "y": 1, "type": "DRIVER_CTRL", "pin": "STEP", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#2563EB;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 1, "y": 1, "type": "DRIVER_CTRL", "pin": "DIR", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#2563EB;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 2, "y": 1, "type": "DRIVER_CTRL", "pin": "EN", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#2563EB;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 0, "y": 2, "type": "DRIVER_OUT", "pin": "A+", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#059669;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 1, "y": 2, "type": "BODY", "pin": "", "isConnectable": false, "isClickable": true, "css": "background:#1E1B4B;border:1px solid #6366F1;" },
+    { "x": 2, "y": 2, "type": "DRIVER_OUT", "pin": "A-", "isConnectable": true, "isPowerable": false, "isGroundable": true, "css": "background:#7C3AED;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 0, "y": 3, "type": "DRIVER_OUT", "pin": "B+", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#059669;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 1, "y": 3, "type": "BODY", "pin": "", "isConnectable": false, "css": "background:#1E1B4B;" },
+    { "x": 2, "y": 3, "type": "DRIVER_OUT", "pin": "B-", "isConnectable": true, "isPowerable": false, "isGroundable": true, "css": "background:#7C3AED;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;" }
+  ],
+  "properties": {
+    "vth": { "default": 1.8, "unit": "V", "description": "Logic input threshold" },
+    "coilResistance": { "default": 2, "unit": "Ω", "description": "Phase coil resistance" },
+    "supplyVoltage": { "default": 12, "unit": "V", "description": "Motor supply VM" }
+  }
+}

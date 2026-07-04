@@ -8,6 +8,8 @@ import type {
 } from '../types'
 import { classifyTerminalPolarity, isConnectable, isGroundReference, isPositiveTerminal } from '../terminals'
 import { parseNumericProperty, posKey } from '../utils'
+import { resolveLogicModule } from '../../../modules/logicModule'
+import { isDriverModule } from '../../../modules/drivers/logic'
 
 function pairBidirectional(keys: string[]): InternalEdge[] {
   const edges: InternalEdge[] = []
@@ -82,7 +84,7 @@ function collectTerminals(gridData: GridCellLike[][], componentId: string): Grap
       if (cell?.componentId !== componentId || !cell.moduleDefinition) return
       const moduleCell = cell.moduleDefinition.grid[cell.cellIndex ?? 0]
       if (!isConnectable(moduleCell)) return
-      const moduleType = cell.moduleDefinition.module
+      const moduleType = resolveLogicModule(cell.moduleDefinition)
       terminals.push({
         key: posKey(x, y),
         x,
@@ -187,6 +189,7 @@ export function getComponentConductivity(
       return []
 
     default:
+      if (isDriverModule(moduleType)) return []
       return []
   }
 }

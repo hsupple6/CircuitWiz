@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Search, Settings, X } from 'lucide-react'
 import { getAllModulesWithTypes } from '../modules/registry'
 import {
+  countPaletteGroupEntries,
   groupEntriesForPalette,
   moduleMatchesSearch,
   type PaletteGroup,
 } from '../modules/componentCatalog'
-import { DynamicModule } from './DynamicModule'
+import { KicadSymbol } from './KicadSymbol'
 import { ModuleDefinition } from '../modules/types'
 import type { ModuleRegistryEntry } from '../modules/registry'
 
@@ -35,29 +36,24 @@ function ModuleCard({
           : 'hover:shadow-md'
       }`}
     >
-      <div className="bg-white dark:bg-dark-card border border-gray-200 dark:border-dark-border rounded-lg overflow-hidden flex flex-col">
-        <div className="h-24 flex items-center justify-center bg-gray-50 dark:bg-dark-bg overflow-hidden" data-module-preview>
-          <DynamicModule
-            definition={module}
-            className="scale-[0.3] origin-center"
-            style={{ transform: `scale(0.3) rotate(${module.gridX > module.gridY ? '0deg' : '90deg'})` }}
-          />
-        </div>
-        <div className="p-2">
-          <div className="flex items-center justify-between gap-1">
-            <h3 className="font-medium text-gray-900 dark:text-dark-text-primary text-xs truncate">
-              {module.module}
-            </h3>
-            {entry.type && (
-              <div title="Configurable component">
-                <Settings className="w-3 h-3 text-blue-500 shrink-0" />
-              </div>
-            )}
+      <div className="bg-white dark:bg-dark-card border border-gray-200 dark:border-dark-border rounded-lg overflow-hidden">
+        <div className="flex min-h-[3.5rem] items-stretch gap-2 p-2">
+          <KicadSymbol moduleName={module.module} logicModule={module.logicModule} />
+          <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
+            <div className="flex items-start justify-between gap-1">
+              <h3 className="truncate text-xs font-medium text-gray-900 dark:text-dark-text-primary">
+                {module.module}
+              </h3>
+              {entry.type && (
+                <div title="Configurable component">
+                  <Settings className="h-3 w-3 shrink-0 text-blue-500" />
+                </div>
+              )}
+            </div>
+            <p className="line-clamp-2 text-[11px] leading-snug text-gray-400 dark:text-dark-text-muted">
+              {module.description || 'No description'}
+            </p>
           </div>
-          <p className="text-xs text-gray-500 dark:text-dark-text-muted">{module.gridX} × {module.gridY}</p>
-          {module.description && (
-            <p className="text-xs text-gray-400 line-clamp-2 mt-0.5">{module.description}</p>
-          )}
         </div>
       </div>
     </div>
@@ -73,6 +69,8 @@ function ModuleList({
   selectedModule: ModuleDefinition | null
   onSelect: (m: ModuleDefinition) => void
 }) {
+  if (entries.length === 0) return null
+
   return (
     <div className="space-y-1">
       {entries.map((entry) => (
@@ -87,31 +85,104 @@ function ModuleList({
   )
 }
 
+function PaletteGroupSection({
+  group,
+  depth,
+  selectedModule,
+  onModuleSelect,
+  isExpanded,
+  toggleGroup,
+}: {
+  group: PaletteGroup
+  depth: number
+  selectedModule: ModuleDefinition | null
+  onModuleSelect: (module: ModuleDefinition | null) => void
+  isExpanded: (id: string) => boolean
+  toggleGroup: (id: string) => void
+}) {
+  const open = isExpanded(group.groupId)
+  const count = countPaletteGroupEntries(group)
+  const hasSubs = (group.subgroups?.length ?? 0) > 0
+  const hasContent = group.entries.length > 0 || hasSubs
+
+  if (!hasContent) return null
+
+  const isTopLevel = depth === 0
+  const paddingLeft = depth > 0 ? `${depth * 0.5 + 0.25}rem` : undefined
+
+  const handleSelect = (m: ModuleDefinition) => {
+    onModuleSelect(selectedModule?.module === m.module ? null : m)
+  }
+
+  return (
+    <div
+      className={
+        isTopLevel
+          ? 'border border-gray-200 dark:border-dark-border rounded-lg'
+          : 'border border-gray-100 dark:border-dark-border rounded-md'
+      }
+    >
+      <button
+        type="button"
+        onClick={() => toggleGroup(group.groupId)}
+        className={`w-full flex items-center justify-between hover:bg-gray-50 dark:hover:bg-dark-card ${
+          isTopLevel ? 'p-3' : 'px-2 py-2 text-sm'
+        }`}
+        style={paddingLeft ? { paddingLeft } : undefined}
+      >
+        <span className={isTopLevel ? 'font-medium text-sm' : 'pl-1'}>
+          {group.label}{' '}
+          <span className="text-xs text-gray-400">{count}</span>
+        </span>
+        {open ? (
+          <ChevronDown className={isTopLevel ? 'h-4 w-4' : 'h-3.5 w-3.5'} />
+        ) : (
+          <ChevronRight className={isTopLevel ? 'h-4 w-4' : 'h-3.5 w-3.5'} />
+        )}
+      </button>
+      {open && (
+        <div className={`${isTopLevel ? 'border-t p-2' : 'p-2 pt-0'} space-y-2`}>
+          <ModuleList
+            entries={group.entries}
+            selectedModule={selectedModule}
+            onSelect={handleSelect}
+          />
+          {group.subgroups?.map((sub) => (
+            <PaletteGroupSection
+              key={sub.groupId}
+              group={sub}
+              depth={depth + 1}
+              selectedModule={selectedModule}
+              onModuleSelect={onModuleSelect}
+              isExpanded={isExpanded}
+              toggleGroup={toggleGroup}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ComponentPalette({ selectedModule, onModuleSelect }: ComponentPaletteProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    () => new Set(['microcontrollers', 'power', 'output', 'output.electromechanical', 'output.light', 'organization'])
+    () =>
+      new Set([
+        'microcontrollers',
+        'power',
+        'passives',
+        'semiconductors',
+        'output',
+        'output.light',
+        'output.electromechanical',
+        'organization',
+      ])
   )
 
   const paletteStructure = useMemo(() => {
     const matching = getAllModulesWithTypes().filter((e) => moduleMatchesSearch(e, searchQuery))
-    const groups = groupEntriesForPalette(matching)
-    const topLevel: Array<PaletteGroup | { type: 'output-parent'; subgroups: PaletteGroup[] }> = []
-    const outputSubgroups: PaletteGroup[] = []
-
-    groups.forEach((group) => {
-      if (group.parentId === 'output') outputSubgroups.push(group)
-      else topLevel.push(group)
-    })
-
-    if (outputSubgroups.length > 0) {
-      const idx = topLevel.findIndex((g) => 'groupId' in g && g.groupId === 'sensors')
-      const parent = { type: 'output-parent' as const, subgroups: outputSubgroups }
-      if (idx === -1) topLevel.push(parent)
-      else topLevel.splice(idx, 0, parent)
-    }
-
-    return topLevel
+    return groupEntriesForPalette(matching)
   }, [searchQuery])
 
   const isSearching = searchQuery.trim().length > 0
@@ -155,64 +226,17 @@ export function ComponentPalette({ selectedModule, onModuleSelect }: ComponentPa
         {paletteStructure.length === 0 ? (
           <p className="text-sm text-center text-gray-500 py-8">No matches for &ldquo;{searchQuery}&rdquo;</p>
         ) : (
-          paletteStructure.map((item) => {
-            if ('type' in item && item.type === 'output-parent') {
-              const open = isExpanded('output')
-              const count = item.subgroups.reduce((n, g) => n + g.entries.length, 0)
-              return (
-                <div key="output" className="border border-gray-200 dark:border-dark-border rounded-lg">
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup('output')}
-                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-dark-card"
-                  >
-                    <span className="font-medium text-sm">Output <span className="text-xs text-gray-400">{count}</span></span>
-                    {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  </button>
-                  {open && (
-                    <div className="border-t p-2 space-y-2">
-                      {item.subgroups.map((sub) => (
-                        <div key={sub.groupId} className="border border-gray-100 dark:border-dark-border rounded-md">
-                          <button
-                            type="button"
-                            onClick={() => toggleGroup(sub.groupId)}
-                            className="w-full flex items-center justify-between px-2 py-2 text-sm hover:bg-gray-50 dark:hover:bg-dark-card"
-                          >
-                            <span className="pl-1">{sub.label} <span className="text-xs text-gray-400">{sub.entries.length}</span></span>
-                            {isExpanded(sub.groupId) ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                          </button>
-                          {isExpanded(sub.groupId) && (
-                            <div className="p-2 pt-0">
-                              <ModuleList entries={sub.entries} selectedModule={selectedModule} onSelect={(m) => onModuleSelect(selectedModule?.module === m.module ? null : m)} />
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            }
-
-            const group = item as PaletteGroup
-            return (
-              <div key={group.groupId} className="border border-gray-200 dark:border-dark-border rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(group.groupId)}
-                  className="w-full flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-dark-card"
-                >
-                  <span className="font-medium text-sm">{group.label} <span className="text-xs text-gray-400">{group.entries.length}</span></span>
-                  {isExpanded(group.groupId) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                </button>
-                {isExpanded(group.groupId) && (
-                  <div className="p-2 pt-0 border-t">
-                    <ModuleList entries={group.entries} selectedModule={selectedModule} onSelect={(m) => onModuleSelect(selectedModule?.module === m.module ? null : m)} />
-                  </div>
-                )}
-              </div>
-            )
-          })
+          paletteStructure.map((group) => (
+            <PaletteGroupSection
+              key={group.groupId}
+              group={group}
+              depth={0}
+              selectedModule={selectedModule}
+              onModuleSelect={onModuleSelect}
+              isExpanded={isExpanded}
+              toggleGroup={toggleGroup}
+            />
+          ))
         )}
       </div>
     </div>

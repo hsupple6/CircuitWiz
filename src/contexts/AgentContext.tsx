@@ -10,7 +10,7 @@ import {
 } from 'react'
 import type { AgentProjectContext, AgentUiAction } from '../agent/types'
 import type { ClaudeMessage } from '../agent/claude/types'
-import type { ProjectFolder } from '../types/workspace'
+import type { ProjectFolder, ProductDefinition } from '../types/workspace'
 import { runAgentTurn } from '../agent/claude/runTurn'
 import { ClaudeApiError } from '../agent/claude/types'
 import { runSwitchControlledLedPlacementTest } from '../agent/schematic/devTestCases'
@@ -52,6 +52,7 @@ interface AgentContextValue {
   sendMessage: (text: string) => Promise<void>
   stopAgent: () => void
   submitProductIdea: (idea: string) => Promise<void>
+  submitProductSuiteCompletion: (folder: ProjectFolder) => Promise<void>
   projectContext: AgentProjectContext | null
   productSuiteOpen: boolean
   productSuiteLoading: boolean
@@ -71,6 +72,23 @@ function buildProductIdeaContinuationMessage(idea: string): string {
 "${idea}"
 
 Generate 6–12 product-specific custom questions for this exact product and call product_open_new_product_suite with phase "questions", the idea, and those questions (with suggestedAnswer pre-fills for human review). Questions must be tailored to this product — not a generic template. You may add 1–2 optional general questions (budget, unit count) at the very end only. Mark technical questions with technical:true.`
+}
+
+function buildProductSuiteCompletionMessage(definition: ProductDefinition): string {
+  const answersBlock = definition.answers
+    .map((a) => `- ${a.prompt}: ${a.answer}`)
+    .join('\n')
+
+  return `[Product Suite completed] The user reviewed and saved their product definition.
+
+Product idea: ${definition.idea}
+
+Summary: ${definition.summary}
+
+Confirmed answers:
+${answersBlock}
+
+Continue immediately: load plan_space, document, and project tool categories (not product — definition is already saved above). Create a detailed development roadmap. Use plan space bubbles for major phases/subsystems, capture requirements, and outline concrete CircuitWiz next steps (schematics, firmware, BOM). Never call product_open_new_product_suite again for this project.`
 }
 
 interface AgentProviderProps {
@@ -102,6 +120,8 @@ export function AgentProvider({
   const abortRef = useRef<AbortController | null>(null)
   const projectContextRef = useRef(projectContext)
   const loadedToolCategoriesRef = useRef<Set<string>>(new Set())
+  const productSuiteSaveInFlightRef = useRef(false)
+  const productSuiteHandoffRef = useRef(false)
   const currentAssistantIdRef = useRef<string | null>(null)
   projectContextRef.current = projectContext
 
@@ -139,11 +159,17 @@ export function AgentProvider({
   }, [])
 
   useEffect(() => {
-    if (projectContext?.folder.productSuiteSession) {
+    if (productSuiteHandoffRef.current) return
+    const session = projectContext?.folder.productSuiteSession
+    if (session) {
       setProductSuiteOpen(true)
       setProductSuiteLoading(false)
+      return
     }
-  }, [projectContext?.folder.productSuiteSession?.id])
+    if (!productSuiteLoading && !isLoading) {
+      setProductSuiteOpen(false)
+    }
+  }, [projectContext?.folder.productSuiteSession?.id, productSuiteLoading, isLoading])
 
   const runTurn = useCallback(
     async (userMessage: string, options?: { chatUserText?: string }) => {
@@ -243,6 +269,9 @@ export function AgentProvider({
                   : entry
               )
             })
+            if (toolName === 'product_open_new_product_suite' && success) {
+              setProductSuiteLoading(false)
+            }
             currentAssistantIdRef.current = null
           },
           onFolderUpdate: (folder, meta) => {
@@ -382,6 +411,34 @@ export function AgentProvider({
     [runTurn, onProjectUpdate, ensureExpanded]
   )
 
+  const submitProductSuiteCompletion = useCallback(
+    async (folder: ProjectFolder) => {
+      const definition = folder.productDefinition
+      if (!definition || productSuiteSaveInFlightRef.current) return
+
+      productSuiteSaveInFlightRef.current = true
+      productSuiteHandoffRef.current = true
+
+      onProjectUpdate?.(folder)
+      closeProductSuite()
+      ensureExpanded()
+
+      for (const category of ['plan_space', 'document', 'project'] as const) {
+        loadedToolCategoriesRef.current.add(category)
+      }
+
+      try {
+        await runTurn(buildProductSuiteCompletionMessage(definition), {
+          chatUserText: 'Product definition saved — build my development plan.',
+        })
+      } finally {
+        productSuiteSaveInFlightRef.current = false
+        productSuiteHandoffRef.current = false
+      }
+    },
+    [runTurn, onProjectUpdate, ensureExpanded, closeProductSuite]
+  )
+
   const runDevTestCase = useCallback(async () => {
     const ctx = projectContextRef.current
     if (!ctx) {
@@ -411,6 +468,7 @@ export function AgentProvider({
       sendMessage,
       stopAgent,
       submitProductIdea,
+      submitProductSuiteCompletion,
       projectContext,
       productSuiteOpen,
       productSuiteLoading,
@@ -432,6 +490,7 @@ export function AgentProvider({
       sendMessage,
       stopAgent,
       submitProductIdea,
+      submitProductSuiteCompletion,
       projectContext,
       productSuiteOpen,
       productSuiteLoading,

@@ -4,6 +4,14 @@
  */
 
 import { WireConnection } from '../../../modules/types'
+import { resolveLogicModule } from '../../../modules/logicModule'
+import { isDriverModule } from '../../../modules/drivers/logic'
+import {
+  collectDriverStamps,
+  driverChannelShouldBeOn,
+  driverChannelResistance,
+  type DriverChannelStamp,
+} from '../components/driverStamps'
 import { validateSourceChains } from '../graph'
 import { buildSystemChains } from '../chains'
 import {
@@ -552,11 +560,12 @@ function buildNets(
   const mosfets: MosfetStamp[] = []
   const opAmps: OpAmpStamp[] = []
   const bridges: BridgeStamp[] = []
+  const driverChannels: DriverChannelStamp[] = []
   const errors: string[] = []
   const processedComponents = new Set<string>()
 
   components.forEach((component) => {
-    const moduleType = component.moduleDefinition.module
+    const moduleType = resolveLogicModule(component.moduleDefinition)
     if (processedComponents.has(component.componentId)) return
     processedComponents.add(component.componentId)
 
@@ -887,6 +896,27 @@ function buildNets(
       return
     }
 
+    if (isDriverModule(moduleType)) {
+      const { channels, idleLoads } = collectDriverStamps(
+        moduleType,
+        component,
+        terminals,
+        posToNet
+      )
+      driverChannels.push(...channels)
+      idleLoads.forEach((load) => {
+        stampResistor(resistors, load.netPos, load.netNeg, load.resistance, load.componentId)
+      })
+      terminals.forEach((terminal) => {
+        const moduleCell = terminal.moduleCell
+        if (moduleCell.type !== 'DRIVER_CTRL') return
+        const net = posToNet.get(posKey(terminal.x, terminal.y))
+        if (net === undefined || net === groundNet) return
+        stampResistor(resistors, net, groundNet, 1e9, `${component.componentId}_${moduleCell.pin}_bleed`)
+      })
+      return
+    }
+
     if (isMicrocontrollerModule(component.moduleDefinition)) {
       const powerInputs = terminals.filter((t) => isMcuPowerInput(t.moduleCell))
       const gnds = terminals.filter((t) => isGroundReference(t.moduleCell))
@@ -956,6 +986,7 @@ function buildNets(
     mosfets,
     opAmps,
     bridges,
+    driverChannels,
     components,
     errors,
   }
@@ -1089,6 +1120,7 @@ export function solveCircuit(
     components,
     errors,
   } = netlist
+  const baseDriverChannels = netlist.driverChannels
 
   if (nodeCount === 0) {
     return emptyResult('No electrical nodes in circuit', errors)
@@ -1134,7 +1166,45 @@ export function solveCircuit(
   let npnStates = baseNpns.map((t) => ({ ...t }))
   let mosfetStates = baseMosfets.map((t) => ({ ...t }))
   let opAmpStates = baseOpAmps.map((op) => ({ ...op }))
+  let driverStates = baseDriverChannels.map((d) => ({ ...d }))
   let solution: { voltages: number[]; sourceCurrents: number[] } | null = null
+
+  const buildDriverResistors = (voltages: number[]): ResistorStamp[] => {
+    const stamps: ResistorStamp[] = []
+    driverStates.forEach((channel) => {
+      if (!channel.isOn) return
+      const r = driverChannelResistance(channel, voltages, 12)
+      if (r >= 1e8) return
+      stamps.push({
+        netA: channel.netSupply,
+        netB: channel.netOut,
+        resistance: r,
+        componentId: channel.componentId,
+      })
+      if (channel.netOutReturn !== undefined && channel.coilResistance !== undefined) {
+        stamps.push({
+          netA: channel.netOut,
+          netB: channel.netOutReturn,
+          resistance: channel.coilResistance,
+          componentId: `${channel.componentId}_coil`,
+        })
+        stamps.push({
+          netA: channel.netOutReturn,
+          netB: channel.netGnd,
+          resistance: Math.max(channel.rdsOn, 1e-3),
+          componentId: `${channel.componentId}_return`,
+        })
+      } else if (channel.loadToGnd !== undefined) {
+        stamps.push({
+          netA: channel.netOut,
+          netB: channel.netGnd,
+          resistance: channel.loadToGnd,
+          componentId: `${channel.componentId}_load`,
+        })
+      }
+    })
+    return stamps
+  }
 
   const expandBridgeDiodes = (voltages: number[]): DiodeStamp[] => {
     const bridgeDiodes: DiodeStamp[] = []
@@ -1184,11 +1254,12 @@ export function solveCircuit(
   for (let iteration = 0; iteration < 12; iteration++) {
     const bridgeDiodes = solution ? expandBridgeDiodes(solution.voltages) : []
     const allDiodes = [...diodeStates, ...bridgeDiodes]
+    const driverResistors = buildDriverResistors(solution?.voltages ?? [])
 
     solution = solveMNA(
       nodeCount,
       groundNet,
-      resistors,
+      [...resistors, ...driverResistors],
       voltageSources,
       ledStates,
       allDiodes,
@@ -1254,6 +1325,12 @@ export function solveCircuit(
       return { ...op, outputVoltage: vout }
     })
 
+    driverStates = driverStates.map((channel) => {
+      const shouldBeOn = driverChannelShouldBeOn(channel, solution!.voltages, 12)
+      if (shouldBeOn !== channel.isOn) changed = true
+      return { ...channel, isOn: shouldBeOn }
+    })
+
     if (!changed) break
   }
 
@@ -1275,10 +1352,11 @@ export function solveCircuit(
 
     const bridgeDiodes = solution ? expandBridgeDiodes(solution.voltages) : []
     const allDiodes = [...diodeStates, ...bridgeDiodes]
+    const driverResistors = buildDriverResistors(solution?.voltages ?? [])
     solution = solveMNA(
       nodeCount,
       groundNet,
-      resistors,
+      [...resistors, ...driverResistors],
       voltageSources,
       ledStates,
       allDiodes,
@@ -1344,7 +1422,9 @@ export function solveCircuit(
     const voltageDrop = Math.abs(va - vb)
     const power = voltageDrop * current
     const comp = components.find((c) => c.componentId === resistor.componentId)
-    const moduleType = comp?.moduleDefinition?.module ?? ''
+    const moduleType = comp?.moduleDefinition
+      ? resolveLogicModule(comp.moduleDefinition)
+      : ''
     const driveVoltage = Math.max(va, vb)
     const minVoltage =
       moduleType === 'Buzzer'
@@ -1623,7 +1703,7 @@ export function solveCircuit(
   })
 
   components.forEach((component) => {
-    const moduleType = component.moduleDefinition.module
+    const moduleType = resolveLogicModule(component.moduleDefinition)
     if (!isMicrocontrollerModule(component.moduleDefinition)) return
 
     getTerminals(component).forEach((terminal) => {
