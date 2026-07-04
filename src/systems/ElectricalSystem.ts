@@ -17,7 +17,7 @@ import { findCircuitPathways, CalculateCircuit, convertGridToNodes } from '../se
 import { checkContinuity } from '../systems/chain/graph'
 import { isActivePowerSourceTerminal } from '../utils/powerSupplies'
 import { solveCircuit } from '../services/CircuitSolver'
-import { applyGpioComponentStates, applyGpioWireHints } from './chain/gpioDisplay'
+import { applyGpioComponentStates, applyGpioWireHints, stripPwmFromWires } from './chain/gpioDisplay'
 import { applyEscMotorDisplay } from './chain/driverMotorDisplay'
 import { extractOccupiedComponents } from '../utils/gridUtils'
 import { LEDVoltageFlow } from '../modules/output/voltageFlow/LED'
@@ -1060,6 +1060,12 @@ export function stopMultiMicrocontrollerGPIO(microcontrollerId: string): void {
 export function stopAllMultiMicrocontrollerGPIO(): void {
   console.log('[MULTI_MCU_GPIO] Stopping all simulations')
   multiMCUGPIO.stopAllSimulations()
+}
+
+/** Stop every GPIO simulation source (multi-MCU + legacy dynamic GPIO). */
+export function stopAllCircuitSimulation(): void {
+  stopAllMultiMicrocontrollerGPIO()
+  stopDynamicGPIO()
 }
 
 /**
@@ -2475,7 +2481,9 @@ export function calculateElectricalFlow(
   const effectiveGPIOStates =
     multiMCUStates.size > 0 ? multiMCUStates :
     singleDynamicStates.size > 0 ? singleDynamicStates :
-    gpioStates
+    gpioStates && gpioStates.size > 0 ? gpioStates :
+    undefined
+  const hasLiveGpio = effectiveGPIOStates !== undefined && effectiveGPIOStates.size > 0
 
   const occupiedComponents = extractOccupiedComponents(gridData)
   const circuitAnalysis = findCircuitPathways(occupiedComponents, wires)
@@ -2485,14 +2493,15 @@ export function calculateElectricalFlow(
   const componentStates = new Map(solverResult.componentStates) as Map<string, ComponentState>
   let updatedWires = solverResult.updatedWires
 
-  if (effectiveGPIOStates && effectiveGPIOStates.size > 0) {
+  if (hasLiveGpio && effectiveGPIOStates) {
     applyGpioComponentStates(gridData, effectiveGPIOStates, componentStates)
     updatedWires = applyGpioWireHints(gridData, updatedWires, effectiveGPIOStates)
+    updatedWires = applyEscMotorDisplay(gridData, updatedWires, componentStates, {
+      netVoltages: solverResult.netVoltages,
+    })
+  } else {
+    updatedWires = stripPwmFromWires(updatedWires)
   }
-
-  updatedWires = applyEscMotorDisplay(gridData, updatedWires, componentStates, {
-    netVoltages: solverResult.netVoltages,
-  })
 
   const updatedGridData = updateGridData(gridData, componentStates)
 

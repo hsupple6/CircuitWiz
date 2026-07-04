@@ -1,7 +1,7 @@
 import type { WireConnection } from '../../modules/types'
 import { resolveLogicModule } from '../../modules/logicModule'
 import { calculateMotorElectricalProperties } from '../../modules/output/voltageFlow/Motor'
-import { parseNumericProperty, posKey } from './utils'
+import { omitPwm, parseNumericProperty, posKey } from './utils'
 import type { GridCellLike, SolvedComponentState } from './types'
 import { getPlacedComponents, getTerminals } from './components/registry'
 
@@ -146,10 +146,10 @@ function propagatePwmFromPins(
   componentStates: Map<string, SolvedComponentState>
 ): WireConnection[] {
   return wires.map((wire) => {
-    let wirePWM = wire.pwm
+    let wirePWM: number | undefined
 
     const segments = wire.segments.map((segment) => {
-      let segPwm = segment.pwm
+      let segPwm: number | undefined
       for (const pt of [segment.from, segment.to]) {
         const pwm = pwmAtPoint(gridData, pt.x, pt.y, wires, componentStates)
         if (pwm !== undefined) {
@@ -157,12 +157,12 @@ function propagatePwmFromPins(
           wirePWM = pwm
         }
       }
-      if (segPwm === undefined) return segment
-      return { ...segment, isPowered: true, pwm: segPwm }
+      if (segPwm === undefined) return omitPwm(segment)
+      return { ...omitPwm(segment), isPowered: true, pwm: segPwm }
     })
 
-    if (wirePWM === undefined) return wire
-    return { ...wire, isPowered: true, pwm: wirePWM, segments }
+    if (wirePWM === undefined) return { ...omitPwm(wire), segments }
+    return { ...omitPwm(wire), isPowered: true, pwm: wirePWM, segments }
   })
 }
 

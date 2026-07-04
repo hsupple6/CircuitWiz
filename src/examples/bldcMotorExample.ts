@@ -66,8 +66,8 @@ export function bldcMotorEscSchematic(): Schematic {
     ({ place, wire }) => {
       const arduino = place('Arduino Uno R3', 2, 4)
       const battery = place('Battery', 2, 22, { voltage: 11.1 })
-      const esc = place('30A 3S ESC', 18, 8)
-      const motor = place('Brushless Motor', 30, 8)
+      const esc = place('30A 3S ESC', 10, 8)
+      const motor = place('Brushless Motor', 18, 8)
 
       const gndRailX = 0
 
@@ -75,8 +75,8 @@ export function bldcMotorEscSchematic(): Schematic {
       wire(
         [
           battery.pin('5V'),
-          { x: gndRailX + 1, y: 22 },
-          { x: gndRailX + 1, y: 8 },
+          { x: 0, y: 22 },
+          { x: 0, y: 8 },
           esc.pin('VBAT'),
         ],
         { powered: true, color: '#f97316' }
@@ -86,20 +86,21 @@ export function bldcMotorEscSchematic(): Schematic {
       wire(
         [
           battery.pin('GND'),
-          { x: gndRailX, y: 22 },
-          { x: gndRailX, y: 4 },
+          { x: 5, y: 22 },
+          { x: 5, y: 6 },
           arduino.pin('GND'),
+          { x: 10, y: 6 },
+          esc.pin('GND')
         ],
         { grounded: true, color: '#ef4444' }
       )
-      wire([esc.pin('GND'), { x: gndRailX, y: 8 }], { grounded: true, color: '#ef4444' })
 
       // Arduino VIN from 3S (within 7–12 V onboard reg spec)
       wire(
         [
           battery.pin('5V'),
-          { x: 1, y: 22 },
-          { x: 1, y: 7 },
+          { x: 0, y: 22 },
+          { x: 0, y: 7 },
           arduino.pin('VIN'),
         ],
         { powered: true, color: '#f97316' }
@@ -109,17 +110,17 @@ export function bldcMotorEscSchematic(): Schematic {
       wire(
         [
           arduino.pin('D9'),
-          { x: 1, y: 15 },
-          { x: 1, y: 9 },
+          { x: 3, y: 15 },
+          { x: 3, y: 9 },
           esc.pin('PWM'),
         ],
         { color: '#3b82f6' }
       )
 
       // 3-phase → motor
-      wire([esc.pin('U'), motor.pin('IN1')], { color: '#22c55e' })
-      wire([esc.pin('V'), motor.pin('IN2')], { color: '#22c55e' })
-      wire([esc.pin('W'), motor.pin('IN3')], { color: '#22c55e' })
+      wire([esc.pin('U'), { x: 10, y: 13 }, { x: 18, y: 13 }, motor.pin('IN1')], { color: '#22c55e' })
+      wire([esc.pin('V'), { x: 11, y: 12 }, { x: 19, y: 12 }, motor.pin('IN2')], { color: '#22c55e' })
+      wire([esc.pin('W'), { x: 12, y: 11 }, { x: 20, y: 11 }, motor.pin('IN3')], { color: '#22c55e' })
     },
     {
       groupBoxes: [

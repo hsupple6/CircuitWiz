@@ -1285,7 +1285,11 @@ export function ProjectGrid({
     setIsCalculating(true)
 
     try {
-      const result = calculateElectricalFlow(gridData, wires, simulationState.gpioStates)
+      const result = calculateElectricalFlow(
+        gridData,
+        wires,
+        simulationState.isRunning ? simulationState.gpioStates : undefined
+      )
 
       
       // Update states with results
@@ -1324,7 +1328,7 @@ export function ProjectGrid({
         requestAnimationFrame(() => performElectricalCalculation())
       }
     }
-  }, [gridData, wires, simulationState.gpioStates, isCalculating, onCircuitPathwaysChange, onCircuitInfoChange, onWiresChange, onComponentStatesChange])
+  }, [gridData, wires, simulationState.isRunning, simulationState.gpioStates, isCalculating, onCircuitPathwaysChange, onCircuitInfoChange, onWiresChange, onComponentStatesChange])
 
   // Recalculate continuously while simulation runs; debounce when idle
   useEffect(() => {
@@ -1343,16 +1347,23 @@ export function ProjectGrid({
       }
     }
 
+    const delayMs = simulationState.isRunning ? 100 : 0
     const timeoutId = setTimeout(() => {
       const hasComponents = gridData.some((row) => row.some((cell) => cell.occupied))
       const hasWires = wires.length > 0
       if (hasComponents || hasWires) {
         performElectricalCalculation()
       }
-    }, 100)
+    }, delayMs)
 
     return () => clearTimeout(timeoutId)
-  }, [gridData, wires, simulationState.isRunning, performElectricalCalculation])
+  }, [
+    gridData,
+    wires,
+    simulationState.isRunning,
+    simulationState.gpioStates,
+    performElectricalCalculation,
+  ])
 
   // Wire system functions
   const startWiring = useCallback((x: number, y: number) => {

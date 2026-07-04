@@ -399,6 +399,8 @@ export class DynamicGPIO {
       cancelAnimationFrame(this.animationId)
       this.animationId = null
     }
+    this.currentStates.clear()
+    this.animations.clear()
   }
 
   /**

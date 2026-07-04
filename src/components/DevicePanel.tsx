@@ -8,11 +8,9 @@ import { ESP32Flasher, FlashProgress, FlashResult, ESP32Device } from '../servic
 import { QEMUEmulatorReal, EmulationResult, GPIOState } from '../services/QEMUEmulatorReal'
 import { 
   startDynamicGPIO, 
-  stopDynamicGPIO, 
   getDynamicGPIOStates,
   startMultiMicrocontrollerGPIO,
-  stopMultiMicrocontrollerGPIO,
-  stopAllMultiMicrocontrollerGPIO,
+  stopAllCircuitSimulation,
   getAllMultiMicrocontrollerGPIOStates,
   getRunningMicrocontrollers,
   isMicrocontrollerRunning
@@ -608,21 +606,6 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
     }
   }
 
-  const stopSimulation = () => {
-    // Stop all multi-microcontroller GPIO simulations
-    stopAllMultiMicrocontrollerGPIO()
-    
-    setSimulationState({
-      isRunning: false,
-      currentMicrocontroller: null,
-      runningMicrocontrollers: new Set(),
-      gpioStates: new Map(),
-      wireStates: new Map(),
-      startTime: null
-    })
-    setShowSimulationPanel(false)
-  }
-
   const findWiresConnectedToPin = (microcontroller: Microcontroller, pin: number): string[] => {
     const connectedWires: string[] = []
 
@@ -641,6 +624,66 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
     })
 
     return connectedWires
+  }
+
+  /** Rebuild panel/grid GPIO + wire highlight state from live engine (empty when nothing is running). */
+  const syncLiveGpioAndWireStates = useCallback(
+    (runningIds: Set<string>): Pick<SimulationState, 'gpioStates' | 'wireStates'> => {
+      const gpioStates = new Map<number, GPIOState>()
+      const wireStates = new Map<string, 'active' | 'inactive'>()
+
+      if (runningIds.size === 0) {
+        return { gpioStates, wireStates }
+      }
+
+      const multiMCUStates = getAllMultiMicrocontrollerGPIOStates()
+      const singleDynamicStates = getDynamicGPIOStates()
+      const dynamicStates = multiMCUStates.size > 0 ? multiMCUStates : singleDynamicStates
+
+      dynamicStates.forEach((state, pin) => {
+        gpioStates.set(pin, {
+          pin,
+          state: state.state,
+          value: state.value,
+          timestamp: state.timestamp,
+        })
+      })
+
+      microcontrollers
+        .filter((mcu) => runningIds.has(mcu.id))
+        .forEach((mcu) => {
+          gpioStates.forEach((gpioState, pin) => {
+            findWiresConnectedToPin(mcu, pin).forEach((wireId) => {
+              wireStates.set(
+                wireId,
+                gpioState.state === 'HIGH' || gpioState.state === 'PULSING' ? 'active' : 'inactive'
+              )
+            })
+          })
+        })
+
+      return { gpioStates, wireStates }
+    },
+    [microcontrollers, gridData, wires]
+  )
+
+  /** Stop every simulation and clear GPIO/PWM/wire highlights. */
+  const haltAllSimulations = useCallback(() => {
+    stopAllCircuitSimulation()
+    const cleared = syncLiveGpioAndWireStates(new Set())
+    setSimulationState({
+      isRunning: false,
+      currentMicrocontroller: null,
+      runningMicrocontrollers: new Set(),
+      gpioStates: cleared.gpioStates,
+      wireStates: cleared.wireStates,
+      startTime: null,
+    })
+  }, [syncLiveGpioAndWireStates])
+
+  const stopSimulation = () => {
+    haltAllSimulations()
+    setShowSimulationPanel(false)
   }
 
   // Real-time GPIO state updates during simulation
@@ -997,16 +1040,8 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                       <button
                         onClick={() => {
                           if (allRunning) {
-                            // Stop all running microcontrollers
                             console.log('Stop All button clicked - stopping all microcontrollers')
-                            stopAllMultiMicrocontrollerGPIO()
-                            setSimulationState(prev => ({
-                              ...prev,
-                              isRunning: false,
-                              runningMicrocontrollers: new Set(),
-                              gpioStates: new Map(),
-                              wireStates: new Map()
-                            }))
+                            haltAllSimulations()
                           } else {
                             // Start all microcontrollers with compiled code
                             console.log('Run All button clicked - starting all microcontrollers')
@@ -1278,12 +1313,8 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                             }`}
                             onClick={() => {
                               if (simulationState.runningMicrocontrollers.has(microcontroller.id)) {
-                                console.log(`Stop button clicked - stopping simulation for ${microcontroller.id}`)
-                                stopMultiMicrocontrollerGPIO(microcontroller.id)
-                                setSimulationState(prev => ({
-                                  ...prev,
-                                  runningMicrocontrollers: new Set([...prev.runningMicrocontrollers].filter(id => id !== microcontroller.id))
-                                }))
+                                console.log(`Stop button clicked - halting all simulations`)
+                                haltAllSimulations()
                               } else {
                                 console.log(`Run button clicked for ${microcontroller.id} - Debug info:`, {
                                   hasCompiledCode: compiledCodes.has(microcontroller.id),

@@ -6,6 +6,9 @@ import {
   gpioPinNumber,
   isMicrocontrollerModule,
 } from './components/registry'
+import { omitPwm, stripPwmFromWires } from './utils'
+
+export { stripPwmFromWires }
 
 /** Stamp live GPIO/PWM states onto MCU pins even when the full circuit cannot be solved. */
 export function applyGpioComponentStates(
@@ -57,7 +60,7 @@ export function applyGpioWireHints(
   wires: WireConnection[],
   gpioStates: Map<number, unknown>
 ): WireConnection[] {
-  if (gpioStates.size === 0) return wires
+  if (gpioStates.size === 0) return stripPwmFromWires(wires)
 
   return wires.map((wire) => {
     let wirePWM: number | undefined
@@ -85,17 +88,19 @@ export function applyGpioWireHints(
         wirePWM = duty
       }
 
-      if (segPwm === undefined) return segment
+      if (segPwm === undefined) return omitPwm(segment)
       return {
-        ...segment,
+        ...omitPwm(segment),
         isPowered: true,
         pwm: segPwm,
       }
     })
 
-    if (wirePWM === undefined) return wire
+    if (wirePWM === undefined) {
+      return { ...omitPwm(wire), segments }
+    }
     return {
-      ...wire,
+      ...omitPwm(wire),
       isPowered: true,
       pwm: wirePWM,
       segments,

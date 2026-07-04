@@ -2,7 +2,7 @@ import type { WireConnection } from '../../modules/types'
 import { resolveLogicModule } from '../../modules/logicModule'
 import { isGroundReference } from './terminals'
 import type { GridCellLike, SolvedComponentState } from './types'
-import { posKey } from './utils'
+import { omitPwm, posKey } from './utils'
 import { isNetGrounded } from './nets'
 import { isMicrocontrollerModule } from './components/registry'
 
@@ -83,7 +83,7 @@ export function propagateVoltages(ctx: PropagateContext): {
       }
 
       return {
-        ...segment,
+        ...omitPwm(segment),
         voltage: segmentVoltage,
         current: isPowered ? ctx.totalCurrent : 0,
         power: segmentVoltage * (isPowered ? ctx.totalCurrent : 0),
@@ -96,7 +96,7 @@ export function propagateVoltages(ctx: PropagateContext): {
     const wireVoltage = isPowered ? maxVoltage : 0
 
     return {
-      ...wire,
+      ...omitPwm(wire),
       voltage: wireVoltage,
       current: isPowered ? ctx.totalCurrent : 0,
       power: wireVoltage * (isPowered ? ctx.totalCurrent : 0),

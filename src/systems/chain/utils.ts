@@ -1,5 +1,23 @@
+import type { WireConnection } from '../../modules/types'
+
 export function posKey(x: number, y: number): string {
   return `${x},${y}`
+}
+
+/** Drop stale simulation PWM from a wire or segment object. */
+export function omitPwm<T extends { pwm?: number }>(value: T): Omit<T, 'pwm'> {
+  const { pwm: _pwm, ...rest } = value
+  return rest
+}
+
+export function stripPwmFromWires(wires: WireConnection[]): WireConnection[] {
+  return wires.map((wire) => {
+    const wireBase = omitPwm(wire)
+    return {
+      ...wireBase,
+      segments: wire.segments.map((segment) => omitPwm(segment)),
+    }
+  })
 }
 
 export function parseKey(key: string): { x: number; y: number } {
