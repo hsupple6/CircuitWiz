@@ -18,6 +18,8 @@ export {
 
 export { buildSystemChains } from './chains'
 export { buildNodeVoltages, propagateVoltages } from './propagate'
+export { applyGpioComponentStates, applyGpioWireHints } from './gpioDisplay'
+export { applyEscMotorDisplay } from './driverMotorDisplay'
 export { buildNets, isNetGrounded } from './nets'
 
 export {

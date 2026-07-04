@@ -52,6 +52,11 @@ export function placeModule(
     const pinName = cell.pin || cell.type
     if (cell.isConnectable) {
       pinMap.set(pinName, { x, y })
+      if (cell.pin) {
+        pinMap.set(cell.pin, { x, y })
+        const shortPin = cell.pin.split('/')[0]
+        if (shortPin !== cell.pin) pinMap.set(shortPin, { x, y })
+      }
       if (moduleName === 'LED') {
         if (cell.type === 'LED_POSITIVE' || cell.pin === '+') pinMap.set('+', { x, y })
         if (cell.type === 'LED_NEGATIVE' || cell.pin === '-') pinMap.set('-', { x, y })
@@ -133,6 +138,21 @@ export function placeModule(
         ...(props.vth != null ? { vth: props.vth } : {}),
         ...(props.rdsOn != null ? { rdsOn: props.rdsOn } : {}),
       }
+    }
+    if (
+      (moduleName === 'PowerSupply' || moduleName === 'Battery') &&
+      props.voltage != null
+    ) {
+      const v = props.voltage as number
+      moduleDefinition.properties = {
+        ...(moduleDefinition.properties as Record<string, unknown>),
+        voltage: v,
+      }
+      moduleDefinition.grid = moduleDefinition.grid.map((cell) =>
+        cell.type === 'VCC' || cell.pin === '5V' || cell.pin === '+'
+          ? { ...cell, voltage: v }
+          : cell
+      )
     }
 
     components.push(entry)

@@ -407,15 +407,17 @@ function buildComponentStats(
       break
     }
     default: {
-      status =
-        state?.isPowered || voltage > 0.05
+      const isPwm = state?.status === 'pwm' || state?.pwm !== undefined
+      status = isPwm
+        ? { label: `PWM ${(state?.pwm ?? 0).toFixed(0)}%`, tone: 'pwm' }
+        : state?.isPowered || voltage > 0.05
           ? { label: state?.status ?? 'Active', tone: 'active' }
           : { label: 'Unpowered', tone: 'idle' }
-      if (state?.status && !['active', 'unpowered', 'on', 'off'].includes(state.status)) {
+      if (state?.status && !['active', 'unpowered', 'on', 'off', 'pwm'].includes(state.status)) {
         details.push({ label: 'Status', value: state.status, accent: 'info' })
       }
       if (state?.pwm !== undefined) {
-        details.push({ label: 'PWM', value: `${state.pwm.toFixed(1)}%`, accent: 'info' })
+        details.push({ label: 'PWM duty', value: `${state.pwm.toFixed(1)}%`, accent: 'info' })
       }
     }
   }

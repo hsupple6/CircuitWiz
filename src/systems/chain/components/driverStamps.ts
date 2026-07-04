@@ -374,11 +374,7 @@ export function driverChannelResistance(
   if (!channel.pwmMode) return channel.rdsOn
 
   const ctrlV = Math.max(0, (voltages[channel.netCtrl] ?? 0) - (voltages[channel.netGnd] ?? 0))
-  const supplyV = Math.max(
-    0.1,
-    (voltages[channel.netSupply] ?? supplyVoltageHint) - (voltages[channel.netGnd] ?? 0)
-  )
-  const duty = Math.min(1, ctrlV / supplyV)
+  const duty = Math.min(1, ctrlV / 5.0)
   if (duty <= 0.01) return 1e9
   return channel.rdsOn / duty
 }

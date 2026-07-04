@@ -317,6 +317,7 @@ export function simulationTestReferenceDoc(): Document {
 | Op-amp inverting amplifier | Vout = −(Rf/Rin) × Vin |
 | Zener voltage clamp | Output clamps at Zener voltage |
 | Bridge rectifier | Vdc ≈ 0.9 × Vrms |
+| BLDC Motor + ESC | PWM D9 → ESC → U/V/W → motor phases |
 
 Open each schematic in this folder to run the preset layout.
 `

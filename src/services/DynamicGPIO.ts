@@ -16,6 +16,10 @@ export interface GPIOAnimation {
   dutyCycle: number
   startTime: number
   duration?: number // ms, undefined = infinite
+  /** Triangle ramp lower bound (0–1), used for for-loop analogWrite ramps */
+  minDutyCycle?: number
+  /** Triangle ramp upper bound (0–1), used for for-loop analogWrite ramps */
+  maxDutyCycle?: number
 }
 
 const ARDUINO_BUILTIN_PINS: Record<string, number> = {
@@ -53,8 +57,10 @@ export function resolvePinArg(arg: string, constants: Map<string, number>): numb
 }
 
 const DIGITAL_WRITE_RE = /digitalWrite\s*\(\s*([^,\s)]+)\s*,\s*(HIGH|LOW)\s*\)/
-const ANALOG_WRITE_RE = /analogWrite\s*\(\s*([^,\s)]+)\s*,\s*(\d+)\s*\)/
+const ANALOG_WRITE_RE = /analogWrite\s*\(\s*([^,\s)]+)\s*,\s*([^)]+)\s*\)/
 const DELAY_RE = /delay\s*\(\s*(\d+)\s*\)/
+const FOR_RAMP_UP_RE =
+  /for\s*\(\s*int\s+(\w+)\s*=\s*(\w+)\s*;\s*\1\s*<=\s*(\w+)\s*;\s*\1\+\+/
 
 export class DynamicGPIO {
   private animations: Map<number, GPIOAnimation> = new Map()
@@ -75,13 +81,15 @@ export class DynamicGPIO {
     // Look for common patterns
     const blinkPattern = this.detectBlinkPattern(lines, pinConstants)
     const fadePattern = this.detectFadePattern(lines, pinConstants)
+    const rampPattern = this.detectRampPattern(lines, pinConstants)
     const staticPattern = this.detectStaticPattern(lines, pinConstants)
     
     console.log(`🔧 [PWM_DEBUG] Code analysis results:`, {
       blinkPattern: blinkPattern.length,
       fadePattern: fadePattern.length,
+      rampPattern: rampPattern.length,
       staticPattern: staticPattern.length,
-      total: blinkPattern.length + fadePattern.length + staticPattern.length
+      total: blinkPattern.length + fadePattern.length + rampPattern.length + staticPattern.length
     })
     
     if (fadePattern.length > 0) {
@@ -91,7 +99,7 @@ export class DynamicGPIO {
       console.log(`🔧 [PWM_DEBUG] Static patterns detected:`, staticPattern)
     }
     
-    animations.push(...blinkPattern, ...fadePattern, ...staticPattern)
+    animations.push(...blinkPattern, ...fadePattern, ...rampPattern, ...staticPattern)
 
     // Prefer animated patterns over static when the same pin appears more than once
     const byPin = new Map<number, GPIOAnimation>()
@@ -181,8 +189,9 @@ export class DynamicGPIO {
         if (analogWriteMatch) {
           const pin = resolvePinArg(analogWriteMatch[1], pinConstants)
           if (pin === null) continue
-          const value = parseInt(analogWriteMatch[2])
-          
+          const value = resolvePinArg(analogWriteMatch[2].trim(), pinConstants)
+          if (value === null) continue
+
           // Look for increment/decrement patterns
           const nextLine = lines[i + 1]?.trim()
           if (nextLine?.includes('delay')) {
@@ -212,6 +221,77 @@ export class DynamicGPIO {
       }
     }
     
+    return animations
+  }
+
+  /**
+   * Detect throttle ramps: for (int t = MIN; t <= MAX; t++) { analogWrite(PIN, t); delay(...); }
+   */
+  private detectRampPattern(lines: string[], pinConstants: Map<string, number>): GPIOAnimation[] {
+    const animations: GPIOAnimation[] = []
+    let inLoop = false
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim()
+
+      if (line.includes('void loop()')) {
+        inLoop = true
+        if (line.includes('}')) inLoop = false
+        continue
+      }
+
+      if (inLoop && line.includes('}')) {
+        inLoop = false
+        continue
+      }
+
+      if (!inLoop) continue
+
+      const forMatch = line.match(FOR_RAMP_UP_RE)
+      if (!forMatch) continue
+
+      const loopVar = forMatch[1]
+      const minVal = resolvePinArg(forMatch[2], pinConstants)
+      const maxVal = resolvePinArg(forMatch[3], pinConstants)
+      if (minVal === null || maxVal === null || maxVal <= minVal) continue
+
+      const bodyLines = lines.slice(i + 1, i + 8).map((l) => l.trim())
+      let delayMs = 20
+      let pin: number | null = null
+
+      for (const bodyLine of bodyLines) {
+        const delayMatch = bodyLine.match(DELAY_RE)
+        if (delayMatch) delayMs = parseInt(delayMatch[1])
+
+        const analogWriteMatch = bodyLine.match(ANALOG_WRITE_RE)
+        if (analogWriteMatch && analogWriteMatch[2].trim() === loopVar) {
+          pin = resolvePinArg(analogWriteMatch[1], pinConstants)
+        }
+      }
+
+      if (pin === null) continue
+
+      const steps = maxVal - minVal + 1
+      const rampMs = steps * delayMs * 2
+      let pauseMs = 0
+      for (const scanLine of lines.slice(i, i + 30)) {
+        const delayMatch = scanLine.trim().match(DELAY_RE)
+        if (delayMatch) pauseMs += parseInt(delayMatch[1])
+      }
+      pauseMs = Math.max(pauseMs - rampMs, 0)
+      const periodMs = Math.max(rampMs + pauseMs, rampMs)
+
+      animations.push({
+        pin,
+        pattern: 'FADE',
+        frequency: 1000 / periodMs,
+        dutyCycle: ((minVal + maxVal) / 2) / 255,
+        minDutyCycle: minVal / 255,
+        maxDutyCycle: maxVal / 255,
+        startTime: 0,
+      })
+    }
+
     return animations
   }
 
@@ -262,8 +342,9 @@ export class DynamicGPIO {
         if (analogWriteMatch) {
           const pin = resolvePinArg(analogWriteMatch[1], pinConstants)
           if (pin === null) continue
-          const value = parseInt(analogWriteMatch[2])
-          
+          const value = resolvePinArg(analogWriteMatch[2].trim(), pinConstants)
+          if (value === null) continue
+
           animations.push({
             pin,
             pattern: 'STATIC',
@@ -300,9 +381,12 @@ export class DynamicGPIO {
     this.isRunning = true
     this.startTime = Date.now()
     
-    // Only start animation loop if not in passive mode
+        // Only start animation loop if not in passive mode
     if (!this.passiveMode) {
       this.animate()
+    } else {
+      // Prime states immediately so the first electrical solve sees GPIO output
+      this.updateStates(0)
     }
   }
 
@@ -435,22 +519,29 @@ void loop() {
    * Calculate fading state
    */
   private calculateFadeState(animation: GPIOAnimation, currentTime: number): DynamicGPIOState {
-    const period = 1000 / animation.frequency // ms
+    const period = animation.frequency > 0 ? 1000 / animation.frequency : 2000
     const cycleTime = currentTime % period
     const normalizedTime = cycleTime / period
-    
-    // Simple sine wave fade
-    const value = (Math.sin(normalizedTime * Math.PI * 2) + 1) / 2
-    const pwmValue = Math.floor(value * 255)
-    
+
+    const minDuty = animation.minDutyCycle ?? 0
+    const maxDuty = animation.maxDutyCycle ?? 1
+
+    let duty: number
+    if (animation.minDutyCycle !== undefined && animation.maxDutyCycle !== undefined) {
+      const tri = normalizedTime < 0.5 ? normalizedTime * 2 : 2 - normalizedTime * 2
+      duty = minDuty + tri * (maxDuty - minDuty)
+    } else {
+      duty = (Math.sin(normalizedTime * Math.PI * 2) + 1) / 2
+    }
+
     return {
       pin: animation.pin,
-      state: 'PULSING',
-      value: pwmValue / 255,
+      state: duty > 0 ? 'PULSING' : 'LOW',
+      value: duty,
       timestamp: currentTime,
       pattern: 'FADE',
       frequency: animation.frequency,
-      dutyCycle: value
+      dutyCycle: duty
     }
   }
 
@@ -543,6 +634,9 @@ export class MultiMicrocontrollerGPIO {
     
     // Start simulation for this microcontroller
     mcuGPIO.startSimulation(animations)
+    
+    // Prime GPIO states before the animation loop's first frame
+    mcuGPIO.updateStates(0)
     
     // Start global animation loop if not already running
     if (!this.isRunning) {

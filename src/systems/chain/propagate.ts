@@ -4,6 +4,7 @@ import { isGroundReference } from './terminals'
 import type { GridCellLike, SolvedComponentState } from './types'
 import { posKey } from './utils'
 import { isNetGrounded } from './nets'
+import { isMicrocontrollerModule } from './components/registry'
 
 interface PropagateContext {
   gridData: GridCellLike[][]
@@ -121,6 +122,13 @@ export function propagateVoltages(ctx: PropagateContext): {
     const grounded = isGroundReference(moduleCell) || isNetGrounded(net, ctx.groundNet, ctx.gridData, ctx.posToNet)
 
     const existing = ctx.componentStates.get(cellComponentId)
+    // GPIO outputs are authored by the MCU stamp — do not overwrite pwm/status here.
+    if (
+      isMicrocontrollerModule(cell.moduleDefinition) &&
+      (moduleCell.type === 'GPIO' || moduleCell.type === 'ANALOG')
+    ) {
+      return
+    }
     // Semiconductors and loads get full state from the solver — only fill in if missing.
     const specialized = new Set([
       'Resistor',

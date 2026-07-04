@@ -3,18 +3,23 @@ import {
   allSimulationTestSchematics,
   simulationTestReferenceDoc,
 } from './simulationTestCircuits'
+import {
+  bldcMotorEscSchematic,
+  bldcMotorExampleDoc,
+  bldcMotorExampleProgram,
+} from './bldcMotorExample'
 
 export const EXAMPLES_FOLDER_ID = 'folder-examples-default'
 
 export function createExamplesProjectFolder(): ProjectFolder {
-  const schematics = allSimulationTestSchematics()
+  const schematics = [...allSimulationTestSchematics(), bldcMotorEscSchematic()]
   return createProjectFolder(
     'Examples',
-    'Preset simulation correctness test circuits — voltage dividers, RC, LED, and more.',
+    'Preset simulation correctness test circuits — voltage dividers, RC, LED, BLDC motor, and more.',
     {
       id: EXAMPLES_FOLDER_ID,
       schematics,
-      documents: [simulationTestReferenceDoc()],
+      documents: [simulationTestReferenceDoc(), bldcMotorExampleDoc()],
       programs: [
         createProgram(
           'LED Blink',
@@ -30,6 +35,7 @@ void loop() {
 }`,
           'arduino:avr:uno'
         ),
+        bldcMotorExampleProgram(),
       ],
     }
   )

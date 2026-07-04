@@ -20,6 +20,24 @@ import {
 import { crdtService } from '../services/CRDTService'
 import { formatCurrent, formatPower, formatVoltage } from '../utils/electricalFormatting'
 import type { Program } from '../types/workspace'
+import { gpioPinNumber } from '../systems/chain/components/registry'
+
+type GpioDisplayState = GPIOState & { state?: GPIOState['state'] | 'PULSING' }
+
+function formatPinStateLabel(state?: GpioDisplayState): string {
+  if (!state) return 'LOW'
+  if (state.state === 'PULSING') {
+    return `PWM ${Math.round((state.value ?? 0) * 100)}%`
+  }
+  if (state.state === 'HIGH') return 'HIGH'
+  return 'LOW'
+}
+
+function pinStateTone(state?: GpioDisplayState): 'high' | 'pwm' | 'low' {
+  if (state?.state === 'PULSING') return 'pwm'
+  if (state?.state === 'HIGH') return 'high'
+  return 'low'
+}
 
 interface Microcontroller {
   id: string
@@ -207,63 +225,6 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
       onSimulationStateChange(simulationState)
     }
   }, [simulationState, onSimulationStateChange])
-
-  // Real-time GPIO state updates during simulation
-  useEffect(() => {
-    if (!simulationState.isRunning) return
-
-    const updateGPIOStates = () => {
-      const multiMCUStates = getAllMultiMicrocontrollerGPIOStates()
-      const singleDynamicStates = getDynamicGPIOStates()
-      const dynamicStates = multiMCUStates.size > 0 ? multiMCUStates : singleDynamicStates
-      
-      if (dynamicStates.size > 0) {
-        const gpioStates = new Map<number, GPIOState>()
-        let hasChanges = false
-        
-        dynamicStates.forEach((state, pin) => {
-          const newState = state.state
-          const currentState = simulationState.gpioStates.get(pin)?.state
-          
-          if (currentState !== newState) {
-            hasChanges = true
-          }
-          
-          gpioStates.set(pin, {
-            pin,
-            state: newState,
-            value: state.value,
-            timestamp: state.timestamp
-          })
-        })
-
-        // Only update if there are actual changes
-        if (hasChanges) {
-          // Update wire states based on GPIO states
-          const wireStates = new Map<string, 'active' | 'inactive'>()
-          if (simulationState.currentMicrocontroller) {
-            gpioStates.forEach((gpioState, pin) => {
-              const connectedWires = findWiresConnectedToPin(simulationState.currentMicrocontroller!, pin)
-              connectedWires.forEach(wireId => {
-                wireStates.set(wireId, (gpioState.state === 'HIGH' || gpioState.state === 'PULSING') ? 'active' : 'inactive')
-              })
-            })
-          }
-
-          setSimulationState(prev => ({
-            ...prev,
-            gpioStates,
-            wireStates
-          }))
-        }
-      }
-    }
-
-    // Update every 16ms for 60 FPS smooth animation
-    const interval = setInterval(updateGPIOStates, 0)
-    
-    return () => clearInterval(interval)
-  }, [simulationState.isRunning, simulationState.currentMicrocontroller])
 
   // Find all microcontrollers in the grid
   const findMicrocontrollers = useCallback((): Microcontroller[] => {
@@ -664,41 +625,101 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
 
   const findWiresConnectedToPin = (microcontroller: Microcontroller, pin: number): string[] => {
     const connectedWires: string[] = []
-    
-    // Find the cell position of this pin on the microcontroller
-    // Check both pin name and GPIO properties
-    const pinCell = microcontroller.definition.grid?.find((g: any) => {
-      if (!g.pin) return false
-      
-      // Check if pin name contains the pin number (e.g., "D13" contains "13")
-      if (g.pin.includes(pin.toString())) return true
-      
-      // Check GPIO properties for exact match
-      if (g.properties && g.properties.gpio === pin.toString()) return true
-      
-      return false
-    })
-    
-    if (!pinCell) return connectedWires
 
-    // Find wires that connect to this pin
-    wires.forEach(wire => {
-      const isConnected = wire.segments.some(segment => {
-        const cell = gridData[segment.from.y]?.[segment.from.x]
-        return cell?.occupied && 
-               cell.componentId === microcontroller.id &&
-               cell.moduleDefinition === microcontroller.definition &&
-               segment.from.x === pinCell.x && 
-               segment.from.y === pinCell.y
+    wires.forEach((wire) => {
+      const touchesPin = wire.segments.some((segment) => {
+        for (const pt of [segment.from, segment.to]) {
+          const cell = gridData[pt.y]?.[pt.x]
+          if (!cell?.occupied || cell.componentId !== microcontroller.id) continue
+          const moduleCell = cell.moduleDefinition?.grid?.[cell.cellIndex ?? 0]
+          if (!moduleCell) continue
+          if (gpioPinNumber(moduleCell) === pin) return true
+        }
+        return false
       })
-      
-      if (isConnected) {
-        connectedWires.push(wire.id)
-      }
+      if (touchesPin) connectedWires.push(wire.id)
     })
 
     return connectedWires
   }
+
+  // Real-time GPIO state updates during simulation
+  useEffect(() => {
+    if (!simulationState.isRunning) return
+
+    const updateGPIOStates = () => {
+      const multiMCUStates = getAllMultiMicrocontrollerGPIOStates()
+      const singleDynamicStates = getDynamicGPIOStates()
+      const dynamicStates = multiMCUStates.size > 0 ? multiMCUStates : singleDynamicStates
+
+      if (dynamicStates.size > 0) {
+        const gpioStates = new Map<number, GPIOState>()
+        let hasChanges = false
+
+        dynamicStates.forEach((state, pin) => {
+          const newState = state.state
+          const current = simulationState.gpioStates.get(pin)
+
+          if (
+            current?.state !== newState ||
+            (newState === 'PULSING' &&
+              Math.abs((current?.value ?? 0) - state.value) > 0.005)
+          ) {
+            hasChanges = true
+          }
+
+          gpioStates.set(pin, {
+            pin,
+            state: newState,
+            value: state.value,
+            timestamp: state.timestamp,
+          })
+        })
+
+        if (hasChanges) {
+          const wireStates = new Map<string, 'active' | 'inactive'>()
+          const mcusForWires =
+            simulationState.runningMicrocontrollers.size > 0
+              ? microcontrollers.filter((mcu) =>
+                  simulationState.runningMicrocontrollers.has(mcu.id)
+                )
+              : simulationState.currentMicrocontroller
+                ? [simulationState.currentMicrocontroller]
+                : []
+
+          mcusForWires.forEach((mcu) => {
+            gpioStates.forEach((gpioState, pin) => {
+              findWiresConnectedToPin(mcu, pin).forEach((wireId) => {
+                wireStates.set(
+                  wireId,
+                  gpioState.state === 'HIGH' || gpioState.state === 'PULSING'
+                    ? 'active'
+                    : 'inactive'
+                )
+              })
+            })
+          })
+
+          setSimulationState((prev) => ({
+            ...prev,
+            gpioStates,
+            wireStates,
+          }))
+        }
+      }
+    }
+
+    const interval = setInterval(updateGPIOStates, 0)
+    return () => clearInterval(interval)
+  }, [
+    simulationState.isRunning,
+    simulationState.currentMicrocontroller,
+    simulationState.runningMicrocontrollers,
+    simulationState.gpioStates,
+    microcontrollers,
+    gridData,
+    wires,
+  ])
 
   const handleFlashFirmware = async () => {
     if (!compilationResult?.firmware) {
@@ -1281,10 +1302,31 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                                   
                                   // Start simulation
                                   startMultiMicrocontrollerGPIO(microcontroller.id, compiledCode.code)
+                                  const dynamicStates = getAllMultiMicrocontrollerGPIOStates()
+                                  const initialGpioStates = new Map<number, GPIOState>()
+                                  const initialWireStates = new Map<string, 'active' | 'inactive'>()
+                                  dynamicStates.forEach((state, pin) => {
+                                    initialGpioStates.set(pin, {
+                                      pin,
+                                      state: state.state,
+                                      value: state.value,
+                                      timestamp: state.timestamp,
+                                    })
+                                    findWiresConnectedToPin(microcontroller, pin).forEach((wireId) => {
+                                      initialWireStates.set(
+                                        wireId,
+                                        state.state === 'HIGH' || state.state === 'PULSING'
+                                          ? 'active'
+                                          : 'inactive'
+                                      )
+                                    })
+                                  })
                                   setSimulationState(prev => ({
                                     ...prev,
                                     isRunning: true,
-                                    runningMicrocontrollers: new Set([...prev.runningMicrocontrollers, microcontroller.id])
+                                    runningMicrocontrollers: new Set([...prev.runningMicrocontrollers, microcontroller.id]),
+                                    gpioStates: initialGpioStates.size > 0 ? initialGpioStates : prev.gpioStates,
+                                    wireStates: initialWireStates.size > 0 ? initialWireStates : prev.wireStates,
                                   }))
                                   
                                   // Restore original selection
@@ -1363,6 +1405,7 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                                   let pinVoltage = 0
                                   let pinCurrent = 0
                                   let pinPower = 0
+                                  let gpioState: GpioDisplayState | undefined
                                   
                                   if (pinState) {
                                     pinVoltage = pinState.outputVoltage || 0
@@ -1373,19 +1416,20 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                                       pinMode = 'POWER'
                                       pinStatus = pinVoltage > 0 ? 'HIGH' : 'LOW'
                                     } else if (pin.type === 'GPIO' || pin.type === 'ANALOG') {
-                                      // Check if this pin is set to HIGH in simulation
                                       const pinNumber = pin.pin?.startsWith('D') ? 
                                         parseInt(pin.pin.replace('D', '')) :
                                         pin.pin?.startsWith('A') ? 
                                         parseInt(pin.pin.replace('A', '')) + 100 :
                                         parseInt(pin.pin || '0')
                                       
-                                      const gpioState = simulationState.gpioStates.get(pinNumber)
+                                      gpioState = simulationState.gpioStates.get(pinNumber) as GpioDisplayState | undefined
                                       if (gpioState) {
-                                        // GPIOState.state can be 'HIGH', 'LOW', 'INPUT', or 'OUTPUT'
                                         if (gpioState.state === 'INPUT' || gpioState.state === 'OUTPUT') {
                                           pinMode = gpioState.state
                                           pinStatus = pinVoltage > 0 ? 'HIGH' : 'LOW'
+                                        } else if (gpioState.state === 'PULSING') {
+                                          pinMode = 'OUTPUT'
+                                          pinStatus = formatPinStateLabel(gpioState)
                                         } else {
                                           pinMode = 'OUTPUT'
                                           pinStatus = gpioState.state
@@ -1397,19 +1441,27 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                                     }
                                   }
                                   
+                                  const tone = pinStateTone(gpioState)
+                                  
                                   return (
                                     <div
                                       key={index}
                                       className={`flex items-center justify-between p-2 rounded text-xs ${
-                                        pinStatus === 'HIGH' 
-                                          ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' 
+                                        tone === 'high'
+                                          ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
+                                          : tone === 'pwm'
+                                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200'
                                           : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                                       }`}
                                     >
                                       <div className="flex items-center gap-2">
                                         <div className={`w-2 h-2 rounded-full ${
-                                          pinStatus === 'HIGH' ? 'bg-green-500' : 'bg-gray-400'
-                                        } ${pinStatus === 'HIGH' && pinMode === 'OUTPUT' ? 'animate-pulse' : ''}`} />
+                                          tone === 'high'
+                                            ? 'bg-green-500'
+                                            : tone === 'pwm'
+                                            ? 'bg-amber-500'
+                                            : 'bg-gray-400'
+                                        } ${tone !== 'low' && pinMode === 'OUTPUT' ? 'animate-pulse' : ''}`} />
                                         <span className="font-mono font-medium">{pin.pin}</span>
                                         <span className="text-gray-500 dark:text-gray-400">({pin.type})</span>
                                       </div>
@@ -1633,24 +1685,28 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                         <div className="grid grid-cols-2 gap-1 text-xs">
                           {/* Digital Pins D0-D13 */}
                           {Array.from({length: 14}, (_, i) => i).map(pin => {
-                            const state = simulationState.gpioStates.get(pin)
-                            const isHigh = state?.state === 'HIGH'
+                            const state = simulationState.gpioStates.get(pin) as GpioDisplayState | undefined
+                            const tone = pinStateTone(state)
                             return (
                               <div
                                 key={`D${pin}`}
                                 className={`flex items-center justify-between p-1 rounded ${
-                                  isHigh 
-                                    ? 'bg-green-100 dark:bg-green-900/30' 
+                                  tone === 'high'
+                                    ? 'bg-green-100 dark:bg-green-900/30'
+                                    : tone === 'pwm'
+                                    ? 'bg-amber-100 dark:bg-amber-900/30'
                                     : 'bg-gray-50 dark:bg-gray-800'
                                 }`}
                               >
                                 <span className="text-gray-600 dark:text-dark-text-muted">D{pin}:</span>
                                 <span className={`px-1 py-0.5 rounded text-xs font-medium ${
-                                  isHigh 
+                                  tone === 'high'
                                     ? 'bg-green-200 text-green-800 dark:bg-green-800 dark:text-green-200'
+                                    : tone === 'pwm'
+                                    ? 'bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100'
                                     : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
                                 }`}>
-                                  {isHigh ? 'HIGH' : 'LOW'}
+                                  {formatPinStateLabel(state)}
                                 </span>
                               </div>
                             )
@@ -1658,24 +1714,28 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                           
                           {/* Analog Pins A0-A5 */}
                           {Array.from({length: 6}, (_, i) => i).map(pin => {
-                            const state = simulationState.gpioStates.get(pin + 100) // Use 100+ for analog pins to avoid conflict
-                            const isHigh = state?.state === 'HIGH'
+                            const state = simulationState.gpioStates.get(pin + 100) as GpioDisplayState | undefined
+                            const tone = pinStateTone(state)
                             return (
                               <div
                                 key={`A${pin}`}
                                 className={`flex items-center justify-between p-1 rounded ${
-                                  isHigh 
-                                    ? 'bg-blue-100 dark:bg-blue-900/30' 
+                                  tone === 'high'
+                                    ? 'bg-blue-100 dark:bg-blue-900/30'
+                                    : tone === 'pwm'
+                                    ? 'bg-amber-100 dark:bg-amber-900/30'
                                     : 'bg-gray-50 dark:bg-gray-800'
                                 }`}
                               >
                                 <span className="text-gray-600 dark:text-dark-text-muted">A{pin}:</span>
                                 <span className={`px-1 py-0.5 rounded text-xs font-medium ${
-                                  isHigh 
+                                  tone === 'high'
                                     ? 'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
+                                    : tone === 'pwm'
+                                    ? 'bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100'
                                     : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
                                 }`}>
-                                  {isHigh ? 'HIGH' : 'LOW'}
+                                  {formatPinStateLabel(state)}
                                 </span>
                               </div>
                             )
@@ -1692,6 +1752,10 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                             <div className="flex items-center gap-1">
                               <div className="w-2 h-2 bg-blue-200 rounded"></div>
                               <span>Analog HIGH</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-2 h-2 bg-amber-300 rounded"></div>
+                              <span>PWM</span>
                             </div>
                             <div className="flex items-center gap-1">
                               <div className="w-2 h-2 bg-gray-200 rounded"></div>

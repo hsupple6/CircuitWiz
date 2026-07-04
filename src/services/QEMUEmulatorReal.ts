@@ -8,7 +8,7 @@
 
 export interface GPIOState {
   pin: number
-  state: 'HIGH' | 'LOW' | 'INPUT' | 'OUTPUT'
+  state: 'HIGH' | 'LOW' | 'INPUT' | 'OUTPUT' | 'PULSING'
   value: number
   timestamp: number
   register?: string // AVR register name (PORTB, PORTD, PORTC)
