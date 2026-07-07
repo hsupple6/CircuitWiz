@@ -1,5 +1,6 @@
 import { KicadParser } from 'kicad-toolkit'
 import { getKicadSymbolPath } from '../modules/kicadSymbolMap'
+import { parseKicadPinsFromSource } from './parseKicadPins'
 import { renderKicadSymbolSvg } from './renderKicadSymbolSvg'
 
 const svgCache = new Map<string, string>()
@@ -28,7 +29,8 @@ export async function loadKicadSymbolSvg(
     bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
   )
 
-  const svg = renderKicadSymbolSvg(model, options)
+  const pins = parseKicadPinsFromSource(source)
+  const svg = renderKicadSymbolSvg(model, { ...options, pins })
   if (!svg) return null
 
   svgCache.set(cacheKey, svg)

@@ -23,6 +23,13 @@ let userDatabase;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+const kicadLibraryRouter = require('./routes/kicadLibrary');
+const datasheetExportRouter = require('./routes/datasheetExport');
+const schematicExportRouter = require('./routes/schematicExport');
+app.use('/api/kicad-library', kicadLibraryRouter);
+app.use('/api/datasheet-export', datasheetExportRouter);
+app.use('/api/schematic-export', schematicExportRouter);
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ 

@@ -37,6 +37,16 @@ interface SchematicArc {
   is_filled?: boolean
 }
 
+export interface KicadPin {
+  type: string
+  x: number
+  y: number
+  rotation: number
+  length?: number
+  name: string
+  number: string
+}
+
 type GraphicElement = SchematicLine | SchematicRect | SchematicCircle | SchematicArc
 
 const GRAPHIC_TYPES = new Set([
@@ -45,6 +55,31 @@ const GRAPHIC_TYPES = new Set([
   'schematic_circle',
   'schematic_arc',
 ])
+
+const PIN_OUTER_DELTA: Record<number, [number, number]> = {
+  0: [-1, 0],
+  90: [0, 1],
+  180: [1, 0],
+  270: [0, -1],
+}
+
+const PIN_LABEL_DELTA: Record<number, [number, number]> = {
+  0: [0.65, 0],
+  90: [0, -0.65],
+  180: [-0.65, 0],
+  270: [0, 0.65],
+}
+
+export function pinOuterEnd(pin: KicadPin): Point {
+  const [dx, dy] = PIN_OUTER_DELTA[pin.rotation] ?? [-1, 0]
+  const len = pin.length ?? 2.54
+  return { x: pin.x + dx * len, y: pin.y + dy * len }
+}
+
+function pinLabelPos(pin: KicadPin): Point {
+  const [dx, dy] = PIN_LABEL_DELTA[pin.rotation] ?? [0.65, 0]
+  return { x: pin.x + dx, y: pin.y + dy }
+}
 
 function collectPoints(element: GraphicElement, points: Point[]): void {
   switch (element.type) {
@@ -73,14 +108,12 @@ function collectPoints(element: GraphicElement, points: Point[]): void {
   }
 }
 
-function computeBounds(elements: GraphicElement[]): {
-  minX: number
-  maxX: number
-  minY: number
-  maxY: number
-} {
+function computeBounds(elements: GraphicElement[], pins: KicadPin[] = []) {
   const points: Point[] = []
   for (const element of elements) collectPoints(element, points)
+  for (const pin of pins) {
+    points.push({ x: pin.x, y: pin.y }, pinOuterEnd(pin))
+  }
 
   if (points.length === 0) {
     return { minX: -1, maxX: 1, minY: -1, maxY: 1 }
@@ -114,6 +147,14 @@ const MIN_STROKE_WIDTH = 0.35
 function strokeWidth(value: number | undefined, scale: number): number {
   const width = value ?? 0.15
   return Math.max(MIN_STROKE_WIDTH, width * scale * STROKE_SCALE)
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }
 
 function renderLine(
@@ -179,10 +220,42 @@ function renderArc(
   return `<path d="M ${start.x} ${start.y} Q ${mid.x} ${mid.y} ${end.x} ${end.y}" fill="none" stroke="currentColor" stroke-width="${strokeWidth(element.stroke_width, scale)}" stroke-linecap="round" />`
 }
 
+function renderPins(
+  pins: KicadPin[],
+  bounds: ReturnType<typeof computeBounds>,
+  padding: number,
+  scale: number
+): string {
+  const parts: string[] = []
+  const pinDotR = Math.max(0.8, 0.25 * scale)
+  const fontSize = Math.max(2.2, 0.85 * scale)
+
+  for (const pin of pins) {
+    const inner = mapPoint({ x: pin.x, y: pin.y }, bounds, padding)
+    const outer = mapPoint(pinOuterEnd(pin), bounds, padding)
+    parts.push(
+      `<line x1="${inner.x}" y1="${inner.y}" x2="${outer.x}" y2="${outer.y}" stroke="currentColor" stroke-width="${Math.max(0.5, 0.15 * scale)}" stroke-linecap="round" />`
+    )
+    parts.push(
+      `<circle cx="${outer.x}" cy="${outer.y}" r="${pinDotR}" fill="#f97316" stroke="currentColor" stroke-width="0.3" />`
+    )
+    const labelText = pin.name && pin.name !== '~' ? pin.name.replace(/~\{([^}]+)\}/g, '$1') : ''
+    if (labelText) {
+      const label = mapPoint(pinLabelPos(pin), bounds, padding)
+      const anchor = pin.rotation === 0 ? 'start' : pin.rotation === 180 ? 'end' : 'middle'
+      parts.push(
+        `<text x="${label.x}" y="${label.y}" fill="currentColor" font-family="ui-sans-serif, system-ui, sans-serif" font-size="${fontSize}" text-anchor="${anchor}" dominant-baseline="middle">${escapeXml(labelText)}</text>`
+      )
+    }
+  }
+  return parts.join('')
+}
+
 export function renderKicadSymbolSvg(
   circuitJson: unknown[],
-  options: { width?: number; height?: number } = {}
+  options: { width?: number; height?: number; pins?: KicadPin[] } = {}
 ): string | null {
+  const pins = options.pins ?? []
   const elements = circuitJson.filter(
     (entry): entry is GraphicElement =>
       typeof entry === 'object' &&
@@ -191,10 +264,10 @@ export function renderKicadSymbolSvg(
       GRAPHIC_TYPES.has(String((entry as { type: string }).type))
   )
 
-  if (elements.length === 0) return null
+  if (elements.length === 0 && pins.length === 0) return null
 
-  const bounds = computeBounds(elements)
-  const padding = 0.8
+  const bounds = computeBounds(elements, pins)
+  const padding = 1.2
   const contentWidth = bounds.maxX - bounds.minX + padding * 2
   const contentHeight = bounds.maxY - bounds.minY + padding * 2
   const scale = Math.min((options.width ?? 48) / contentWidth, (options.height ?? 40) / contentHeight)
@@ -216,5 +289,7 @@ export function renderKicadSymbolSvg(
     }
   })
 
-  return `<svg width="${width}" height="${height}" viewBox="0 0 ${contentWidth} ${contentHeight}" xmlns="http://www.w3.org/2000/svg">${parts.join('')}</svg>`
+  const pinMarkup = renderPins(pins, bounds, padding, scale)
+
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${contentWidth} ${contentHeight}" xmlns="http://www.w3.org/2000/svg">${parts.join('')}${pinMarkup}</svg>`
 }

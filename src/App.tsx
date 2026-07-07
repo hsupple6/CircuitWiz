@@ -15,6 +15,8 @@ import {
   Pencil,
   Tag,
   LayoutGrid,
+  FileDown,
+  Network,
 } from 'lucide-react'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -47,6 +49,8 @@ import {
 } from './modules/connectors/buildConnectorDefinition'
 import { EditorFloatingChrome } from './components/EditorFloatingChrome'
 import { SchematicTidyModal } from './components/SchematicTidyModal'
+import { DatasheetExportModal } from './components/DatasheetExportModal'
+import { SchematicExportModal } from './components/SchematicExportModal'
 import type { HoverStats } from './utils/hoverStats'
 import type { ComponentState } from './systems/ElectricalSystem'
 import { ModuleDefinition } from './modules/types'
@@ -204,6 +208,8 @@ function AppContent() {
   })
   const [agentDevOpen, setAgentDevOpen] = useState(false)
   const [tidyModalOpen, setTidyModalOpen] = useState(false)
+  const [datasheetExportOpen, setDatasheetExportOpen] = useState(false)
+  const [schematicExportOpen, setSchematicExportOpen] = useState(false)
   const [, setLastSavedState] = useState<Record<string, unknown> | null>(null)
 
   const selectedSchematic = useMemo(() => {
@@ -1086,6 +1092,22 @@ function AppContent() {
               <LayoutGrid className="h-4 w-4" />
               Tidy
             </button>
+            <button
+              onClick={() => setDatasheetExportOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200"
+              title="Export KiCad datasheets and PCB footprints as PDF"
+            >
+              <FileDown className="h-4 w-4" />
+              Datasheets
+            </button>
+            <button
+              onClick={() => setSchematicExportOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200"
+              title="Export KiCad symbols and wiring schematic"
+            >
+              <Network className="h-4 w-4" />
+              KiCad Export
+            </button>
             <div className="h-6 w-px bg-white/10" />
             <div className="text-sm text-gray-500 dark:text-zinc-500 font-mono truncate max-w-[240px]">
               {hoverStats
@@ -1163,6 +1185,22 @@ function AppContent() {
           >
             <LayoutGrid className="h-4 w-4" />
             <span className="hidden sm:inline">Tidy</span>
+          </button>
+          <button
+            onClick={() => setDatasheetExportOpen(true)}
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-200"
+            title="Export KiCad datasheets and PCB footprints as PDF"
+          >
+            <FileDown className="h-4 w-4" />
+            <span className="hidden sm:inline">Datasheets</span>
+          </button>
+          <button
+            onClick={() => setSchematicExportOpen(true)}
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-200"
+            title="Export KiCad symbols and wiring schematic"
+          >
+            <Network className="h-4 w-4" />
+            <span className="hidden sm:inline">KiCad</span>
           </button>
           <div className="hidden h-5 w-px bg-gray-200 dark:bg-white/10 md:block" />
           <div className="hidden text-sm text-gray-500 dark:text-zinc-500 font-mono truncate max-w-[200px] lg:block xl:max-w-[240px]">
@@ -1527,6 +1565,22 @@ function AppContent() {
           schematic={selectedSchematic}
           onClose={() => setTidyModalOpen(false)}
           onApply={handleApplyTidyLayout}
+        />
+      )}
+      {datasheetExportOpen && selectedSchematic && (
+        <DatasheetExportModal
+          open={datasheetExportOpen}
+          onClose={() => setDatasheetExportOpen(false)}
+          schematic={selectedSchematic}
+          projectName={`${selectedFolder?.name ?? 'Project'} — ${selectedSchematic.name}`}
+        />
+      )}
+      {schematicExportOpen && selectedSchematic && (
+        <SchematicExportModal
+          open={schematicExportOpen}
+          onClose={() => setSchematicExportOpen(false)}
+          schematic={selectedSchematic}
+          projectName={`${selectedFolder?.name ?? 'Project'} — ${selectedSchematic.name}`}
         />
       )}
       {deleteModal?.isOpen && (

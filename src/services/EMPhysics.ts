@@ -408,10 +408,7 @@ function detectAndCombineParallelResistors(occupiedComponents: any[], _wires: an
       processedComponents.push(group[0]);
     }
   });
-  
-  console.log(`🔍 [PARALLEL_PATHWAY] Processed ${processedComponents.length} components from ${occupiedComponents.length} original`);
-  console.log(`🔍 [PARALLEL_PATHWAY] Found ${parallelBranches.length} parallel groups`);
-  
+    
   return { processedComponents, parallelBranches };
 }
 
@@ -429,9 +426,6 @@ export function findCircuitPathways(occupiedComponents: any[], wires: any[]): {
   
   // Step 0: Detect and combine parallel resistors before pathway analysis
   const { processedComponents, parallelBranches } = detectAndCombineParallelResistors(occupiedComponents, wires);
-  console.log(`🔍 [PATHWAY_DEBUG] After parallel detection: ${processedComponents.length} components (was ${occupiedComponents.length})`);
-  console.log(`🔍 [PATHWAY_DEBUG] Found ${parallelBranches.length} parallel branches`);
-  
   // Step 1: Find all voltage sources and ground sources with their exact coordinates
   const voltageSources = findVoltageSources(processedComponents);
   const groundSources = findGroundSources(processedComponents);
@@ -613,7 +607,6 @@ function traceCircuitFromWire(
   );
   
   if (isGround) {
-    console.log(`✅ Direct connection to ground found!`);
     const groundSource = groundSources.find(ground => 
       ground.position.x === wireDestination.x && ground.position.y === wireDestination.y
     );
