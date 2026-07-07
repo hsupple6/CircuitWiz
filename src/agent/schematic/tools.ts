@@ -50,7 +50,7 @@ function parseComponentProperties(args: Record<string, unknown>): Record<string,
 export const schematicAgentTools: AgentTool[] = [
   makeTool(
     'schematic_get_state',
-    'Get schematic summary plus layoutGuidelines. Use list_components / catalog_get_module for exact connectable pin names (e.g. Diode pins A and K).',
+    'Get schematic summary plus layoutGuidelines and suggestedNextPlacement for tight part placement. Use list_components / catalog_get_module for exact connectable pin names (e.g. Diode pins A and K).',
     'schematic',
     [{ name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false }],
     (ctx, args) => {
@@ -64,7 +64,7 @@ export const schematicAgentTools: AgentTool[] = [
 
   makeTool(
     'schematic_list_components',
-    'List all placed components with ids, module names, origins, and pin positions.',
+    'List all placed components with ids, module names, origins, footprint size (gridX/gridY), and pin positions.',
     'schematic',
     [{ name: 'schematicId', type: 'string', description: 'Schematic id (optional)', required: false }],
     (ctx, args) => {
@@ -105,13 +105,13 @@ export const schematicAgentTools: AgentTool[] = [
       {
         name: 'x',
         type: 'number',
-        description: `Grid origin X (start near ${SCHEMATIC_LAYOUT_GUIDELINES.placementOrigin.x}; canvas cannot extend left of 0)`,
+        description: `Grid origin X. First part: ${SCHEMATIC_LAYOUT_GUIDELINES.placementOrigin.x}. Chains: previous origin X + previous gridX + ${SCHEMATIC_LAYOUT_GUIDELINES.minGapCells}. Prefer suggestedNextPlacement.x from schematic_get_state.`,
         required: true,
       },
       {
         name: 'y',
         type: 'number',
-        description: `Grid origin Y (start near ${SCHEMATIC_LAYOUT_GUIDELINES.placementOrigin.y}; canvas cannot extend above 0)`,
+        description: `Grid origin Y. First part: ${SCHEMATIC_LAYOUT_GUIDELINES.placementOrigin.y}. Horizontal chains keep the same Y. Vertical stacks: previous origin Y + previous gridY + ${SCHEMATIC_LAYOUT_GUIDELINES.minGapCells}.`,
         required: true,
       },
       { name: 'componentId', type: 'string', description: 'Optional custom component id', required: false },

@@ -1,7 +1,6 @@
 import {
   createDocument,
   createProgram,
-  createSchematicGroupBox,
   type Document,
   type Program,
   type ProgramCompilation,
@@ -66,7 +65,7 @@ export function bldcMotorEscSchematic(): Schematic {
     ({ place, wire }) => {
       const arduino = place('Arduino Uno R3', 2, 4)
       const battery = place('Battery', 2, 22, { voltage: 11.1 })
-      const esc = place('30A 3S ESC', 10, 8)
+      const esc = place('BLDC ESC', 10, 8, { maxCurrent: 30, maxCells: 3 })
       const motor = place('Brushless Motor', 18, 8)
 
       const gndRailX = 0
@@ -122,18 +121,7 @@ export function bldcMotorEscSchematic(): Schematic {
       wire([esc.pin('V'), { x: 11, y: 12 }, { x: 19, y: 12 }, motor.pin('IN2')], { color: '#22c55e' })
       wire([esc.pin('W'), { x: 12, y: 11 }, { x: 20, y: 11 }, motor.pin('IN3')], { color: '#22c55e' })
     },
-    {
-      groupBoxes: [
-        {
-          ...createSchematicGroupBox(0, 2, 38, 24, 'BLDC Powertrain', {
-            name: 'Sky',
-            fill: 'rgba(224, 242, 254, 0.55)',
-            border: '#38BDF8',
-          }),
-          title: 'Uno → ESC → BLDC',
-        },
-      ],
-    }
+    { region: { title: 'Uno → ESC → BLDC', color: 'Sky', padding: 2 } }
   )
 }
 

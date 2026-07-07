@@ -11,6 +11,7 @@ import {
   formatACFrequency,
   readACSourceSettings,
   vrmsToVpeak,
+  formatACVoltage,
 } from './acSourceVisual'
 
 export type HoverStatAccent = 'voltage' | 'current' | 'power' | 'status' | 'info' | 'success' | 'warn' | 'idle'
@@ -118,6 +119,18 @@ function findModuleOrigin(
   return null
 }
 
+function resolveBestComponentState(
+  componentId: string,
+  componentStates: Map<string, ComponentState>
+): ComponentState | undefined {
+  let best: ComponentState | undefined
+  for (const [key, state] of componentStates) {
+    if (!key.startsWith(`${componentId}-`) && key !== componentId) continue
+    if (!best || (state.outputVoltage ?? 0) > (best.outputVoltage ?? 0)) best = state
+  }
+  return best
+}
+
 function resolveComponentState(
   componentId: string,
   cellIndex: number,
@@ -128,13 +141,44 @@ function resolveComponentState(
     const state = componentStates.get(key)
     if (state) return state
   }
-  let best: ComponentState | undefined
-  for (const [key, state] of componentStates) {
-    if (key.startsWith(`${componentId}-`) || key === componentId) {
-      if (!best || (state.outputVoltage ?? 0) > (best.outputVoltage ?? 0)) best = state
+  return resolveBestComponentState(componentId, componentStates)
+}
+
+/** Prefer a connectable pin when inspecting a component body or label cell. */
+export function resolveInspectPosition(
+  x: number,
+  y: number,
+  gridData: GridCellLike[][],
+  componentStates: Map<string, ComponentState>
+): { x: number; y: number } {
+  const cell = gridData[y]?.[x]
+  if (!cell?.occupied || !cell.componentId) return { x, y }
+
+  const moduleCell = cell.moduleDefinition?.grid[cell.cellIndex ?? 0]
+  if (moduleCell?.isConnectable) return { x, y }
+
+  const componentId = cell.componentId
+  let best: { x: number; y: number } | null = null
+  let bestVoltage = -1
+
+  for (let gy = 0; gy < gridData.length; gy++) {
+    const row = gridData[gy]
+    if (!row) continue
+    for (let gx = 0; gx < row.length; gx++) {
+      const c = row[gx]
+      if (c?.componentId !== componentId) continue
+      const pinDef = c.moduleDefinition?.grid[c.cellIndex ?? 0]
+      if (!pinDef?.isConnectable) continue
+      const state = resolveComponentState(componentId, c.cellIndex ?? 0, componentStates)
+      const voltage = state?.outputVoltage ?? 0
+      if (!best || voltage > bestVoltage) {
+        best = { x: gx, y: gy }
+        bestVoltage = voltage
+      }
     }
   }
-  return best
+
+  return best ?? { x, y }
 }
 
 function primaryMetrics(voltage: number, current: number, power?: number): HoverStatRow[] {
@@ -207,7 +251,11 @@ function buildComponentStats(
   const relX = origin ? x - origin.x : 0
   const relY = origin ? y - origin.y : 0
   const pinCell = cell.moduleDefinition?.grid?.find((c) => c.x === relX && c.y === relY)
-  const state = resolveComponentState(componentId, cellIndex, componentStates)
+  const pinState = resolveComponentState(componentId, cellIndex, componentStates)
+  const state =
+    pinCell?.isConnectable === false
+      ? resolveBestComponentState(componentId, componentStates) ?? pinState
+      : pinState
 
   const voltage = state?.outputVoltage ?? cell.voltage ?? 0
   const current = state?.outputCurrent ?? cell.current ?? 0
@@ -373,17 +421,36 @@ function buildComponentStats(
       break
     }
     case 'BridgeRectifier': {
-      status = state?.isPowered ? { label: 'Rectifying', tone: 'active' } : { label: 'Idle', tone: 'idle' }
+      const vf = getNumericProperty(cell.moduleDefinition?.properties, 'forwardVoltage', 0.7)
+      const pin = cell.moduleDefinition?.grid[cell.cellIndex ?? 0]?.pin
+      if (pin === '+') {
+        status = state?.isPowered ? { label: 'Vdc out', tone: 'active' } : { label: 'Idle', tone: 'idle' }
+        details.push({ label: 'Output', value: 'Rectified DC', accent: 'info' })
+      } else if (pin === '-') {
+        status = { label: 'DC −', tone: 'idle' }
+      } else if (pin === 'AC1' || pin === 'AC2') {
+        status = { label: 'AC in', tone: 'active' }
+        details.push({ label: 'Input', value: 'AC peak (DC snapshot)', accent: 'info' })
+      } else {
+        status = state?.isPowered ? { label: 'Rectifying', tone: 'active' } : { label: 'Idle', tone: 'idle' }
+      }
+      details.push({ label: 'Vf (each diode)', value: formatVoltage(vf), accent: 'info' })
       break
     }
     case 'ACSource': {
       const settings = readACSourceSettings(cell.moduleDefinition?.properties as Record<string, unknown> | undefined)
-      status = { label: 'AC', tone: 'active' }
+      const vpeak = vrmsToVpeak(settings.vrms, settings.waveform)
+      const pin = pinCell?.pin
+      const displayV =
+        pin === 'AC2' ? 0 : voltage > 0.05 ? voltage : vpeak
+      const displayI = current > 1e-9 ? current : state?.outputCurrent ?? 0
+      metrics = primaryMetrics(displayV, displayI, displayV * displayI)
+      status = { label: `${formatACVoltage(settings.vrms)} AC`, tone: 'active' }
       details.push({ label: 'Waveform', value: AC_WAVEFORM_LABELS[settings.waveform], accent: 'info' })
       details.push({ label: 'Vrms', value: formatVoltage(settings.vrms), accent: 'info' })
       details.push({
         label: 'Vpeak',
-        value: formatVoltage(vrmsToVpeak(settings.vrms, settings.waveform)),
+        value: formatVoltage(vpeak),
         accent: 'voltage',
       })
       details.push({ label: 'Frequency', value: formatACFrequency(settings.frequency), accent: 'info' })
@@ -399,6 +466,67 @@ function buildComponentStats(
         value: isOn ? 'Closed (conducting)' : 'Open (isolated)',
         accent: isOn ? 'success' : 'info',
       })
+      break
+    }
+    case 'Potentiometer': {
+      const wiper = cell.wiperPosition ?? 0.5
+      status = { label: `${Math.round(wiper * 100)}% wiper`, tone: 'active' }
+      details.push({ label: 'Wiper', value: `${Math.round(wiper * 100)}%`, accent: 'info' })
+      break
+    }
+    case 'LinearRegulator': {
+      status = { label: 'ADJ feedback', tone: voltage > 0.5 ? 'active' : 'idle' }
+      details.push({
+        label: 'Control',
+        value: 'Vout set by OUT→ADJ→GND divider',
+        accent: 'info',
+      })
+      if (voltage > 0.01) {
+        details.push({ label: 'Pin', value: formatVoltage(voltage), accent: 'voltage' })
+      }
+      break
+    }
+    case 'PowerDriver': {
+      status = { label: formatVoltage(voltage), tone: voltage > 0.5 ? 'active' : 'idle' }
+      details.push({ label: 'Vout', value: formatVoltage(voltage), accent: 'voltage' })
+      break
+    }
+    case 'FixedRegulator': {
+      const vout = getNumericProperty(
+        cell.moduleDefinition?.properties as Record<string, unknown> | undefined,
+        'outputVoltage',
+        3.3
+      )
+      status = { label: formatVoltage(voltage), tone: voltage > 0.5 ? 'active' : 'idle' }
+      details.push({ label: 'Vout (set)', value: formatVoltage(vout), accent: 'info' })
+      if (voltage > 0.01) {
+        details.push({ label: 'Pin', value: formatVoltage(voltage), accent: 'voltage' })
+      }
+      break
+    }
+    case 'LogicGateIC': {
+      const vth = getNumericProperty(
+        cell.moduleDefinition?.properties as Record<string, unknown> | undefined,
+        'vth',
+        2.5
+      )
+      const isHigh = voltage >= vth - 0.05
+      const isOutput = pinCell?.type === 'DRIVER_OUT'
+      status = {
+        label: isOutput ? (isHigh ? 'HIGH' : 'LOW') : isHigh ? 'Logic 1' : 'Logic 0',
+        tone: isHigh ? 'active' : 'idle',
+      }
+      if (pinCell?.pin) {
+        details.push({
+          label: isOutput ? 'Driven' : 'Level',
+          value: isHigh ? 'HIGH' : 'LOW',
+          accent: isHigh ? 'success' : 'idle',
+        })
+      }
+      details.push({ label: 'Vth', value: formatVoltage(vth), accent: 'info' })
+      if (voltage > 0.01 || isOutput) {
+        details.push({ label: 'Voltage', value: formatVoltage(voltage), accent: 'voltage' })
+      }
       break
     }
     case 'Motor': {

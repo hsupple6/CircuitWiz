@@ -1,4 +1,5 @@
 import { getModule, resolveModuleName } from '../modules/registry'
+import { resolveLogicModule } from '../modules/logicModule'
 import { ModuleDefinition, WireConnection, WireSegment } from '../modules/types'
 import {
   buildNPinConnectorDefinition,
@@ -10,6 +11,10 @@ import {
   type Schematic,
   type SchematicGroupBox,
 } from '../types/workspace'
+import {
+  computeContentBounds,
+  contentBoundsToGroupBox,
+} from '../utils/schematicBounds'
 import {
   DEFAULT_WIRE_COLOR_ID,
   DEFAULT_WIRE_COLOR_MODE,
@@ -115,6 +120,25 @@ export function placeModule(
         if (cell.pin === 'AC1') pinMap.set('AC1', { x, y })
         if (cell.pin === 'AC2') pinMap.set('AC2', { x, y })
       }
+      if (moduleName === 'Potentiometer') {
+        if (cell.pin === 'A') pinMap.set('A', { x, y })
+        if (cell.pin === 'W') pinMap.set('W', { x, y })
+        if (cell.pin === 'B') pinMap.set('B', { x, y })
+      }
+      if (
+        moduleName === 'LM317M' ||
+        moduleName === 'Linear Regulator' ||
+        resolveLogicModule(placementDef) === 'LinearRegulator' ||
+        resolveLogicModule(placementDef) === 'FixedRegulator'
+      ) {
+        if (cell.pin === 'VIN') pinMap.set('VIN', { x, y })
+        if (cell.pin === 'VOUT') pinMap.set('VOUT', { x, y })
+        if (cell.pin === 'GND') pinMap.set('GND', { x, y })
+        if (cell.pin === 'ADJ') pinMap.set('ADJ', { x, y })
+      }
+      if (resolveLogicModule(placementDef) === 'LogicGateIC' && cell.pin && cell.isConnectable) {
+        pinMap.set(cell.pin, { x, y })
+      }
       if (isNPinConnectorModule(placementDef) && cell.pin) {
         pinMap.set(cell.pin, { x, y })
       }
@@ -159,6 +183,7 @@ export function placeModule(
         ...(moduleDefinition.properties as Record<string, unknown>),
         ...(props.vth != null ? { vth: props.vth } : {}),
         ...(props.rdsOn != null ? { rdsOn: props.rdsOn } : {}),
+        ...(props.pwmDuty != null ? { pwmDuty: props.pwmDuty } : {}),
       }
     }
     if (
@@ -175,6 +200,10 @@ export function placeModule(
           ? { ...cell, voltage: v }
           : cell
       )
+    }
+
+    if (moduleName === 'Potentiometer' && props.wiperPosition != null && cell.pin === 'W') {
+      ;(entry as OccupiedComponent & { wiperPosition?: number }).wiperPosition = props.wiperPosition as number
     }
 
     components.push(entry)
@@ -272,7 +301,11 @@ export function buildSchematic(
   name: string,
   description: string,
   build: BuildFn,
-  extra: { groupBoxes?: SchematicGroupBox[] } = {}
+  extra: {
+    groupBoxes?: SchematicGroupBox[]
+    /** Auto-fit a region to components + wires (preferred for examples). */
+    region?: { title: string; color?: string; padding?: number }
+  } = {}
 ): Schematic {
   placementCounter = 0
   const components: OccupiedComponent[] = []
@@ -296,14 +329,32 @@ export function buildSchematic(
   components.forEach((c) => {
     const cell = gridData[c.y]?.[c.x]
     if (!cell) return
-    const ext = c as OccupiedComponent & { resistance?: number; capacitance?: number }
+    const ext = c as OccupiedComponent & { resistance?: number; capacitance?: number; wiperPosition?: number }
     if (ext.resistance != null) cell.resistance = ext.resistance
     if (ext.capacitance != null) cell.capacitance = ext.capacitance
+    if (ext.wiperPosition != null && c.moduleDefinition?.grid[c.cellIndex ?? 0]?.pin === 'W') {
+      cell.wiperPosition = ext.wiperPosition
+    }
   })
+
+  let groupBoxes = extra.groupBoxes
+  if (extra.region) {
+    const bounds = computeContentBounds(gridData, wires)
+    if (bounds) {
+      groupBoxes = [
+        contentBoundsToGroupBox(
+          bounds,
+          extra.region.title,
+          extra.region.color,
+          extra.region.padding ?? 1
+        ),
+      ]
+    }
+  }
 
   return createSchematic(name, description, {
     gridData,
     wires,
-    groupBoxes: extra.groupBoxes,
+    groupBoxes,
   })
 }

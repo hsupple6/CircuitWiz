@@ -14,6 +14,7 @@ from expected import (
     LED_VF,
     half_wave_rectifier_peak,
     led_with_resistor,
+    nmos_switch,
     npn_switch,
     zener_clamp,
 )
@@ -53,6 +54,22 @@ def test_zener_clamp() -> None:
     )
 
 
+def test_nmos_switch() -> None:
+    result = HARNESS.circuit("nmos_switch")
+    assert_solver_works(result)
+    expected = nmos_switch(VCC, 1_000)
+
+    r_load = resistor_at(result, 6, 8)
+    assert_close(r_load.output_current, expected["load_current"], rel=0.03, label="NMOS load current")
+    assert_close(result.total_current, expected["load_current"], rel=0.03, label="NMOS total current")
+    assert_close(
+        resistor_lead_voltage(result, 6, 8, high_side=True),
+        expected["v_drain"],
+        rel=0.1,
+        label="NMOS drain voltage",
+    )
+
+
 def test_npn_switch() -> None:
     result = HARNESS.circuit("npn_switch")
     assert_solver_works(result)
@@ -88,6 +105,7 @@ def test_half_wave_rectifier() -> None:
 TESTS = [
     ("LED + resistor", test_led_resistor),
     ("Zener clamp", test_zener_clamp),
+    ("NMOS switch", test_nmos_switch),
     ("NPN switch", test_npn_switch),
     ("Half-wave rectifier", test_half_wave_rectifier),
 ]

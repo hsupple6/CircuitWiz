@@ -7,7 +7,11 @@ import {
   PlanBubbleMetadata,
   seedPlanSpaceIfEmpty,
 } from '../../types/workspace'
-import { createDefaultPlanSpacePreset } from '../../modules/planSpacePreset'
+import {
+  clearPresetContent,
+  createDefaultPlanSpacePreset,
+  planSpaceHasDefaultTemplate,
+} from '../../modules/planSpacePreset'
 import { PlanSpacePoint, clampZoom, getArrowPoints } from './coordinates'
 
 function newId(prefix: string): string {
@@ -27,6 +31,7 @@ export function getPlanSpaceState(planSpace: PlanSpace) {
     bubbleCount: planSpace.bubbles.length,
     connectionCount: planSpace.connections.length,
     arrowCount: planSpace.arrows.length,
+    hasDefaultTemplate: planSpaceHasDefaultTemplate(planSpace),
     viewport: planSpace.metadata,
     bubbles: planSpace.bubbles.map((b) => ({
       id: b.id,
@@ -67,6 +72,7 @@ export function addBubble(
     id?: string
   }
 ): { planSpace: PlanSpace; bubble: PlanBubble } {
+  const base = clearPresetContent(planSpace)
   const bubble: PlanBubble = {
     id: input.id ?? newId('bubble'),
     x: input.x,
@@ -83,8 +89,8 @@ export function addBubble(
   }
   return {
     planSpace: updateMeta({
-      ...planSpace,
-      bubbles: [...planSpace.bubbles, bubble],
+      ...base,
+      bubbles: [...base.bubbles, bubble],
     }),
     bubble,
   }
@@ -275,7 +281,10 @@ export function applyPlanSpacePreset(planSpace: PlanSpace): PlanSpace {
   const preset = createDefaultPlanSpacePreset()
   return updateMeta({
     ...planSpace,
-    ...preset,
+    bubbles: preset.bubbles,
+    connections: preset.connections,
+    arrows: preset.arrows,
+    metadata: preset.metadata,
   })
 }
 

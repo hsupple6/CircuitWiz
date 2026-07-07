@@ -65,12 +65,12 @@ export function propagateVoltages(ctx: PropagateContext): {
     const segments = wire.segments.map((segment) => {
       const fromV = voltageAt(ctx, segment.from.x, segment.from.y)
       const toV = voltageAt(ctx, segment.to.x, segment.to.y)
-      const segmentVoltage = fromV
+      const segmentVoltage = Math.max(fromV, toV)
 
       maxVoltage = Math.max(maxVoltage, fromV, toV)
       minVoltage = Math.min(minVoltage, fromV, toV)
 
-      if (fromV > 0.1 || toV > 0.1) isPowered = true
+      if (segmentVoltage > 0.1) isPowered = true
       if (pointGrounded(ctx, segment.from.x, segment.from.y)) isGrounded = true
       if (pointGrounded(ctx, segment.to.x, segment.to.y)) isGrounded = true
 
@@ -87,7 +87,7 @@ export function propagateVoltages(ctx: PropagateContext): {
         voltage: segmentVoltage,
         current: isPowered ? ctx.totalCurrent : 0,
         power: segmentVoltage * (isPowered ? ctx.totalCurrent : 0),
-        isPowered: fromV > 0.1 || toV > 0.1,
+        isPowered: segmentVoltage > 0.1,
         isGrounded: pointGrounded(ctx, segment.from.x, segment.from.y) || pointGrounded(ctx, segment.to.x, segment.to.y),
         ...(wirePWM !== undefined ? { pwm: wirePWM } : {}),
       }
@@ -145,6 +145,35 @@ export function propagateVoltages(ctx: PropagateContext): {
       'Capacitor',
     ])
     if (existing && specialized.has(moduleType)) return
+
+    if (
+      moduleType === 'ACSource' ||
+      moduleType === 'PowerSupply' ||
+      moduleType === 'Battery' ||
+      moduleType === 'LiIonPack'
+    ) {
+      const isReturn =
+        grounded ||
+        moduleCell.pin === 'AC2' ||
+        moduleCell.pin === 'GND' ||
+        moduleCell.pin === '-'
+      const pinV = grounded && isGroundReference(moduleCell) ? 0 : v
+      const pinI = !isReturn && ctx.totalCurrent > 0 ? ctx.totalCurrent : existing?.outputCurrent ?? 0
+      ctx.componentStates.set(cellComponentId, {
+        ...(existing ?? {
+          componentId: cellComponentId,
+          componentType: cell.moduleDefinition.module,
+          position: { x, y },
+        }),
+        outputVoltage: pinV,
+        outputCurrent: pinI,
+        power: pinV * pinI,
+        isPowered: !isReturn && (pinV > 0.05 || pinI > 1e-6),
+        isGrounded: grounded,
+        status: grounded ? 'grounded' : pinV > 0.05 || pinI > 1e-6 ? 'active' : 'standby',
+      })
+      return
+    }
 
     if (existing) {
       ctx.componentStates.set(cellComponentId, {

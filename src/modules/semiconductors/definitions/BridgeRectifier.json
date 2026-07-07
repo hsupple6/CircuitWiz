@@ -1,6 +1,6 @@
 {
   "module": "BridgeRectifier",
-  "description": "Full-wave bridge rectifier — four internal diodes, AC in and DC out",
+  "description": "Full-wave bridge rectifier — AC Vrms in (AC1/AC2), DC out (+/−). Vdc ≈ 0.9 × Vrms − 2×Vf",
   "category": "semiconductors",
   "gridX": 3,
   "gridY": 3,

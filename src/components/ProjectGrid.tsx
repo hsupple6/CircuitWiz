@@ -15,17 +15,23 @@ import { useAgent } from '../contexts/AgentContext'
 import { calculateElectricalFlow, ComponentState, startMultiMicrocontrollerGPIO } from '../systems/ElectricalSystem'
 import { ElectricalValidator } from './ElectricalValidator'
 import { WorkspaceFloatingPanels } from './WorkspaceFloatingPanels'
+import { InteractiveControlsPanel } from './InteractiveControlsPanel'
 import { ElectricalNotifications } from './ElectricalNotifications'
 import { logger } from '../services/Logger'
 import { crdtService } from '../services/CRDTService'
-import { getCRDTSaveService } from '../services/CRDTSaveService'
-import { Eraser, Focus } from 'lucide-react'
+import { getCRDTSaveService, isCloudProjectId } from '../services/CRDTSaveService'
+import { Focus } from 'lucide-react'
 import { ComponentStatsBadge } from './ComponentStatsBadge'
 import { InductorBodyLabel } from './InductorBodyLabel'
 import { isOutputModule } from '../modules/registry'
 import { resolveLogicModule } from '../modules/logicModule'
 import { connectorIsConfigured, isNPinConnectorModule } from '../modules/connectors/buildConnectorDefinition'
 import { getPassiveValueKind } from '../modules/passiveValueKind'
+import {
+  applyModuleConfig,
+  getModuleConfigKind,
+  readModuleConfig,
+} from '../modules/moduleConfigKind'
 import { SchematicGroupBoxLayer } from './SchematicGroupBoxLayer'
 import { SchematicLabelLayer } from './SchematicLabelLayer'
 import { createSchematicGroupBox, createSchematicCellLabel, type SchematicGroupBox, type SchematicCellLabel, type Program, type ProgramFlashAssignment } from '../types/workspace'
@@ -51,7 +57,7 @@ import { OpAmpBodyLabel } from './OpAmpBodyLabel'
 import { BridgeRectifierBodyLabel } from './BridgeRectifierBodyLabel'
 import { getDisplayPin } from '../utils/smdVisual'
 import { resolveCellResistance } from '../utils/resistorVisual'
-import { buildHoverStats, type HoverStats } from '../utils/hoverStats'
+import { buildHoverStats, resolveInspectPosition, type HoverStats } from '../utils/hoverStats'
 import { applyACSourceProperties, readACSourceSettings } from '../utils/acSourceVisual'
 import {
   assignPowerSupplyIdToDefinition,
@@ -59,11 +65,19 @@ import {
   nextPowerSupplyId,
   updatePowerSupplyInGrid,
 } from '../utils/powerSupplies'
+import {
+  boundsCenterCell,
+  boundsSpanCells,
+  computeContentBounds,
+} from '../utils/schematicBounds'
 import { PowerSupplyLabelsLayer } from './PowerSupplyLabelsLayer'
 
 const GRID_PADDING = 4
-const MIN_ZOOM = 0.6
+const MIN_ZOOM = 0.35
 const MAX_ZOOM = 3
+/** Cap auto-focus zoom so examples open comfortable, not microscope mode. */
+const CIRCUIT_FOCUS_ZOOM_MAX = 0.88
+const CIRCUIT_FOCUS_ZOOM_MIN = 0.45
 const DEFAULT_CELL_SIZE_PX = () => (window.innerWidth * 2.5) / 100
 /** Max schematic grid dimension — must exceed agent placement origin (≥50). */
 const GRID_MAX_SIZE = 200
@@ -96,7 +110,10 @@ interface ProjectGridProps {
   initialComponentStates?: Record<string, any>
   initialGroupBoxes?: SchematicGroupBox[]
   initialLabels?: SchematicCellLabel[]
-  projectId?: string
+  /** Switches internal grid state when opening a different schematic. */
+  schematicId?: string
+  /** Auth0 cloud project id (`proj_*`) — CRDT cloud sync only runs when set. */
+  cloudProjectId?: string
   getAccessToken?: () => Promise<string>
   onProjectDataChange?: (data: {
     gridData?: any[][]
@@ -133,12 +150,18 @@ interface ProjectGridProps {
   programFlashes?: Record<string, ProgramFlashAssignment>
   /** Bumps when schematic is updated externally (e.g. agent tools) — triggers grid resync. */
   schematicUpdatedAt?: string
-  /** Style Lab — wraps grid in .schematic-style-dev for CSS override experiments. */
-  styleDevMode?: boolean
+  /** Composite key so wire-only agent updates still resync when updatedAt collides. */
+  schematicSyncKey?: string
   /** Float device, power, and agent panels over the grid (full-width canvas). */
   showWorkspacePanels?: boolean
   /** Positioning root for floating panels — must match the workspace overlay used by ComponentPalette. */
   workspaceOverlay?: HTMLElement | null
+  deleteMode?: boolean
+  onDeleteModeChange?: (enabled: boolean) => void
+  /** Show Examples theory Docs tab in the right panel. */
+  showExamplesDocs?: boolean
+  examplesSchematicId?: string
+  examplesSchematicName?: string
 }
 
 interface GridCell {
@@ -158,6 +181,7 @@ interface GridCell {
   capacitorVoltage?: number // Stored charge voltage for capacitor transient sim
   inductance?: number // Inductance value for inductors (henries)
   isOn?: boolean // Switch state
+  wiperPosition?: number // Potentiometer wiper 0–1
 }
 
 interface LastPlacedObject {
@@ -208,6 +232,11 @@ function buildPlacedModuleDefinition(module: ModuleDefinition): ModuleDefinition
   }
   if (logic === 'ACSource') {
     return applyACSourceProperties(module, readACSourceSettings(props))
+  }
+  const configKind = getModuleConfigKind(module)
+  if (configKind) {
+    const settings = readModuleConfig(configKind, module)
+    return applyModuleConfig(module, configKind, settings)
   }
   return module
 }
@@ -298,7 +327,8 @@ export function ProjectGrid({
   initialWires,
   initialComponentStates,
   initialGroupBoxes,
-  projectId,
+  schematicId,
+  cloudProjectId,
   getAccessToken,
   onProjectDataChange,
   onCircuitPathwaysChange,
@@ -324,9 +354,14 @@ export function ProjectGrid({
   projectPrograms,
   programFlashes,
   schematicUpdatedAt,
-  styleDevMode = false,
+  schematicSyncKey,
   showWorkspacePanels = false,
   workspaceOverlay = null,
+  deleteMode: deleteModeProp = false,
+  onDeleteModeChange,
+  showExamplesDocs = false,
+  examplesSchematicId,
+  examplesSchematicName,
 }: ProjectGridProps) {
   const { wireColorMode } = useTheme()
   const { isLoading: agentBusy } = useAgent()
@@ -339,7 +374,7 @@ export function ProjectGrid({
     const runningIds = new Set<string>()
     for (const [componentId, assignment] of Object.entries(programFlashes)) {
       const program = projectPrograms.find((p) => p.id === assignment.programId)
-      if (program?.compilation?.success) {
+      if (program?.code?.trim()) {
         startMultiMicrocontrollerGPIO(componentId, program.code)
         runningIds.add(componentId)
       }
@@ -364,6 +399,9 @@ export function ProjectGrid({
     return { width: 50, height: 50 }
   })
   const [hoverStats, setHoverStats] = useState<HoverStats | null>(null)
+  const [liveMonitorExpanded, setLiveMonitorExpanded] = useState(false)
+  const inspectedCellRef = useRef<{ x: number; y: number } | null>(null)
+  const hoverCellRef = useRef<{ x: number; y: number } | null>(null)
   const [internalZoom, setInternalZoom] = useState(1)
   
   // Use external zoom if provided, otherwise use internal zoom
@@ -385,6 +423,11 @@ export function ProjectGrid({
     },
     [onHoverStatsChange]
   )
+
+  const handleLiveMonitorExpandedChange = useCallback((expanded: boolean) => {
+    setLiveMonitorExpanded(expanded)
+    if (!expanded) inspectedCellRef.current = null
+  }, [])
 
   const [gridData, setGridData] = useState<GridCell[][]>(() => {
     // Use initial data if provided, otherwise create empty grid
@@ -447,11 +490,44 @@ export function ProjectGrid({
     }
     return new Map()
   })
+
+  const refreshLiveMonitorStats = useCallback(() => {
+    const pinned = inspectedCellRef.current
+    const hovered = hoverCellRef.current
+
+    if (pinned && liveMonitorExpanded) {
+      const cell = gridData[pinned.y]?.[pinned.x]
+      const moduleCell = cell?.moduleDefinition?.grid[cell?.cellIndex ?? 0]
+      const pos = moduleCell?.isConnectable
+        ? pinned
+        : resolveInspectPosition(pinned.x, pinned.y, gridData, componentStates)
+      emitHoverStats(buildHoverStats(pos.x, pos.y, gridData, wires, componentStates))
+      return
+    }
+
+    if (hovered) {
+      emitHoverStats(buildHoverStats(hovered.x, hovered.y, gridData, wires, componentStates))
+    }
+  }, [gridData, wires, componentStates, liveMonitorExpanded, emitHoverStats])
+
+  useEffect(() => {
+    if (!inspectedCellRef.current && !hoverCellRef.current) return
+    refreshLiveMonitorStats()
+  }, [componentStates, wires, gridData, liveMonitorExpanded, refreshLiveMonitorStats])
+
   const [highlightedMicrocontroller, setHighlightedMicrocontroller] = useState<string | null>(null)
   const [isCalculating, setIsCalculating] = useState(false)
   const pendingElectricalCalcRef = useRef(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [deleteMode, setDeleteMode] = useState(false)
+  const [internalDeleteMode, setInternalDeleteMode] = useState(false)
+  const deleteMode = onDeleteModeChange ? deleteModeProp : internalDeleteMode
+  const setDeleteModeState = useCallback(
+    (next: boolean) => {
+      if (onDeleteModeChange) onDeleteModeChange(next)
+      else setInternalDeleteMode(next)
+    },
+    [onDeleteModeChange]
+  )
   const [hoveredForDeletion, setHoveredForDeletion] = useState<{ type: 'component' | 'wire', id: string } | null>(null)
 
   const [internalGroupBoxes, setInternalGroupBoxes] = useState<SchematicGroupBox[]>(() => initialGroupBoxes ?? [])
@@ -464,6 +540,7 @@ export function ProjectGrid({
   const justFinishedGroupBoxDraw = useRef(false)
   const skipAutosaveRef = useRef(false)
   const lastSyncedAtRef = useRef<string | null>(null)
+  const prevAgentBusyRef = useRef(false)
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const syncGridFromProps = useCallback(() => {
@@ -473,22 +550,36 @@ export function ProjectGrid({
       setGridSize({ width: synced[0]?.length ?? 50, height: synced.length })
       setLastPlacedObject(findLastPlacedFromGrid(synced))
     }
-    if (initialWires) setWires(initialWires)
+    if (initialWires !== undefined) setWires(initialWires)
     if (initialComponentStates) {
       setComponentStates(new Map(Object.entries(initialComponentStates)))
     }
   }, [initialGridData, initialWires, initialComponentStates])
 
+  const externalSyncToken = schematicSyncKey ?? schematicUpdatedAt ?? null
+
   useEffect(() => {
-    if (!schematicUpdatedAt || schematicUpdatedAt === lastSyncedAtRef.current) return
-    lastSyncedAtRef.current = schematicUpdatedAt
+    if (!externalSyncToken || externalSyncToken === lastSyncedAtRef.current) return
+    lastSyncedAtRef.current = externalSyncToken
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current)
       autosaveTimerRef.current = null
     }
     skipAutosaveRef.current = true
     syncGridFromProps()
-  }, [schematicUpdatedAt, syncGridFromProps])
+  }, [externalSyncToken, syncGridFromProps])
+
+  useEffect(() => {
+    if (prevAgentBusyRef.current && !agentBusy) {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current)
+        autosaveTimerRef.current = null
+      }
+      skipAutosaveRef.current = true
+      syncGridFromProps()
+    }
+    prevAgentBusyRef.current = agentBusy
+  }, [agentBusy, syncGridFromProps])
 
   const [internalLabels, setInternalLabels] = useState<SchematicCellLabel[]>(() => initialLabels ?? [])
   const labels = controlledLabels ?? internalLabels
@@ -547,7 +638,7 @@ export function ProjectGrid({
     }
     setSelectedLabelId(null)
     setEditRequestLabelId(null)
-  }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [schematicId]) // eslint-disable-line react-hooks/exhaustive-deps
   
   // Simulation state for wire visual feedback
   const [simulationState, setSimulationState] = useState<SimulationState>({
@@ -702,7 +793,54 @@ export function ProjectGrid({
 
   const gridTransform = `scale(${zoom}) translate(${gridOffset.x + GRID_PADDING / zoom}px, ${gridOffset.y + GRID_PADDING / zoom}px)`
 
+  const focusCircuitPendingRef = useRef(false)
+
+  const tryFocusCircuit = useCallback(
+    (data: GridCell[][] = gridData, wireList: WireConnection[] = wires) => {
+      const layer = gridLayerRef.current
+      const container = gridRef.current
+      if (!layer || !container) return false
+      const layerWidth = layer.offsetWidth
+      if (layerWidth <= 0 || container.clientWidth <= 0) return false
+
+      const measuredCell = gridSize.width > 0 ? layerWidth / gridSize.width : cellSizePx
+      const bounds = computeContentBounds(data, wireList)
+      if (!bounds) return false
+
+      const rect = container.getBoundingClientRect()
+      const { width: spanW, height: spanH } = boundsSpanCells(bounds)
+      const center = boundsCenterCell(bounds)
+      const margin = 200
+      const fitZoom = Math.min(
+        (rect.width - margin) / Math.max(spanW * measuredCell, 1),
+        (rect.height - margin) / Math.max(spanH * measuredCell, 1)
+      )
+      const relaxedFit = fitZoom * 0.68
+      const targetZoom = Math.min(
+        CIRCUIT_FOCUS_ZOOM_MAX,
+        Math.max(CIRCUIT_FOCUS_ZOOM_MIN, relaxedFit)
+      )
+
+      setGridOffset({
+        x: (rect.width / 2 - GRID_PADDING) / targetZoom - center.x * measuredCell,
+        y: (rect.height / 2 - GRID_PADDING) / targetZoom - center.y * measuredCell,
+      })
+      updateZoom(targetZoom)
+      return true
+    },
+    [gridData, wires, cellSizePx, gridSize.width, updateZoom]
+  )
+
+  const zoomToCircuit = useCallback(
+    (
+      data: GridCell[][] = gridData,
+      wireList: WireConnection[] = wires
+    ) => tryFocusCircuit(data, wireList),
+    [gridData, wires, tryFocusCircuit]
+  )
+
   const zoomToLastPlaced = useCallback(() => {
+    if (zoomToCircuit()) return
     if (!lastPlacedObject || !gridRef.current) return
 
     const rect = gridRef.current.getBoundingClientRect()
@@ -715,7 +853,50 @@ export function ProjectGrid({
       y: (rect.height / 2 - GRID_PADDING) / targetZoom - centerY * cellSizePx,
     })
     updateZoom(targetZoom)
-  }, [lastPlacedObject, zoom, updateZoom, cellSizePx])
+  }, [lastPlacedObject, zoom, updateZoom, cellSizePx, zoomToCircuit])
+
+  const lastAutoFocusedSchematicRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!schematicId) return
+    if (lastAutoFocusedSchematicRef.current === schematicId) return
+
+    focusCircuitPendingRef.current = true
+    const data = initialGridData?.length
+      ? ensurePowerSupplyIdsInGrid(initialGridData as GridCell[][])
+      : null
+    const wireList = initialWires ?? []
+
+    let attempts = 0
+    let cancelled = false
+
+    const attemptFocus = () => {
+      if (cancelled || !focusCircuitPendingRef.current) return
+      if (data && tryFocusCircuit(data, wireList)) {
+        focusCircuitPendingRef.current = false
+        lastAutoFocusedSchematicRef.current = schematicId
+        return
+      }
+      if (++attempts < 20) {
+        requestAnimationFrame(attemptFocus)
+      }
+    }
+
+    requestAnimationFrame(attemptFocus)
+    return () => {
+      cancelled = true
+      focusCircuitPendingRef.current = false
+    }
+  }, [schematicId, tryFocusCircuit]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!schematicId || !focusCircuitPendingRef.current) return
+    if (lastAutoFocusedSchematicRef.current === schematicId) return
+    if (tryFocusCircuit()) {
+      focusCircuitPendingRef.current = false
+      lastAutoFocusedSchematicRef.current = schematicId
+    }
+  }, [cellSizePx, schematicId, tryFocusCircuit])
 
   const zoomToGroupBox = useCallback((box: SchematicGroupBox) => {
     if (!gridRef.current) return
@@ -1169,12 +1350,23 @@ export function ProjectGrid({
       const cell = gridData[y]?.[x]
       setHoveredTile({ x, y, cell: cell || null })
       onHoveredPositionChange?.({ x, y })
-      emitHoverStats(buildHoverStats(x, y, gridData, wires, componentStates))
+      hoverCellRef.current = { x, y }
+      // Pinned inspect stays locked — mousemove must not swap AC vs DC readings.
+      if (!(inspectedCellRef.current && liveMonitorExpanded)) {
+        emitHoverStats(buildHoverStats(x, y, gridData, wires, componentStates))
+      }
     } else {
       setHoveredTile(null)
       setHoverState(null)
       onHoveredPositionChange?.(null)
-      emitHoverStats(null)
+      hoverCellRef.current = null
+      const pinned = inspectedCellRef.current
+      if (pinned && liveMonitorExpanded) {
+        const pos = resolveInspectPosition(pinned.x, pinned.y, gridData, componentStates)
+        emitHoverStats(buildHoverStats(pos.x, pos.y, gridData, wires, componentStates))
+      } else {
+        emitHoverStats(null)
+      }
     }
     
     // Handle delete mode hover
@@ -1203,7 +1395,7 @@ export function ProjectGrid({
       const currentSegments = [...wiringState.currentConnection.segments, { x: wireGridX, y: wireGridY }]
       setWirePreview(currentSegments)
     }
-  }, [selectedModule, wiringState, screenToGridCoords, deleteMode, gridData, gridSize.width, gridSize.height, wires, componentStates, onHoveredPositionChange, emitHoverStats])
+  }, [selectedModule, wiringState, screenToGridCoords, deleteMode, gridData, gridSize.width, gridSize.height, wires, componentStates, onHoveredPositionChange, emitHoverStats, liveMonitorExpanded])
 
   // Handle clicking on connectable cells for wiring - removed (handled by grid click handler)
 
@@ -1323,6 +1515,23 @@ export function ProjectGrid({
     const moduleCell = cell.moduleDefinition.grid[cell.cellIndex || 0]
     return moduleCell?.isConnectable || false
   }, [gridData])
+
+  /** Snap wire endpoints onto a neighboring pin when the click lands one cell away. */
+  const snapToNearestConnectionPoint = useCallback((x: number, y: number) => {
+    if (isConnectionPoint(x, y)) return { x, y }
+    const neighbors = [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+    ] as const
+    for (const [dx, dy] of neighbors) {
+      const nx = x + dx
+      const ny = y + dy
+      if (isConnectionPoint(nx, ny)) return { x: nx, y: ny }
+    }
+    return { x, y }
+  }, [isConnectionPoint])
 
   // Calculate electrical flow using the new system
   const performElectricalCalculation = useCallback(() => {
@@ -1447,21 +1656,13 @@ export function ProjectGrid({
   }, [])
 
   // Delete mode functions
-  const toggleDeleteMode = useCallback(() => {
-    setDeleteMode((prev) => {
-      if (!prev) onLabelModeChange?.(false)
-      return !prev
-    })
+  useEffect(() => {
+    if (!deleteMode) return
     setHoveredForDeletion(null)
-    // Exit wiring mode when entering delete mode
     if (wiringState.isWiring) {
       cancelWiring()
     }
-    // Deselect module when entering delete mode
-    if (selectedModule) {
-      onModuleSelect(null)
-    }
-  }, [wiringState.isWiring, cancelWiring, selectedModule, onModuleSelect, onLabelModeChange])
+  }, [deleteMode, wiringState.isWiring, cancelWiring])
 
   const handlePowerSupplyUpdate = useCallback(
     (componentId: string, patch: { voltage: number; current: number }) => {
@@ -1642,11 +1843,12 @@ export function ProjectGrid({
     console.log('🔍 finishWiringWithValidation called with:', x, y)
     if (!wiringState.currentConnection) return
 
+    const snapped = snapToNearestConnectionPoint(x, y)
 
     // Get properties from start and end points
     const startProps = getComponentProperties(wiringState.currentConnection.startX, wiringState.currentConnection.startY)
-    const endProps = getComponentProperties(x, y)
-    const endWire = getWirePassingThrough(x, y)
+    const endProps = getComponentProperties(snapped.x, snapped.y)
+    const endWire = getWirePassingThrough(snapped.x, snapped.y)
     const startWire = getWirePassingThrough(wiringState.currentConnection.startX, wiringState.currentConnection.startY)
 
     // Determine wire properties from connected components and existing wires
@@ -1748,8 +1950,8 @@ export function ProjectGrid({
     const wireSegments: WireSegment[] = []
     // Add the end point to the segments array if it's not already there
     const segments = [...wiringState.currentConnection.segments]
-    if (segments.length === 0 || segments[segments.length - 1].x !== x || segments[segments.length - 1].y !== y) {
-      segments.push({ x, y })
+    if (segments.length === 0 || segments[segments.length - 1].x !== snapped.x || segments[segments.length - 1].y !== snapped.y) {
+      segments.push({ x: snapped.x, y: snapped.y })
     }
     console.log('🔍 Creating wire segments from:', segments)
     console.log('🔍 Segments length:', segments.length)
@@ -1821,8 +2023,8 @@ export function ProjectGrid({
     
     console.log('Created wire connection:', wireConnection)
     
-    // Add CRDT operation for wire creation
-    if (projectId && getAccessToken) {
+    // Add CRDT operation for wire creation (cloud projects only)
+    if (isCloudProjectId(cloudProjectId) && getAccessToken) {
       const wireData = {
         id: wireId,
         segments: wireSegments,
@@ -1845,7 +2047,7 @@ export function ProjectGrid({
       
       const operation = crdtService.addWire(wireData)
       const saveService = getCRDTSaveService(getAccessToken)
-      saveService.queueOperation(operation, projectId).then(result => {
+      saveService.queueOperation(operation, cloudProjectId).then(result => {
         console.log('🔧 ProjectGrid: CRDT wire save result:', result)
       }).catch(error => {
         console.error('❌ ProjectGrid: CRDT wire save failed:', error)
@@ -1875,7 +2077,7 @@ export function ProjectGrid({
     
     setWiringState({ isWiring: false, currentConnection: null })
     setWirePreview(null)
-  }, [wiringState.currentConnection, gridData, cancelWiring, mergeConnectedWires])
+  }, [wiringState.currentConnection, gridData, cancelWiring, mergeConnectedWires, snapToNearestConnectionPoint])
 
   // Handle click to place module or wire
   const handleGridClick = useCallback((e: React.MouseEvent) => {
@@ -1927,31 +2129,52 @@ export function ProjectGrid({
     if (wiringState.isWiring) {
       const wireCoords = screenToGridCoords(e.clientX, e.clientY, 'wire')
       if (!wireCoords) return
-      const { x: wireGridX, y: wireGridY } = wireCoords
+      const snapped = snapToNearestConnectionPoint(wireCoords.x, wireCoords.y)
       
       if (wiringState.currentConnection) {
         // Add segment or finish wiring
         if (e.ctrlKey || e.metaKey) {
           // Ctrl/Cmd + click to add segment
-          addWireSegment(wireGridX, wireGridY)
+          addWireSegment(snapped.x, snapped.y)
         } else {
           // Regular click to finish wiring - add end point to segments first
-          addWireSegment(wireGridX, wireGridY)
-          finishWiringWithValidation(wireGridX, wireGridY)
+          addWireSegment(snapped.x, snapped.y)
+          finishWiringWithValidation(snapped.x, snapped.y)
         }
       } else {
         // Start new wire
-        startWiring(wireGridX, wireGridY)
+        startWiring(snapped.x, snapped.y)
       }
       return
     }
     
-    // If clicking on a connection point or wire, start wiring
-    if ((isConnection || wireAtPosition) && !wiringState.isWiring) {
-      startWiring(x, y)
-      return
+    // Inspect component/pin first; start wiring once Live Monitor is open
+    const cell = gridData[y]?.[x]
+    const isOccupiedComponent = Boolean(cell?.occupied && cell.componentId)
+    const isInspectable = isConnection || Boolean(wireAtPosition) || isOccupiedComponent
+
+    if (isInspectable && !wiringState.isWiring && !selectedModule) {
+      if (showWorkspacePanels && !liveMonitorExpanded) {
+        setLiveMonitorExpanded(true)
+        inspectedCellRef.current = { x, y }
+        const pos = resolveInspectPosition(x, y, gridData, componentStates)
+        emitHoverStats(buildHoverStats(pos.x, pos.y, gridData, wires, componentStates))
+        return
+      }
+
+      if (isConnection || wireAtPosition) {
+        startWiring(x, y)
+        return
+      }
+
+      if (showWorkspacePanels && isOccupiedComponent) {
+        inspectedCellRef.current = { x, y }
+        const pos = resolveInspectPosition(x, y, gridData, componentStates)
+        emitHoverStats(buildHoverStats(pos.x, pos.y, gridData, wires, componentStates))
+        return
+      }
     }
-    
+
     // If clicking on empty space while wiring, cancel wiring
     if (wiringState.isWiring && !isConnection && !wireAtPosition && !selectedModule) {
       cancelWiring()
@@ -2019,11 +2242,11 @@ export function ProjectGrid({
             isClickable: false
           }
           
-          // Add to CRDT and save
-          if (projectId && getAccessToken) {
+          // Add to CRDT and save (cloud projects only)
+          if (isCloudProjectId(cloudProjectId) && getAccessToken) {
             const operation = crdtService.addComponent(componentData, { x: centeredX, y: centeredY })
             const saveService = getCRDTSaveService(getAccessToken)
-            saveService.queueOperation(operation, projectId).then(result => {
+            saveService.queueOperation(operation, cloudProjectId).then(result => {
               console.log('🔧 ProjectGrid: CRDT save result:', result)
             }).catch(error => {
               console.error('❌ ProjectGrid: CRDT save failed:', error)
@@ -2101,7 +2324,7 @@ export function ProjectGrid({
     } else if (!wiringState.isWiring && !deleteMode && !labelMode) {
       setSelectedGroupBoxId(null)
     }
-  }, [selectedModule, gridSize.width, gridSize.height, onModuleSelect, wiringState, addWireSegment, finishWiringWithValidation, startWiring, isConnectionPoint, screenToGridCoords, checkAndExpandForPlacement, deleteMode, labelMode, gridData, setSelectedGroupBoxId, labels, updateLabels, setSelectedLabelId, selectedLabelId])
+  }, [selectedModule, gridSize.width, gridSize.height, onModuleSelect, wiringState, addWireSegment, finishWiringWithValidation, startWiring, isConnectionPoint, snapToNearestConnectionPoint, screenToGridCoords, checkAndExpandForPlacement, deleteMode, labelMode, gridData, setSelectedGroupBoxId, labels, updateLabels, setSelectedLabelId, selectedLabelId, showWorkspacePanels, liveMonitorExpanded, emitHoverStats, wires, componentStates])
 
   // Handle mouse leave to clear hover state
   const handleMouseLeave = useCallback(() => {
@@ -2109,8 +2332,15 @@ export function ProjectGrid({
     setWirePreview(null)
     setHoveredTile(null)
     onHoveredPositionChange?.(null)
-    emitHoverStats(null)
-  }, [onHoveredPositionChange, emitHoverStats])
+    hoverCellRef.current = null
+    const pinned = inspectedCellRef.current
+    if (pinned && liveMonitorExpanded) {
+      const pos = resolveInspectPosition(pinned.x, pinned.y, gridData, componentStates)
+      emitHoverStats(buildHoverStats(pos.x, pos.y, gridData, wires, componentStates))
+    } else {
+      emitHoverStats(null)
+    }
+  }, [onHoveredPositionChange, emitHoverStats, liveMonitorExpanded, gridData, wires, componentStates])
 
 
   // Handle ESC key to cancel wiring and close color picker
@@ -2133,17 +2363,17 @@ export function ProjectGrid({
   // Disable delete mode when a component is selected for placement
   useEffect(() => {
     if (selectedModule && deleteMode) {
-      setDeleteMode(false)
+      setDeleteModeState(false)
       setHoveredForDeletion(null)
     }
-  }, [selectedModule, deleteMode])
+  }, [selectedModule, deleteMode, setDeleteModeState])
 
   useEffect(() => {
     if (labelMode && deleteMode) {
-      setDeleteMode(false)
+      setDeleteModeState(false)
       setHoveredForDeletion(null)
     }
-  }, [labelMode, deleteMode])
+  }, [labelMode, deleteMode, setDeleteModeState])
 
   useEffect(() => {
     if (labelMode && selectedModule) {
@@ -3232,26 +3462,6 @@ const GridCell = React.memo(({
         )}
       </div>
 
-      {/* Control Buttons — aligned with floating panel top (top-4) */}
-      <div
-        className={`absolute top-4 flex gap-2 z-workspace-controls ${showWorkspacePanels ? 'right-[calc(min(360px,100%-1rem)+1rem)]' : 'right-4'}`}
-        data-control-buttons
-      >
-        {/* Delete Mode Button */}
-        <button
-          onClick={toggleDeleteMode}
-          className={`px-3 py-2 rounded-lg shadow-lg transition-colors text-sm flex items-center gap-2 ${
-            deleteMode 
-              ? 'bg-red-500 text-white hover:bg-red-600' 
-              : 'bg-gray-500 text-white hover:bg-gray-600'
-          }`}
-          title={deleteMode ? 'Exit delete mode' : 'Enter delete mode'}
-        >
-          <Eraser className="h-4 w-4" />
-          {deleteMode ? 'Exit Delete' : 'Delete'}
-        </button>
-      </div>
-
       {!showWorkspacePanels && (
         <button
           onClick={zoomToLastPlaced}
@@ -3284,9 +3494,14 @@ const GridCell = React.memo(({
         onSimulationStateChange={setSimulationState}
         onWiresChange={setWires}
         onUpdatePowerSupply={handlePowerSupplyUpdate}
-        onRecenter={zoomToLastPlaced}
-        recenterEnabled={!!lastPlacedObject}
+        onRecenter={() => zoomToCircuit()}
+        recenterEnabled={Boolean(computeContentBounds(gridData, wires))}
         hoverStats={hoverStats}
+        liveMonitorExpanded={liveMonitorExpanded}
+        onLiveMonitorExpandedChange={handleLiveMonitorExpandedChange}
+        showExamplesDocs={showExamplesDocs}
+        examplesSchematicId={examplesSchematicId}
+        examplesSchematicName={examplesSchematicName}
       />
     ) : null
 
@@ -3295,21 +3510,25 @@ const GridCell = React.memo(({
       ? createPortal(workspaceFloatingPanels, workspaceOverlay)
       : null
 
-  if (styleDevMode) {
-    return (
-      <>
-        <div className="schematic-style-dev h-full w-full" data-style-dev>
-          {gridShell}
-        </div>
-        {portaledWorkspacePanels}
-      </>
-    )
-  }
+  const interactiveControlsPanel =
+    workspaceOverlay ? (
+      <InteractiveControlsPanel
+        gridData={gridData}
+        onGridPatch={(next) => setGridData(next as typeof gridData)}
+        containerRef={workspaceOverlay}
+      />
+    ) : null
+
+  const portaledInteractiveControls =
+    interactiveControlsPanel && workspaceOverlay
+      ? createPortal(interactiveControlsPanel, workspaceOverlay)
+      : null
 
   return (
     <>
       {gridShell}
       {portaledWorkspacePanels}
+      {portaledInteractiveControls}
     </>
   )
 }

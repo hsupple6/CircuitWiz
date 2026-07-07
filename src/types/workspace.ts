@@ -342,7 +342,6 @@ export type WorkspaceView =
   | 'document'
   | 'program'
   | 'plan-space'
-  | 'style-dev'
 
 export type WorkspaceItemType = 'schematic' | 'document' | 'program' | 'plan-space'
 
@@ -351,10 +350,12 @@ function newId(prefix: string): string {
 }
 
 export function createPlanSpace(): PlanSpace {
-  const preset = createDefaultPlanSpacePreset()
   return {
     id: newId('plan'),
-    ...preset,
+    bubbles: [],
+    connections: [],
+    arrows: [],
+    metadata: { zoom: 1, offset: { x: 0, y: 0 } },
   }
 }
 

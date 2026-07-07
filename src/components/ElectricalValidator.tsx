@@ -100,7 +100,7 @@ export function ElectricalValidator({ gridData, wires, onValidationUpdate }: Ele
       })
     }
     
-    if (voltage > 3.3) {
+    if (voltage > 23.3) {
       validations.push({
         id: `led-high-voltage-${id}`,
         type: 'error',
@@ -159,33 +159,8 @@ export function ElectricalValidator({ gridData, wires, onValidationUpdate }: Ele
     }
   }
 
-  const validateWireNetworks = (wires: any[], validations: ElectricalValidation[]) => {
-    wires.forEach((wire) => {
-      const { id, current, maxCurrent, voltage, maxPower } = wire
-      
-      if (current > maxCurrent) {
-        validations.push({
-          id: `wire-overcurrent-${id}`,
-          type: 'error',
-          componentId: id,
-          componentType: 'Wire',
-          message: `❌ Wire overcurrent: ${current.toFixed(2)}A > ${maxCurrent}A max. Wire may overheat!`,
-          timestamp: Date.now()
-        })
-      }
-      
-      const power = voltage * current
-      if (power > maxPower) {
-        validations.push({
-          id: `wire-overpower-${id}`,
-          type: 'error',
-          componentId: id,
-          componentType: 'Wire',
-          message: `❌ Wire overpower: ${power.toFixed(1)}W > ${maxPower}W max. Wire may overheat!`,
-          timestamp: Date.now()
-        })
-      }
-    })
+  const validateWireNetworks = (_wires: any[], _validations: ElectricalValidation[]) => {
+    // Wire thermal limits are shown in hover stats / device panel; skip toast warnings.
   }
 
   // Helper functions

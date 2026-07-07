@@ -22,7 +22,11 @@ import {
 import { placeModule, wireBetween } from '../../examples/schematicBuilder'
 import { validateConnection, PinInfo, checkForShortCircuit } from '../../utils/connectionValidator'
 import { solveCircuit } from '../../services/CircuitSolver'
-import { layoutGuidelinesForAgent } from './layoutGuidelines'
+import {
+  layoutGuidelinesForAgent,
+  nextHorizontalOrigin,
+  SCHEMATIC_LAYOUT_GUIDELINES,
+} from './layoutGuidelines'
 import { cellMatchesPin, primaryPinName } from '../../utils/pinNames'
 import { buildWirePath } from '../../utils/wireRouting'
 import { pickWireColorForConnection, pickWireColorForPath, PickWireColorOptions } from '../../utils/pickWireColor'
@@ -41,8 +45,16 @@ export interface ComponentSummary {
   moduleName: string
   category: string
   origin: { x: number; y: number }
+  size: { gridX: number; gridY: number }
   pins: Array<{ name: string; x: number; y: number; relX: number; relY: number; type: string }>
   properties: Record<string, unknown>
+}
+
+export interface SuggestedPlacement {
+  x: number
+  y: number
+  afterComponentId?: string
+  note: string
 }
 
 function touchSchematic(schematic: Schematic): Schematic {
@@ -178,6 +190,7 @@ export function listComponents(schematic: Schematic): ComponentSummary[] {
       moduleName,
       category: def?.category ?? 'unknown',
       origin,
+      size: { gridX: def?.gridX ?? 1, gridY: def?.gridY ?? 1 },
       pins,
       properties: {
         ...((def as ModuleDefinition & { properties?: Record<string, unknown> }).properties ?? {}),
@@ -684,6 +697,40 @@ export function simulateSchematic(schematic: Schematic) {
   }
 }
 
+export function suggestNextPlacement(schematic: Schematic): SuggestedPlacement {
+  const components = listComponents(schematic)
+  const { placementOrigin, minGapCells } = SCHEMATIC_LAYOUT_GUIDELINES
+
+  if (components.length === 0) {
+    return {
+      x: placementOrigin.x,
+      y: placementOrigin.y,
+      note: 'First component — place at layoutGuidelines.placementOrigin.',
+    }
+  }
+
+  let anchor = components[0]
+  let anchorRight = anchor.origin.x + anchor.size.gridX
+
+  for (const component of components) {
+    const right = component.origin.x + component.size.gridX
+    if (
+      right > anchorRight ||
+      (right === anchorRight && component.origin.y < anchor.origin.y)
+    ) {
+      anchor = component
+      anchorRight = right
+    }
+  }
+
+  return {
+    x: nextHorizontalOrigin(anchor.origin.x, anchor.size.gridX, minGapCells),
+    y: anchor.origin.y,
+    afterComponentId: anchor.id,
+    note: `Tight horizontal placement after ${anchor.id} (${anchor.moduleName}).`,
+  }
+}
+
 export function getSchematicState(schematic: Schematic) {
   return {
     id: schematic.id,
@@ -699,6 +746,7 @@ export function getSchematicState(schematic: Schematic) {
     gridSize: schematic.metadata.gridSize,
     metadata: schematic.metadata,
     layoutGuidelines: layoutGuidelinesForAgent(),
+    suggestedNextPlacement: suggestNextPlacement(schematic),
   }
 }
 

@@ -5,6 +5,7 @@
 
 import { solveCircuit } from '../src/services/CircuitSolver'
 import { buildSchematic, placeModule, wireBetween } from '../src/examples/schematicBuilder'
+import { opAmpInvertingSchematic, zenerClampSchematic, bridgeRectifierSchematic } from '../src/examples/simulationTestCircuits'
 import type { Schematic } from '../src/types/workspace'
 
 interface SerializedComponent {
@@ -147,6 +148,23 @@ function rcCircuitSchematic(): Schematic {
   })
 }
 
+function nmosSwitchSchematic(): Schematic {
+  return buildSchematic('NMOS Switch', 'Low-side NMOS switch with gate bias.', ({ place, wire }) => {
+    const ps = place('PowerSupply', 2, 8)
+    const rLoad = place('Resistor', 6, 8, { resistance: 1_000 })
+    const q = place('MOSFET', 10, 7, { vth: 2.5, rdsOn: 0.05 })
+    const rGate = place('Resistor', 6, 14, { resistance: 10_000 })
+
+    wire([ps.pin('5V'), rLoad.at(0, 0)], { powered: true })
+    wire([rLoad.at(2, 0), { x: 9, y: 8 }, q.pin('D')])
+    wire([q.pin('S'), { x: 11, y: 12 }, { x: 3, y: 12 }, { x: 3, y: 8 }, ps.pin('GND')], {
+      grounded: true,
+    })
+    wire([ps.pin('5V'), rGate.at(0, 0)], { powered: true })
+    wire([rGate.at(2, 0), { x: 8, y: 14 }, q.pin('G')])
+  })
+}
+
 function npnTransistorSchematic(): Schematic {
   return buildSchematic('NPN Transistor Switch', 'Low-side NPN switch with base bias.', ({ place, wire }) => {
     const ps = place('PowerSupply', 2, 8)
@@ -161,20 +179,6 @@ function npnTransistorSchematic(): Schematic {
     })
     wire([ps.pin('5V'), { x: 4, y: 14 }, rBase.at(0, 0)], { powered: true })
     wire([rBase.at(2, 0), { x: 8, y: 14 }, { x: 8, y: 8 }, q.pin('B')])
-  })
-}
-
-function zenerClampSchematic(): Schematic {
-  return buildSchematic('Zener Voltage Clamp', '3.3V Zener shunt regulator.', ({ place, wire }) => {
-    const ps = place('PowerSupply', 2, 10)
-    const r = place('Resistor', 6, 10, { resistance: 1_000 })
-    const z = place('ZenerDiode', 10, 10, { zenerVoltage: 3.3 })
-
-    wire([ps.pin('5V'), r.at(0, 0)], { powered: true })
-    wire([r.at(2, 0), { x: 8, y: 10 }, z.pin('K')])
-    wire([z.pin('A'), { x: 10, y: 14 }, { x: 12, y: 14 }, { x: 3, y: 14 }, { x: 3, y: 10 }, ps.pin('GND')], {
-      grounded: true,
-    })
   })
 }
 
@@ -226,10 +230,13 @@ const circuits: SerializedCircuit[] = [
   serializeCircuit('parallel_resistors', parallelResistorsSchematic()),
   serializeCircuit('led_resistor', ledResistorSchematic()),
   serializeCircuit('rc_circuit', rcCircuitSchematic()),
+  serializeCircuit('nmos_switch', nmosSwitchSchematic()),
   serializeCircuit('npn_switch', npnTransistorSchematic()),
   serializeCircuit('zener_clamp', zenerClampSchematic()),
   serializeCircuit('half_wave_rectifier', halfWaveRectifierSchematic()),
   serializeCircuit('op_amp_open_loop', opAmpOpenLoopSchematic()),
+  serializeCircuit('op_amp_inverting', opAmpInvertingSchematic()),
+  serializeCircuit('bridge_rectifier', bridgeRectifierSchematic()),
 ]
 
 process.stdout.write(JSON.stringify({ circuits }, null, 2))

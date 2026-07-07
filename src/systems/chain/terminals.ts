@@ -39,14 +39,12 @@ export function isPositiveTerminal(moduleCell: any): boolean {
   return classifyTerminalPolarity(moduleCell) === 'positive'
 }
 
-/** Ground reference nodes only — not cathodes or generic negative pins. */
+/** Ground reference nodes only — supply GND pins, not device cathodes. */
 export function isGroundReference(moduleCell: any): boolean {
   if (!moduleCell) return false
   return (
     moduleCell.type === 'GND' ||
     moduleCell.type === 'NEGATIVE' ||
-    moduleCell.type === 'LED_NEGATIVE' ||
-    moduleCell.pin === '-' ||
     moduleCell.pin === 'GND' ||
     moduleCell.pin === 'V-' ||
     moduleCell.pin === 'AC2'

@@ -7,6 +7,11 @@
 
 import { CRDTService, CRDTOperation, crdtService } from './CRDTService'
 
+/** Cloud-backed projects use Auth0-synced ids (`proj_*`). Local folders use `folder-*` / `schematic-*`. */
+export function isCloudProjectId(id: string | undefined | null): id is string {
+  return typeof id === 'string' && id.startsWith('proj_')
+}
+
 export interface SaveResult {
   success: boolean
   error?: string
@@ -32,6 +37,10 @@ export class CRDTSaveService {
    * Add an operation to the save queue and trigger a save
    */
   async queueOperation(operation: CRDTOperation, projectId: string): Promise<SaveResult> {
+    if (!isCloudProjectId(projectId)) {
+      return { success: true, timestamp: Date.now(), operationsCount: 0 }
+    }
+
     console.log('🔧 CRDTSaveService: Queueing operation:', {
       type: operation.type,
       id: operation.id,
@@ -91,7 +100,10 @@ export class CRDTSaveService {
       })
 
       if (!response.ok) {
-        throw new Error(`Save failed: ${response.status} ${response.statusText}`)
+        const authFailure = response.status === 401 || response.status === 403
+        throw new Error(`Save failed: ${response.status} ${response.statusText}`, {
+          cause: authFailure ? 'auth' : 'server',
+        })
       }
 
       const result = await response.json()
@@ -111,24 +123,34 @@ export class CRDTSaveService {
       }
 
     } catch (error) {
-      console.error('❌ CRDTSaveService: Save failed:', error)
-      
-      // Re-queue operations for retry
-      this.saveQueue.unshift(...operationsToSave)
-      
-      // Retry logic
-      if (this.retryCount < this.maxRetries) {
-        this.retryCount++
-        console.log(`🔧 CRDTSaveService: Retrying save (attempt ${this.retryCount}/${this.maxRetries})`)
-        
-        // Exponential backoff
-        const delay = Math.pow(2, this.retryCount) * 1000
-        setTimeout(() => {
-          this.saveOperations(projectId)
-        }, delay)
-      } else {
-        console.error('❌ CRDTSaveService: Max retries exceeded, operations lost')
+      const authFailure =
+        error instanceof Error &&
+        (error.cause === 'auth' ||
+          error.message.includes('401') ||
+          error.message.includes('403'))
+
+      if (authFailure) {
+        console.warn('CRDTSaveService: Cloud save skipped (sign in again to sync). Local schematic data is unchanged.')
+        this.saveQueue = []
         this.retryCount = 0
+      } else {
+        console.error('❌ CRDTSaveService: Save failed:', error)
+
+        // Re-queue operations for retry
+        this.saveQueue.unshift(...operationsToSave)
+
+        if (this.retryCount < this.maxRetries) {
+          this.retryCount++
+          console.log(`🔧 CRDTSaveService: Retrying save (attempt ${this.retryCount}/${this.maxRetries})`)
+
+          const delay = Math.pow(2, this.retryCount) * 1000
+          setTimeout(() => {
+            this.saveOperations(projectId)
+          }, delay)
+        } else {
+          console.error('❌ CRDTSaveService: Max retries exceeded')
+          this.retryCount = 0
+        }
       }
 
       return {

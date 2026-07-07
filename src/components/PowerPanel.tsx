@@ -8,6 +8,8 @@ interface PowerPanelProps {
   embedded?: boolean
   floating?: boolean
   stacked?: boolean
+  expanded?: boolean
+  hideHeader?: boolean
   onExpandedChange?: (expanded: boolean) => void
   onUpdatePowerSupply: (
     componentId: string,
@@ -24,10 +26,13 @@ export function PowerPanel({
   embedded = false,
   floating = false,
   stacked = false,
+  expanded: expandedProp,
+  hideHeader = false,
   onExpandedChange,
   onUpdatePowerSupply,
 }: PowerPanelProps) {
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [internalExpanded, setInternalExpanded] = useState(false)
+  const isExpanded = hideHeader ? true : (expandedProp ?? internalExpanded)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [voltageInput, setVoltageInput] = useState('5')
   const [currentInput, setCurrentInput] = useState('1')
@@ -65,11 +70,9 @@ export function PowerPanel({
   }
 
   const handleHeaderToggle = () => {
-    setIsExpanded((prev) => {
-      const next = !prev
-      onExpandedChange?.(next)
-      return next
-    })
+    const next = !isExpanded
+    if (expandedProp === undefined) setInternalExpanded(next)
+    onExpandedChange?.(next)
   }
 
   return (
@@ -90,6 +93,7 @@ export function PowerPanel({
               : ''
         }`}
       >
+        {!hideHeader && (
         <div
           role="button"
           tabIndex={0}
@@ -120,10 +124,11 @@ export function PowerPanel({
             <ChevronDown className="h-4 w-4 shrink-0 text-zinc-500" />
           )}
         </div>
+        )}
 
         {isExpanded && (
           <div
-            className={`border-t border-white/[0.06] px-4 py-3 space-y-3 ${
+            className={`${hideHeader ? '' : 'border-t border-white/[0.06]'} px-4 py-4 space-y-3 ${
               stacked
                 ? 'flex min-h-0 flex-1 flex-col overflow-y-auto'
                 : 'max-h-[min(36vh,280px)] overflow-y-auto'

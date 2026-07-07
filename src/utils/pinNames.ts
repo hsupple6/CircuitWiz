@@ -70,12 +70,21 @@ function aliasesForCell(moduleName: string, cell: ModuleCell, gridWidth?: number
     }
   }
 
-  if (moduleName === 'Diode' || moduleName === 'ZenerDiode') {
+  if (moduleName === 'Diode') {
     if (cell.type === 'ANODE' || cell.pin === 'A') {
       ;['ANODE', 'IN', 'INPUT'].forEach((a) => names.add(a))
     }
     if (cell.type === 'CATHODE' || cell.pin === 'K') {
       ;['CATHODE', 'OUT', 'OUTPUT'].forEach((a) => names.add(a))
+    }
+  }
+
+  if (moduleName === 'ZenerDiode') {
+    if (cell.type === 'CATHODE' || cell.pin === 'K') {
+      ;['CATHODE', 'IN', 'INPUT'].forEach((a) => names.add(a))
+    }
+    if (cell.type === 'ANODE' || cell.pin === 'A') {
+      ;['ANODE', 'OUT', 'OUTPUT'].forEach((a) => names.add(a))
     }
   }
 

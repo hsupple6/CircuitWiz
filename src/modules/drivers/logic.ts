@@ -73,6 +73,38 @@ export const DRIVER_ANCHOR_LOGIC: AnchorLogicProfile[] = [
     chain: 'systems/chain/components/registry.ts → TX/RX in; USB pins dummy',
     sim: 'systems/chain/components/driverStamps.ts → TX/RX signal pass-through',
   },
+  {
+    anchorId: 'BoostDriver',
+    domain: 'drivers',
+    category: 'drivers',
+    kicadSymbol: 'Device/R_US.kicad_sym',
+    chain: 'systems/chain/components/registry.ts → VIN→VOUT step-up',
+    sim: 'systems/chain/components/driverStamps.ts → regulated boost VIN→VOUT',
+  },
+  {
+    anchorId: 'ChargerDriver',
+    domain: 'drivers',
+    category: 'drivers',
+    kicadSymbol: 'Device/R_US.kicad_sym',
+    chain: 'systems/chain/components/registry.ts → VIN→BAT± charge path',
+    sim: 'systems/chain/components/driverStamps.ts → charger VIN→BAT+',
+  },
+  {
+    anchorId: 'LevelIndicator',
+    domain: 'drivers',
+    category: 'drivers',
+    kicadSymbol: 'Device/R_US.kicad_sym',
+    chain: 'systems/chain/components/registry.ts → VCC/GND/BAT; LED pins dummy',
+    sim: 'systems/chain/components/driverStamps.ts → idle load + BAT sense bleed',
+  },
+  {
+    anchorId: 'UsbPdDecoy',
+    domain: 'drivers',
+    category: 'drivers',
+    kicadSymbol: 'Device/R_US.kicad_sym',
+    chain: 'systems/chain/components/registry.ts → VBUS→VOUT negotiated rail',
+    sim: 'systems/chain/components/driverStamps.ts → PD VBUS→VOUT',
+  },
 ]
 
 export const DRIVER_MODULE_TYPES = new Set(DRIVER_ANCHOR_LOGIC.map((p) => p.anchorId))

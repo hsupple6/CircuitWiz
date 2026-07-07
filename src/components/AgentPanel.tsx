@@ -139,7 +139,7 @@ export function AgentPanel({
               handleHeaderToggle()
             }
           }}
-          className="flex w-full shrink-0 cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.03]"
+          className="flex w-full shrink-0 cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-100 dark:hover:bg-white/[0.03]"
           aria-expanded={showBody}
         >
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-400/15">
@@ -155,47 +155,47 @@ export function AgentPanel({
               e.stopPropagation()
               setDevOpen(true)
             }}
-            className="rounded-lg p-1.5 text-zinc-600 hover:bg-white/[0.05] hover:text-amber-400"
+            className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-amber-600 dark:text-zinc-600 dark:hover:bg-white/[0.05] dark:hover:text-amber-400"
             title="Agent dev log"
             aria-label="Agent dev log"
           >
             <Bug className="h-4 w-4" />
           </button>
           {isExpanded ? (
-            <ChevronUp className="h-4 w-4 shrink-0 text-zinc-500" />
+            <ChevronUp className="h-4 w-4 shrink-0 text-gray-400 dark:text-zinc-500" />
           ) : (
-            <ChevronDown className="h-4 w-4 shrink-0 text-zinc-500" />
+            <ChevronDown className="h-4 w-4 shrink-0 text-gray-400 dark:text-zinc-500" />
           )}
         </div>
         )}
 
         <div
-          className={`agent-panel-body min-h-0 flex-1 ${docked ? '' : 'border-t border-white/[0.06]'} ${
+          className={`agent-panel-body min-h-0 flex-1 ${docked ? '' : 'border-t border-gray-200 dark:border-white/[0.06]'} ${
             showBody ? 'agent-panel-body--expanded' : ''
           }`}
         >
           <div className="agent-panel-body-inner flex h-full min-h-0 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3">
               {!statusLoading && !backendOnline && (
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200">
+                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
                   {getAgentBackendOfflineHint()}
                 </div>
               )}
 
               {!statusLoading && backendOnline && !hasApiKey && (
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200">
+                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
                   {getAnthropicApiKeySetupHint()}
                 </div>
               )}
 
               {chat.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-6 text-center">
-                  <Bot className="mb-3 h-8 w-8 text-zinc-600" />
-                  <p className="text-sm text-zinc-400">
+                  <Bot className="mb-3 h-8 w-8 text-gray-400 dark:text-zinc-600" />
+                  <p className="text-sm text-gray-600 dark:text-zinc-400">
                     Ask about circuits, firmware, or project planning.
                   </p>
                   {!projectContext && (
-                    <p className="mt-2 text-xs text-zinc-600">
+                    <p className="mt-2 text-xs text-gray-500 dark:text-zinc-600">
                       Open a project to enable design tools.
                     </p>
                   )}
@@ -212,13 +212,13 @@ export function AgentPanel({
                       className={`mr-6 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
                         completed
                           ? failed
-                            ? 'border-red-500/20 bg-red-500/10 text-red-300'
-                            : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200'
-                          : 'border-white/[0.06] bg-carbon-elevated text-zinc-400'
+                            ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300'
+                            : 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+                          : 'border-gray-200 bg-gray-100 text-gray-600 dark:border-white/[0.06] dark:bg-carbon-elevated dark:text-zinc-400'
                       }`}
                     >
                       {completed ? (
-                        <Check className={`h-3.5 w-3.5 shrink-0 ${failed ? 'text-red-400' : 'text-emerald-400'}`} />
+                        <Check className={`h-3.5 w-3.5 shrink-0 ${failed ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
                       ) : (
                         <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary-400" />
                       )}
@@ -242,10 +242,10 @@ export function AgentPanel({
                     key={entry.id}
                     className={`rounded-lg px-3 py-2 text-sm leading-relaxed ${
                       entry.role === 'user'
-                        ? 'ml-6 bg-primary-400/10 text-zinc-100'
+                        ? 'ml-6 bg-primary-100 text-gray-900 dark:bg-primary-400/10 dark:text-zinc-100'
                         : entry.role === 'error'
-                          ? 'mr-6 border border-red-500/20 bg-red-500/10 text-red-300'
-                          : 'mr-6 bg-carbon-elevated text-zinc-300'
+                          ? 'mr-6 border border-red-200 bg-red-50 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300'
+                          : 'mr-6 bg-gray-100 text-gray-800 dark:bg-carbon-elevated dark:text-zinc-300'
                     }`}
                   >
                     {entry.role === 'assistant' ? (
@@ -263,7 +263,7 @@ export function AgentPanel({
               })}
 
               {isLoading && !isStreaming && !hasRunningTool && (
-                <div className="mr-6 flex items-center gap-2 rounded-lg bg-carbon-elevated px-3 py-2 text-sm text-zinc-400">
+                <div className="mr-6 flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-600 dark:bg-carbon-elevated dark:text-zinc-400">
                   <Loader2 className="h-4 w-4 animate-spin text-primary-400" />
                   {statusHint ?? 'Thinking…'}
                 </div>
@@ -273,12 +273,12 @@ export function AgentPanel({
             </div>
 
             {error && (
-              <div className="mx-4 mb-2 flex shrink-0 items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              <div className="mx-4 mb-2 flex shrink-0 items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
                 <span className="flex-1">{error}</span>
                 <button
                   type="button"
                   onClick={() => setError(null)}
-                  className="shrink-0 text-red-400 hover:text-red-200"
+                  className="shrink-0 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
                   aria-label="Dismiss error"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -286,7 +286,7 @@ export function AgentPanel({
               </div>
             )}
 
-            <div className="shrink-0 border-t border-white/[0.06] p-3">
+            <div className="shrink-0 border-t border-gray-200 p-3 dark:border-white/[0.06]">
               <div className="flex items-end gap-2">
                 <textarea
                   ref={inputRef}

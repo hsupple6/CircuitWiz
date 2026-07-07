@@ -259,7 +259,7 @@ export function ProjectFolderView({
                     </h3>
                     <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
                       {formatDate(program.metadata.updatedAt)}
-                      {program.compilation?.success ? ' · Ready for simulation' : ' · Not compiled'}
+                      {program.compilation?.success ? ' · Compiled' : ' · Sketch only'}
                     </p>
                   </div>
                 </div>

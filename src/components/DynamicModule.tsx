@@ -19,7 +19,8 @@ import { OpAmpBodyLabel } from './OpAmpBodyLabel'
 import { BridgeRectifierBodyLabel } from './BridgeRectifierBodyLabel'
 import { SemiconductorPinPad } from './SemiconductorPinPad'
 import { getDisplayPin } from '../utils/smdVisual'
-import { resolveCellResistance } from '../utils/resistorVisual'
+import { LiIonPackBodyLabel } from './LiIonPackBodyLabel'
+import { readModuleConfig, type LiIonPackConfig } from '../modules/moduleConfigKind'
 
 interface DynamicModuleProps {
   definition: ModuleDefinition
@@ -143,6 +144,13 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
               <ZenerDiodeBodyLabel compact zenerVoltage={5.1} />
             )}
 
+            {logicName === 'LiIonPack' && cell.pin === 'PACK' && (
+              <LiIonPackBodyLabel
+                compact
+                {...(readModuleConfig('liIonPack', definition) as LiIonPackConfig)}
+              />
+            )}
+
             {logicName === 'NPNTransistor' && cell.x === 1 && cell.y === 0 && (
               <SemiconductorPinPad label="C" edge="top" />
             )}
@@ -250,6 +258,26 @@ export function DynamicModule({ definition, className = '', style = {} }: Dynami
             )}
             {logicName === 'StepperMotor' && cell.x === 1 && cell.y === 1 && (
               <StepperBodyLabel coilAActive={false} coilBActive={false} />
+            )}
+
+            {logicName === 'Antenna' && cell.type === 'BODY' && (
+              <div className="absolute inset-0 flex items-center justify-center text-sky-200">
+                <svg viewBox="0 0 24 24" className="w-[70%] h-[70%]" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M12 20V8" />
+                  <path d="M8 12c0-4 2-7 4-7s4 3 4 7" />
+                  <path d="M5 12c0-5.5 3.5-9.5 7-9.5s7 4 7 9.5" />
+                  <path d="M2 12c0-7 4.5-12 10-12s10 5 10 12" />
+                </svg>
+              </div>
+            )}
+
+            {logicName === 'BluetoothModule' && cell.type === 'BODY' && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-indigo-200 leading-none">
+                <svg viewBox="0 0 24 24" className="w-[55%] h-[55%]" fill="currentColor">
+                  <path d="M14.5 4.5l-5 4.5 3.5 3-3.5 3 5 4.5V4.5zm0 6.8l1.8-1.6-1.8-1.6v3.2z" />
+                </svg>
+                <span className="text-[7px] font-bold mt-0.5">BT</span>
+              </div>
             )}
           </div>
         ))}

@@ -13,6 +13,7 @@ DIODE_VF = 0.7
 DIODE_SERIES_R = 0.5
 NPN_VCE_SAT = 0.2
 NPN_CE_R = 0.5
+MOSFET_RDS_ON = 0.05
 CAP_CHARGE_DT = 0.05
 CAP_ITERATIONS = 12
 
@@ -95,6 +96,21 @@ def npn_switch(
     }
 
 
+def nmos_switch(
+    vcc: float,
+    r_load: float,
+    *,
+    rds_on: float = MOSFET_RDS_ON,
+) -> dict[str, float]:
+    current = vcc / (r_load + rds_on)
+    v_drain = current * rds_on
+    return {
+        "load_current": current,
+        "v_drain": v_drain,
+        "power": vcc * current,
+    }
+
+
 def zener_clamp(
     vin: float,
     r: float,
@@ -130,3 +146,14 @@ def half_wave_rectifier_peak(
 
 def op_amp_open_loop_positive_rail(v_non_inv: float, *, vcc: float = VCC, vee: float = 0.0) -> float:
     return max(vee, min(vcc, vcc))
+
+
+def op_amp_inverting_rail_limited(
+    vin: float,
+    *,
+    rf: float,
+    rin: float,
+    vcc: float = VCC,
+    vee: float = 0.0,
+) -> float:
+    return max(vee, min(vcc, -(rf / rin) * vin))

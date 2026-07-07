@@ -11,4 +11,6 @@ export interface AliasSpec {
   kicadSymbol?: string
   /** Nested palette folder within `category` (e.g. capacitors, motors). */
   paletteGroup?: string
+  /** Override anchor property defaults (e.g. watt rating per alias). */
+  propertyDefaults?: Record<string, number | string | boolean>
 }

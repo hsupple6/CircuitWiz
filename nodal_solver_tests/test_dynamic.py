@@ -9,7 +9,13 @@ from harness import (
     resistor_at,
     resistor_lead_voltage,
 )
-from expected import VCC, op_amp_open_loop_positive_rail, rc_capacitor_voltage, voltage_divider
+from expected import (
+    VCC,
+    op_amp_inverting_rail_limited,
+    op_amp_open_loop_positive_rail,
+    rc_capacitor_voltage,
+    voltage_divider,
+)
 
 HARNESS = SolverHarness()
 
@@ -51,9 +57,26 @@ def test_op_amp_open_loop() -> None:
     )
 
 
+def test_op_amp_inverting() -> None:
+    result = HARNESS.circuit("op_amp_inverting")
+    assert_solver_works(result)
+
+    vin = resistor_lead_voltage(result, 8, 14, high_side=False)
+    expected_vout = op_amp_inverting_rail_limited(vin, rf=10_000, rin=1_000)
+
+    assert vin > 0.1, "divider should provide positive input voltage"
+    assert_close(
+        resistor_lead_voltage(result, 20, 10, high_side=False),
+        expected_vout,
+        rel=0.05,
+        label="inverting amp output (rail-limited)",
+    )
+
+
 TESTS = [
     ("RC charging", test_rc_charging),
     ("op-amp open loop saturation", test_op_amp_open_loop),
+    ("op-amp inverting amplifier", test_op_amp_inverting),
 ]
 
 if __name__ == "__main__":

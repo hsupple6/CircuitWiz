@@ -1,6 +1,39 @@
 import { PlanSpace, PlanBubble, PlanConnection } from '../types/workspace'
 
-const P = 'preset'
+export const PLAN_SPACE_PRESET_PREFIX = 'preset'
+
+const P = PLAN_SPACE_PRESET_PREFIX
+
+export function isPresetBubbleId(id: string): boolean {
+  return id.startsWith(`${P}-`)
+}
+
+export function isPresetConnectionId(id: string): boolean {
+  return id.startsWith(`${P}-c-`)
+}
+
+export function planSpaceHasDefaultTemplate(planSpace: PlanSpace): boolean {
+  return planSpace.bubbles.some((bubble) => isPresetBubbleId(bubble.id))
+}
+
+export function clearPresetContent(planSpace: PlanSpace): PlanSpace {
+  if (!planSpaceHasDefaultTemplate(planSpace)) return planSpace
+
+  const presetBubbleIds = new Set(
+    planSpace.bubbles.filter((bubble) => isPresetBubbleId(bubble.id)).map((bubble) => bubble.id)
+  )
+
+  return {
+    ...planSpace,
+    bubbles: planSpace.bubbles.filter((bubble) => !presetBubbleIds.has(bubble.id)),
+    connections: planSpace.connections.filter(
+      (connection) =>
+        !isPresetConnectionId(connection.id) &&
+        !presetBubbleIds.has(connection.fromBubbleId) &&
+        !presetBubbleIds.has(connection.toBubbleId)
+    ),
+  }
+}
 
 function bubble(
   id: string,

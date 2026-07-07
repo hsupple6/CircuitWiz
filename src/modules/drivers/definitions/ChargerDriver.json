@@ -1,0 +1,24 @@
+{
+  "module": "Charging Module",
+  "logicModule": "ChargerDriver",
+  "gridX": 3,
+  "gridY": 2,
+  "background": "#713F12",
+  "css": "border-radius: 6px; border: 2px solid #FBBF24;",
+  "category": "drivers",
+  "description": "CC/CV charger block — VIN to BAT± (optional regulated VOUT for buck-charger modules)",
+  "grid": [
+    { "x": 0, "y": 0, "type": "DRIVER_PWR", "pin": "VIN", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#DC2626;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:6px 0 0 0;" },
+    { "x": 1, "y": 0, "type": "BODY", "pin": "CHG", "isConnectable": false, "css": "background:#92400E;color:#FEF3C7;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 2, "y": 0, "type": "GND", "pin": "GND", "isConnectable": true, "isPowerable": false, "isGroundable": true, "css": "background:#4C1D95;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 6px 0 0;" },
+    { "x": 0, "y": 1, "type": "DRIVER_OUT", "pin": "BAT+", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#059669;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 0 0 6px;" },
+    { "x": 1, "y": 1, "type": "DRIVER_OUT", "pin": "BAT−", "isConnectable": true, "isPowerable": false, "isGroundable": true, "css": "background:#7C3AED;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 2, "y": 1, "type": "DRIVER_OUT", "pin": "VOUT", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#2563EB;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 0 6px 0;" }
+  ],
+  "properties": {
+    "maxPowerW": { "default": 10, "unit": "W", "description": "Maximum charge power" },
+    "chargeVoltage": { "default": 4.2, "unit": "V", "description": "Per-cell CV target (1S default)" },
+    "outputVoltage": { "default": 5, "unit": "V", "description": "Aux VOUT for buck-charger modules" },
+    "seriesResistance": { "default": 0.1, "unit": "Ω", "description": "Charge path source resistance" }
+  }
+}

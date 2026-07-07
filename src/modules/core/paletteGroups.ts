@@ -10,8 +10,17 @@ export const PALETTE_SUBGROUPS: Record<string, Array<{ id: string; label: string
     { id: 'diodes', label: 'Diodes' },
     { id: 'transistors', label: 'Transistors' },
   ],
-  power: [{ id: 'batteries', label: 'Batteries' }],
+  ics: [
+    { id: 'regulators', label: 'Regulators' },
+    { id: 'logic-gates', label: 'Logic Gates' },
+  ],
+  power: [{ id: 'batteries', label: 'Batteries' }, { id: 'protection', label: 'Protection' }],
   connectors: [],
+  wireless: [
+    { id: 'antennas', label: 'Antennas' },
+    { id: 'bluetooth', label: 'Bluetooth' },
+    { id: 'wireless-charging', label: 'Wireless Charging' },
+  ],
   drivers: [
     { id: 'stepper', label: 'Stepper' },
     { id: 'brushed', label: 'Brushed' },

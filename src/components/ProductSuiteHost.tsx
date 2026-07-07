@@ -1,6 +1,6 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useContext, useRef } from 'react'
 import { clearProductSuiteSession } from '../agent/product/operations'
-import { useAgent } from '../contexts/AgentContext'
+import { AgentContext } from '../contexts/AgentContext'
 import { ProductSuite } from './ProductSuite'
 import type { ProjectFolder } from '../types/workspace'
 
@@ -9,16 +9,16 @@ interface ProductSuiteHostProps {
 }
 
 export function ProductSuiteHost({ onProjectUpdate }: ProductSuiteHostProps) {
-  const {
-    projectContext,
-    productSuiteOpen,
-    productSuiteLoading,
-    closeProductSuite,
-    submitProductIdea,
-    submitProductSuiteCompletion,
-  } = useAgent()
-
+  const agent = useContext(AgentContext)
   const saveStartedRef = useRef(false)
+
+  const projectContext = agent?.projectContext
+  const productSuiteOpen = agent?.productSuiteOpen ?? false
+  const productSuiteLoading = agent?.productSuiteLoading ?? false
+  const closeProductSuite = agent?.closeProductSuite
+  const submitProductIdea = agent?.submitProductIdea
+  const submitProductSuiteCompletion = agent?.submitProductSuiteCompletion
+
   const folder = projectContext?.folder
   const session = folder?.productSuiteSession
 
@@ -27,12 +27,12 @@ export function ProductSuiteHost({ onProjectUpdate }: ProductSuiteHostProps) {
     if (current?.productSuiteSession) {
       onProjectUpdate(clearProductSuiteSession(current))
     }
-    closeProductSuite()
+    closeProductSuite?.()
   }, [projectContext?.folder, onProjectUpdate, closeProductSuite])
 
   const handleSave = useCallback(
     (updated: ProjectFolder) => {
-      if (saveStartedRef.current) return
+      if (!submitProductSuiteCompletion || saveStartedRef.current) return
       saveStartedRef.current = true
       void submitProductSuiteCompletion(updated).finally(() => {
         saveStartedRef.current = false
@@ -41,7 +41,7 @@ export function ProductSuiteHost({ onProjectUpdate }: ProductSuiteHostProps) {
     [submitProductSuiteCompletion]
   )
 
-  if (!productSuiteOpen || !folder) return null
+  if (!agent || !productSuiteOpen || !folder || !submitProductIdea) return null
 
   return (
     <ProductSuite

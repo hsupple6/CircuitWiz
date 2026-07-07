@@ -1,0 +1,26 @@
+{
+  "module": "Li Ion Battery Module",
+  "logicModule": "LiIonPack",
+  "gridX": 3,
+  "gridY": 2,
+  "background": "#14532D",
+  "css": "border-radius: 6px; border: 2px solid #22C55E;",
+  "category": "power",
+  "description": "Li-ion battery module — P+/P− discharge port and CHG+/CHG− charge port",
+  "grid": [
+    { "x": 0, "y": 0, "type": "VCC", "pin": "P+", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#DC2626;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:6px 0 0 0;" },
+    { "x": 1, "y": 0, "type": "BODY", "pin": "PACK", "isConnectable": false, "css": "background:#166534;color:#BBF7D0;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 2, "y": 0, "type": "VCC", "pin": "CHG+", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#EA580C;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 6px 0 0;" },
+    { "x": 0, "y": 1, "type": "GND", "pin": "P−", "isConnectable": true, "isPowerable": false, "isGroundable": true, "css": "background:#4C1D95;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 0 0 6px;" },
+    { "x": 1, "y": 1, "type": "BODY", "pin": "", "isConnectable": false, "css": "background:#14532D;" },
+    { "x": 2, "y": 1, "type": "GND", "pin": "CHG−", "isConnectable": true, "isPowerable": false, "isGroundable": true, "css": "background:#7C3AED;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 0 6px 0;" }
+  ],
+  "properties": {
+    "seriesCells": { "default": 1, "unit": "S", "description": "Cells in series" },
+    "parallelCount": { "default": 1, "unit": "P", "description": "Parallel groups" },
+    "cellCount": { "default": 1, "unit": "S", "description": "Series cell count (legacy)" },
+    "cellCapacityMah": { "default": 2200, "unit": "mAh", "description": "Per-cell capacity" },
+    "capacityAh": { "default": 2.2, "unit": "Ah", "description": "Total pack capacity" },
+    "nominalVoltage": { "default": 3.7, "unit": "V", "description": "Per-cell nominal voltage" }
+  }
+}

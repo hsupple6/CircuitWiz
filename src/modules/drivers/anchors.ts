@@ -10,6 +10,10 @@ import RelayDriver from './definitions/RelayDriver.json'
 import AudioDriver from './definitions/AudioDriver.json'
 import PowerDriver from './definitions/PowerDriver.json'
 import SerialDriver from './definitions/SerialDriver.json'
+import BoostDriver from './definitions/BoostDriver.json'
+import ChargerDriver from './definitions/ChargerDriver.json'
+import LevelIndicator from './definitions/LevelIndicator.json'
+import UsbPdDecoy from './definitions/UsbPdDecoy.json'
 
 export const driverAnchors: Record<string, ModuleRegistryEntry> = {
   StepperDriver: {
@@ -56,5 +60,29 @@ export const driverAnchors: Record<string, ModuleRegistryEntry> = {
     definition: SerialDriver as ModuleDefinition,
     category: 'drivers',
     keywords: ['usb serial', 'uart', 'cp2102', 'ch340', 'ft232', 'level shifter'],
+  },
+  BoostDriver: {
+    definition: BoostDriver as ModuleDefinition,
+    category: 'drivers',
+    paletteGroup: 'power',
+    keywords: ['boost', 'step up', 'mt3608', 'dc-dc boost', 'xl6009'],
+  },
+  ChargerDriver: {
+    definition: ChargerDriver as ModuleDefinition,
+    category: 'drivers',
+    paletteGroup: 'power',
+    keywords: ['charger', 'tp4056', 'cc cv', 'lithium charge', 'charging module'],
+  },
+  LevelIndicator: {
+    definition: LevelIndicator as ModuleDefinition,
+    category: 'drivers',
+    paletteGroup: 'power',
+    keywords: ['level indicator', 'battery bar', 'fuel gauge', 'charge level'],
+  },
+  UsbPdDecoy: {
+    definition: UsbPdDecoy as ModuleDefinition,
+    category: 'drivers',
+    paletteGroup: 'power',
+    keywords: ['pd decoy', 'qc decoy', 'usb pd', 'trigger', 'fast charge'],
   },
 }

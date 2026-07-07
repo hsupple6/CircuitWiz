@@ -1,0 +1,51 @@
+{
+  "module": "Antenna",
+  "logicModule": "Antenna",
+  "gridX": 2,
+  "gridY": 2,
+  "background": "#0C4A6E",
+  "css": "border-radius: 6px; border: 2px solid #38BDF8;",
+  "category": "wireless",
+  "description": "Generic RF antenna — wire FEED to module RF pin; rename per band or part",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "RF",
+      "pin": "FEED",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "css": "background:#0369A1;color:white;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:6px 0 0 0;"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "GND",
+      "pin": "GND",
+      "isConnectable": true,
+      "isPowerable": false,
+      "isGroundable": true,
+      "css": "background:#1E3A8A;color:white;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 6px 0 0;"
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "type": "BODY",
+      "pin": "ANT",
+      "isConnectable": false,
+      "isClickable": true,
+      "css": "background:#0C4A6E;color:#BAE6FD;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 0 0 6px;"
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "type": "DUMMY",
+      "pin": "SHLD",
+      "isConnectable": true,
+      "isPowerable": false,
+      "isGroundable": true,
+      "css": "background:#164E63;color:#94A3B8;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;border:1px dashed #38BDF8;border-radius:0 0 6px 0;"
+    }
+  ]
+}

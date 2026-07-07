@@ -138,7 +138,7 @@ export function findSourceChains(gridData: GridCellLike[][]): SourceChain[] {
       if (processed.has(cell.componentId)) return
 
       const moduleType = resolveLogicModule(cell.moduleDefinition)
-      const powerModules = ['Battery', 'PowerSupply', 'ACSource']
+      const powerModules = ['Battery', 'PowerSupply', 'ACSource', 'LiIonPack']
       if (!powerModules.includes(moduleType)) return
 
       processed.add(cell.componentId)

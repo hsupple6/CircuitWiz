@@ -11,5 +11,12 @@ export function createAliasDefinition(
   if (spec.description !== undefined) def.description = spec.description
   if (spec.category !== undefined) def.category = spec.category
   if (spec.subcategory !== undefined) def.subcategory = spec.subcategory
+  if (spec.propertyDefaults) {
+    for (const [key, val] of Object.entries(spec.propertyDefaults)) {
+      if (def.properties?.[key]) {
+        def.properties[key].default = val
+      }
+    }
+  }
   return def
 }

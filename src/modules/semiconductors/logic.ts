@@ -62,7 +62,7 @@ export const SEMICONDUCTOR_ANCHOR_LOGIC: AnchorLogicProfile[] = [
     domain: 'semiconductors',
     category: 'semiconductors',
     kicadSymbol: 'Device/D_Bridge.kicad_sym',
-    chain: 'systems/chain/components/registry.ts → bridge paths',
-    sim: 'systems/chain/solver/engine.ts → BridgeRectifier stamp',
+    chain: 'systems/chain/components/registry.ts → AC in only; no internal AC→DC bridge',
+    sim: 'systems/chain/solver/engine.ts → Vdc ≈ 0.9×Vrms − 2×Vf between + and −',
   },
 ]

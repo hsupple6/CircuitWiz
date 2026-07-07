@@ -6,12 +6,29 @@
 import { WireConnection } from '../../../modules/types'
 import { resolveLogicModule } from '../../../modules/logicModule'
 import { isDriverModule } from '../../../modules/drivers/logic'
+import { isWirelessModule } from '../../../modules/wireless/logic'
 import {
   collectDriverStamps,
   driverChannelShouldBeOn,
   driverChannelResistance,
   type DriverChannelStamp,
 } from '../components/driverStamps'
+import { collectWirelessStamps, isWirelessFloatingPin } from '../wirelessStamps'
+import {
+  collectChargerProtectionStamps,
+  collectLiIonPackStamps,
+} from '../powerStamps'
+import {
+  buildRegulatorSources,
+  collectRegulatorStamps,
+  type RegulatorStamp,
+} from '../regulatorStamps'
+import {
+  buildLogicGateStamps,
+  collectLogicGateICStamp,
+  updateLogicGateStates,
+  type LogicGateICStamp,
+} from '../logicGateStamps'
 import { validateSourceChains } from '../graph'
 import { buildSystemChains } from '../chains'
 import {
@@ -35,6 +52,16 @@ import { posKey, UnionFind } from '../utils'
 import { isConnectable, isGroundTerminal } from '../terminals'
 import { propagateVoltages } from '../propagate'
 import { isNetGrounded } from '../nets'
+import {
+  bridgeRectifierOutputVdc,
+  findAcVrmsForBridge,
+} from '../../../modules/semiconductors/bridgeRectifier'
+import {
+  boostRegulatedVoltage,
+  detectBoostConverters,
+  resolveBoostDuty,
+  type BoostConverterStamp,
+} from '../boostConverterStamps'
 
 export type { SolvedComponentState, GridCellLike, PlacedComponent, TerminalInfo }
 export type CircuitSolveResult = ChainSolveResult
@@ -43,6 +70,12 @@ interface ResistorStamp {
   netA: number
   netB: number
   resistance: number
+  componentId: string
+}
+
+interface InductorStamp {
+  netA: number
+  netB: number
   componentId: string
 }
 
@@ -127,12 +160,10 @@ interface OpAmpStamp {
   outputVoltage: number
 }
 
-interface BridgeStamp {
-  netAc1: number
-  netAc2: number
+interface BridgeRectifierStamp {
   netPlus: number
   netMinus: number
-  forwardVoltage: number
+  vdc: number
   componentId: string
 }
 
@@ -359,6 +390,14 @@ function solveMNA(
     resistance: led.seriesResistance,
     componentId: `${led.componentId}_led_r`,
   }))
+  const offLedResistors: ResistorStamp[] = leds
+    .filter((led) => !led.isOn)
+    .map((led) => ({
+      netA: led.netAnode,
+      netB: led.netCathode,
+      resistance: 1e9,
+      componentId: `${led.componentId}_led_leak`,
+    }))
   const diodeResistors: ResistorStamp[] = activeDiodes.map((d) => ({
     netA: d.netAnode,
     netB: d.netCathode,
@@ -396,6 +435,7 @@ function solveMNA(
   const allResistors = [
     ...resistors,
     ...ledResistors,
+    ...offLedResistors,
     ...diodeResistors,
     ...zenerResistors,
     ...npnResistors,
@@ -481,6 +521,7 @@ function buildNets(
   groundNet: number
   posToNet: Map<string, number>
   resistors: ResistorStamp[]
+  inductors: InductorStamp[]
   voltageSources: VoltageSourceStamp[]
   leds: LedStamp[]
   diodes: DiodeStamp[]
@@ -489,7 +530,11 @@ function buildNets(
   npns: NpnStamp[]
   mosfets: MosfetStamp[]
   opAmps: OpAmpStamp[]
-  bridges: BridgeStamp[]
+  bridgeRectifiers: BridgeRectifierStamp[]
+  bridgeAcLinks: Array<{ netA: number; netB: number }>
+  regulators: RegulatorStamp[]
+  logicGateICs: LogicGateICStamp[]
+  driverChannels: DriverChannelStamp[]
   components: PlacedComponent[]
   errors: string[]
 } {
@@ -545,6 +590,23 @@ function buildNets(
     groundIndices.forEach((other) => uf.union(gnd, other))
   })
 
+  components.forEach((component) => {
+    const moduleType = resolveLogicModule(component.moduleDefinition)
+    if (
+      moduleType !== 'Switch' &&
+      moduleType !== 'Push Button' &&
+      moduleType !== 'Limit Switch'
+    ) {
+      return
+    }
+    if (!isSwitchClosedOnGrid(gridData, component.componentId)) return
+    const terminals = getTerminals(component)
+    const input = terminals.find((t) => t.moduleCell.type === 'INPUT')
+    const output = terminals.find((t) => t.moduleCell.type === 'OUTPUT')
+    if (!input || !output) return
+    uf.union(ensurePos(input.x, input.y), ensurePos(output.x, output.y))
+  })
+
   const rootToNet = new Map<number, number>()
   const posToNet = new Map<string, number>()
   let nodeCount = 0
@@ -564,6 +626,7 @@ function buildNets(
   }
 
   const resistors: ResistorStamp[] = []
+  const inductors: InductorStamp[] = []
   const voltageSources: VoltageSourceStamp[] = []
   const leds: LedStamp[] = []
   const diodes: DiodeStamp[] = []
@@ -572,7 +635,10 @@ function buildNets(
   const npns: NpnStamp[] = []
   const mosfets: MosfetStamp[] = []
   const opAmps: OpAmpStamp[] = []
-  const bridges: BridgeStamp[] = []
+  const bridgeRectifiers: BridgeRectifierStamp[] = []
+  const bridgeAcLinks: Array<{ netA: number; netB: number }> = []
+  const regulators: RegulatorStamp[] = []
+  const logicGateICs: LogicGateICStamp[] = []
   const driverChannels: DriverChannelStamp[] = []
   const errors: string[] = []
   const processedComponents = new Set<string>()
@@ -631,6 +697,26 @@ function buildNets(
         voltage,
         componentId: component.componentId,
       })
+      return
+    }
+
+    if (moduleType === 'LiIonPack') {
+      const { voltageSources: packSources, resistors: packResistors, errors: packErrors } =
+        collectLiIonPackStamps(component, terminals, posToNet)
+      errors.push(...packErrors)
+      voltageSources.push(...packSources)
+      packResistors.forEach((r) => stampResistor(resistors, r.netA, r.netB, r.resistance, r.componentId))
+      return
+    }
+
+    if (moduleType === 'ChargerProtection') {
+      const { resistors: protectResistors, errors: protectErrors } = collectChargerProtectionStamps(
+        component,
+        terminals,
+        posToNet
+      )
+      errors.push(...protectErrors)
+      protectResistors.forEach((r) => stampResistor(resistors, r.netA, r.netB, r.resistance, r.componentId))
       return
     }
 
@@ -842,13 +928,34 @@ function buildNets(
       const netAc2 = posToNet.get(posKey(ac2.x, ac2.y))
       const netPlus = posToNet.get(posKey(plus.x, plus.y))
       const netMinus = posToNet.get(posKey(minus.x, minus.y))
-      if (netAc1 === undefined || netAc2 === undefined || netPlus === undefined || netMinus === undefined) return
-      bridges.push({
-        netAc1,
-        netAc2,
+      if (netAc1 === undefined || netAc2 === undefined || netPlus === undefined || netMinus === undefined) {
+        return
+      }
+
+      bridgeAcLinks.push({ netA: netAc1, netB: netAc2 })
+
+      const vrms = findAcVrmsForBridge(netAc1, netAc2, components, posToNet)
+      if (vrms === null) return
+
+      const vf = parseNumericProperty(component.moduleDefinition.properties?.forwardVoltage, 0.7)
+      const vdc = bridgeRectifierOutputVdc(vrms, vf)
+      if (vdc <= 0 || netPlus === netMinus) {
+        if (netPlus === netMinus) {
+          errors.push(`Bridge rectifier ${component.componentId}: + and − must not share the same net`)
+        }
+        return
+      }
+
+      voltageSources.push({
+        netPos: netPlus,
+        netNeg: netMinus,
+        voltage: vdc,
+        componentId: component.componentId,
+      })
+      bridgeRectifiers.push({
         netPlus,
         netMinus,
-        forwardVoltage: parseNumericProperty(component.moduleDefinition.properties?.forwardVoltage, 0.7),
+        vdc,
         componentId: component.componentId,
       })
       return
@@ -889,7 +996,9 @@ function buildNets(
       if (leads.length < 2) return
       const netA = posToNet.get(posKey(leads[0].x, leads[0].y))
       const netB = posToNet.get(posKey(leads[1].x, leads[1].y))
+      if (netA === undefined || netB === undefined) return
       const dcr = parseNumericProperty(component.moduleDefinition.properties?.dcResistance, 0.5)
+      inductors.push({ netA, netB, componentId: component.componentId })
       stampResistor(resistors, netA, netB, dcr, component.componentId)
       return
     }
@@ -951,6 +1060,27 @@ function buildNets(
       return
     }
 
+    if (moduleType === 'LinearRegulator' || moduleType === 'PowerDriver' || moduleType === 'FixedRegulator') {
+      const { regulators: regStamps, resistors: regResistors, errors: regErrors } =
+        collectRegulatorStamps(moduleType, component, terminals, posToNet)
+      regulators.push(...regStamps)
+      errors.push(...regErrors)
+      regResistors.forEach((r) => stampResistor(resistors, r.netA, r.netB, r.resistance, r.componentId))
+      return
+    }
+
+    if (moduleType === 'LogicGateIC') {
+      const { stamp, resistors: lgResistors, errors: lgErrors } = collectLogicGateICStamp(
+        component,
+        terminals,
+        posToNet
+      )
+      errors.push(...lgErrors)
+      lgResistors.forEach((r) => stampResistor(resistors, r.netA, r.netB, r.resistance, r.componentId))
+      if (stamp) logicGateICs.push(stamp)
+      return
+    }
+
     if (isDriverModule(moduleType)) {
       const { channels, idleLoads } = collectDriverStamps(
         moduleType,
@@ -965,6 +1095,27 @@ function buildNets(
       terminals.forEach((terminal) => {
         const moduleCell = terminal.moduleCell
         if (moduleCell.type !== 'DRIVER_CTRL') return
+        const net = posToNet.get(posKey(terminal.x, terminal.y))
+        if (net === undefined || net === groundNet) return
+        stampResistor(resistors, net, groundNet, 1e9, `${component.componentId}_${moduleCell.pin}_bleed`)
+      })
+      return
+    }
+
+    if (isWirelessModule(moduleType)) {
+      const { channels, idleLoads } = collectWirelessStamps(
+        moduleType,
+        component,
+        terminals,
+        posToNet
+      )
+      driverChannels.push(...channels)
+      idleLoads.forEach((load) => {
+        stampResistor(resistors, load.netPos, load.netNeg, load.resistance, load.componentId)
+      })
+      terminals.forEach((terminal) => {
+        const moduleCell = terminal.moduleCell
+        if (!isWirelessFloatingPin(moduleType, moduleCell)) return
         const net = posToNet.get(posKey(terminal.x, terminal.y))
         if (net === undefined || net === groundNet) return
         stampResistor(resistors, net, groundNet, 1e9, `${component.componentId}_${moduleCell.pin}_bleed`)
@@ -1036,6 +1187,7 @@ function buildNets(
     groundNet,
     posToNet,
     resistors,
+    inductors,
     voltageSources,
     leds,
     diodes,
@@ -1044,7 +1196,10 @@ function buildNets(
     npns,
     mosfets,
     opAmps,
-    bridges,
+    bridgeRectifiers,
+    bridgeAcLinks,
+    regulators,
+    logicGateICs,
     driverChannels,
     components,
     errors,
@@ -1066,7 +1221,7 @@ function buildNetAdjacency(
   npns: NpnStamp[] = [],
   mosfets: MosfetStamp[] = [],
   capacitors: CapacitorStamp[] = [],
-  bridges: BridgeStamp[] = []
+  bridgeAcLinks: Array<{ netA: number; netB: number }> = []
 ): Map<number, Set<number>> {
   const adj = new Map<number, Set<number>>()
   const addEdge = (a: number, b: number) => {
@@ -1077,19 +1232,14 @@ function buildNetAdjacency(
     adj.get(b)!.add(a)
   }
   resistors.forEach((r) => addEdge(r.netA, r.netB))
+  // Off LEDs still have a leak resistor in MNA; keep them in the connectivity graph.
   leds.forEach((l) => addEdge(l.netAnode, l.netCathode))
-  diodes.forEach((d) => addEdge(d.netAnode, d.netCathode))
-  zeners.forEach((z) => addEdge(z.netAnode, z.netCathode))
-  npns.forEach((t) => addEdge(t.netCollector, t.netEmitter))
-  mosfets.forEach((t) => addEdge(t.netDrain, t.netSource))
+  diodes.filter((d) => d.isOn).forEach((d) => addEdge(d.netAnode, d.netCathode))
+  zeners.filter((z) => z.mode !== 'off').forEach((z) => addEdge(z.netAnode, z.netCathode))
+  npns.filter((t) => t.isOn).forEach((t) => addEdge(t.netCollector, t.netEmitter))
+  mosfets.filter((t) => t.isOn).forEach((t) => addEdge(t.netDrain, t.netSource))
   capacitors.forEach((c) => addEdge(c.netA, c.netB))
-  bridges.forEach((b) => {
-    addEdge(b.netAc1, b.netPlus)
-    addEdge(b.netAc1, b.netMinus)
-    addEdge(b.netAc2, b.netPlus)
-    addEdge(b.netAc2, b.netMinus)
-    addEdge(b.netPlus, b.netMinus)
-  })
+  bridgeAcLinks.forEach((link) => addEdge(link.netA, link.netB))
   return adj
 }
 
@@ -1113,31 +1263,76 @@ function hasPathBetween(
   return false
 }
 
-/** Nets in the same connected component as a source–ground path. */
+/** Nets on the V+ or V− side of each source (does not require a closed return path). */
 function computeActiveNets(
   voltageSources: VoltageSourceStamp[],
   adj: Map<number, Set<number>>
 ): Set<number> {
   const active = new Set<number>()
-  voltageSources.forEach((src) => {
-    if (!hasPathBetween(src.netPos, src.netNeg, adj)) return
 
-    const component = new Set<number>()
-    const queue = [src.netPos]
+  const flood = (start: number): void => {
+    const visited = new Set<number>()
+    const queue = [start]
     while (queue.length > 0) {
       const n = queue.shift()!
-      if (component.has(n)) continue
-      component.add(n)
+      if (visited.has(n)) continue
+      visited.add(n)
+      active.add(n)
       for (const neighbor of adj.get(n) ?? []) {
-        if (!component.has(neighbor)) queue.push(neighbor)
+        if (!visited.has(neighbor)) queue.push(neighbor)
       }
     }
+  }
 
-    if (component.has(src.netNeg)) {
-      component.forEach((n) => active.add(n))
-    }
+  voltageSources.forEach((src) => {
+    flood(src.netPos)
+    flood(src.netNeg)
   })
+
   return active
+}
+
+function buildBoostVoltageSources(
+  boostConverters: BoostConverterStamp[],
+  mosfets: MosfetStamp[],
+  gridData: GridCellLike[][],
+  wires: WireConnection[],
+  components: PlacedComponent[],
+  posToNet: Map<string, number>,
+  gpioStates: Map<number, any> | undefined,
+  voltages: number[] | undefined,
+  supplySources: VoltageSourceStamp[]
+): VoltageSourceStamp[] {
+  const stamps: VoltageSourceStamp[] = []
+  boostConverters.forEach((boost) => {
+    const mosfet = mosfets.find((m) => m.componentId === boost.mosfetId)
+    if (!mosfet) return
+    const supplyVin = supplySources.find((s) => s.netPos === boost.netVin)?.voltage ?? 0
+    const vin = Math.max(voltages?.[boost.netVin] ?? 0, boost.vinNominal, supplyVin)
+    const gateV = voltages?.[boost.netGate] ?? 0
+    const gndV = voltages?.[boost.groundNet] ?? 0
+    const duty = resolveBoostDuty(
+      boost,
+      gridData,
+      wires,
+      components,
+      posToNet,
+      gpioStates,
+      gateV,
+      gndV,
+      mosfet.vth
+    )
+    if (duty === null) return
+    const vout = boostRegulatedVoltage(vin, duty, boost.diodeVf)
+    if (vout <= vin + 0.05) return
+    stamps.push({
+      netPos: boost.netVout,
+      netNeg: boost.groundNet,
+      voltage: vout,
+      componentId: boost.componentId,
+    })
+  })
+  return stamps
 }
 
 export function solveCircuit(
@@ -1175,11 +1370,25 @@ export function solveCircuit(
     npns: baseNpns,
     mosfets: baseMosfets,
     opAmps: baseOpAmps,
-    bridges,
+    bridgeRectifiers,
+    bridgeAcLinks,
     components,
     errors,
   } = netlist
   const baseDriverChannels = netlist.driverChannels
+  const regulators = netlist.regulators
+  const baseLogicGateICs = netlist.logicGateICs
+
+  const boostConverters = detectBoostConverters({
+    mosfets: netlist.mosfets,
+    inductors: netlist.inductors,
+    diodes: netlist.diodes,
+    voltageSources,
+    components,
+    groundNet: netlist.groundNet,
+  })
+  const boostDiodeIds = new Set(boostConverters.map((b) => b.diodeId))
+  const boostVoutNets = new Set(boostConverters.map((b) => b.netVout))
 
   if (nodeCount === 0) {
     return emptyResult('No electrical nodes in circuit', errors)
@@ -1205,11 +1414,9 @@ export function solveCircuit(
         s?.state === 'HIGH' ||
         (s?.state === 'PULSING' && (typeof s?.value === 'number' ? s.value : 0) > 0.001)
     )
-  if (!chainCheck.valid && !(hasActiveGpio && hasGround)) {
-    return emptyResult(
-      'No continuity — each power source needs a closed path from + back to its own - terminal',
-      [...chainCheck.errors, ...errors]
-    )
+  const continuityOk = chainCheck.valid || (hasActiveGpio && hasGround)
+  if (!continuityOk) {
+    errors.push(...chainCheck.errors)
   }
 
   const netAdjacency = buildNetAdjacency(
@@ -1220,19 +1427,24 @@ export function solveCircuit(
     baseNpns,
     baseMosfets,
     baseCapacitors,
-    bridges
+    bridgeAcLinks
   )
 
-  const activeNets = computeActiveNets(voltageSources, netAdjacency)
+  let activeNets = computeActiveNets(voltageSources, netAdjacency)
 
   let ledStates = leds.map((led) => ({ ...led }))
-  let diodeStates = baseDiodes.map((d) => ({ ...d }))
+  let diodeStates = baseDiodes
+    .filter((d) => !boostDiodeIds.has(d.componentId))
+    .map((d) => ({ ...d }))
   let zenerStates = baseZeners.map((z) => ({ ...z }))
-  let capStates = baseCapacitors.map((c) => ({ ...c }))
+  let capStates = baseCapacitors
+    .filter((c) => !boostVoutNets.has(c.netA) && !boostVoutNets.has(c.netB))
+    .map((c) => ({ ...c }))
   let npnStates = baseNpns.map((t) => ({ ...t }))
   let mosfetStates = baseMosfets.map((t) => ({ ...t }))
   let opAmpStates = baseOpAmps.map((op) => ({ ...op }))
   let driverStates = baseDriverChannels.map((d) => ({ ...d }))
+  let logicGateStates = baseLogicGateICs.map((ic) => ({ ...ic, gates: ic.gates.map((g) => ({ ...g })) }))
   let solution: { voltages: number[]; sourceCurrents: number[] } | null = null
 
   const buildDriverResistors = (voltages: number[]): ResistorStamp[] => {
@@ -1272,63 +1484,47 @@ export function solveCircuit(
     return stamps
   }
 
-  const expandBridgeDiodes = (voltages: number[]): DiodeStamp[] => {
-    const bridgeDiodes: DiodeStamp[] = []
-    bridges.forEach((b) => {
-      const v1 = voltages[b.netAc1] ?? 0
-      const v2 = voltages[b.netAc2] ?? 0
-      const vf = b.forwardVoltage
-      if (v1 > v2 + vf * 0.5) {
-        bridgeDiodes.push({
-          netAnode: b.netAc1,
-          netCathode: b.netPlus,
-          forwardVoltage: vf,
-          seriesResistance: 0.5,
-          componentId: `${b.componentId}_d1`,
-          isOn: true,
-        })
-        bridgeDiodes.push({
-          netAnode: b.netMinus,
-          netCathode: b.netAc2,
-          forwardVoltage: vf,
-          seriesResistance: 0.5,
-          componentId: `${b.componentId}_d3`,
-          isOn: true,
-        })
-      } else if (v2 > v1 + vf * 0.5) {
-        bridgeDiodes.push({
-          netAnode: b.netAc2,
-          netCathode: b.netPlus,
-          forwardVoltage: vf,
-          seriesResistance: 0.5,
-          componentId: `${b.componentId}_d2`,
-          isOn: true,
-        })
-        bridgeDiodes.push({
-          netAnode: b.netMinus,
-          netCathode: b.netAc1,
-          forwardVoltage: vf,
-          seriesResistance: 0.5,
-          componentId: `${b.componentId}_d4`,
-          isOn: true,
-        })
-      }
-    })
-    return bridgeDiodes
-  }
-
   for (let iteration = 0; iteration < 12; iteration++) {
-    const bridgeDiodes = solution ? expandBridgeDiodes(solution.voltages) : []
-    const allDiodes = [...diodeStates, ...bridgeDiodes]
     const driverResistors = buildDriverResistors(solution?.voltages ?? [])
+    const boostSources = buildBoostVoltageSources(
+      boostConverters,
+      baseMosfets,
+      gridData,
+      wires,
+      components,
+      posToNet,
+      gpioStates,
+      solution?.voltages,
+      voltageSources
+    )
+    const { voltageSources: regulatorSources, resistors: regulatorResistors } = buildRegulatorSources(
+      regulators,
+      solution?.voltages,
+      voltageSources,
+      gridData,
+      posToNet,
+      resistors
+    )
+    const logicGateUpdate = updateLogicGateStates(logicGateStates, solution?.voltages)
+    logicGateStates = logicGateUpdate.states
+    const { resistors: logicGateResistors } = buildLogicGateStamps(logicGateStates, solution?.voltages)
+
+    boostSources.forEach((src) => {
+      activeNets.add(src.netPos)
+      activeNets.add(src.netNeg)
+    })
+    regulatorSources.forEach((src) => {
+      activeNets.add(src.netPos)
+      activeNets.add(src.netNeg)
+    })
 
     solution = solveMNA(
       nodeCount,
       groundNet,
-      [...resistors, ...driverResistors],
-      voltageSources,
+      [...resistors, ...driverResistors, ...regulatorResistors, ...logicGateResistors],
+      [...voltageSources, ...boostSources, ...regulatorSources],
       ledStates,
-      allDiodes,
+      diodeStates,
       zenerStates,
       capStates,
       npnStates,
@@ -1403,8 +1599,24 @@ export function solveCircuit(
       return { ...channel, isOn: shouldBeOn }
     })
 
+    if (logicGateUpdate.changed) changed = true
+
     if (!changed) break
   }
+
+  activeNets = computeActiveNets(
+    voltageSources,
+    buildNetAdjacency(
+      resistors,
+      ledStates,
+      diodeStates,
+      zenerStates,
+      npnStates,
+      mosfetStates,
+      capStates,
+      bridgeAcLinks
+    )
+  )
 
   if (capStates.length > 0) {
     const ocTargets = openCircuitCapTargets(
@@ -1422,16 +1634,41 @@ export function solveCircuit(
     )
     capStates = advanceCapacitorStates(capStates, ocTargets, resistors, CAP_CHARGE_STEPS)
 
-    const bridgeDiodes = solution ? expandBridgeDiodes(solution.voltages) : []
-    const allDiodes = [...diodeStates, ...bridgeDiodes]
     const driverResistors = buildDriverResistors(solution?.voltages ?? [])
+    const boostSources = buildBoostVoltageSources(
+      boostConverters,
+      baseMosfets,
+      gridData,
+      wires,
+      components,
+      posToNet,
+      gpioStates,
+      solution?.voltages,
+      voltageSources
+    )
+    const { voltageSources: regulatorSources, resistors: regulatorResistors } = buildRegulatorSources(
+      regulators,
+      solution?.voltages,
+      voltageSources,
+      gridData,
+      posToNet,
+      resistors
+    )
+    boostSources.forEach((src) => {
+      activeNets.add(src.netPos)
+      activeNets.add(src.netNeg)
+    })
+    regulatorSources.forEach((src) => {
+      activeNets.add(src.netPos)
+      activeNets.add(src.netNeg)
+    })
     solution = solveMNA(
       nodeCount,
       groundNet,
-      [...resistors, ...driverResistors],
-      voltageSources,
+      [...resistors, ...driverResistors, ...regulatorResistors],
+      [...voltageSources, ...boostSources, ...regulatorSources],
       ledStates,
-      allDiodes,
+      diodeStates,
       zenerStates,
       capStates,
       npnStates,
@@ -1479,11 +1716,46 @@ export function solveCircuit(
   let totalPower = 0
 
   voltageSources.forEach((source, idx) => {
-    if (!activeNets.has(source.netPos) || !activeNets.has(source.netNeg)) return
     const current = Math.abs(solution!.sourceCurrents[idx] ?? 0)
-    totalCurrent = Math.max(totalCurrent, current)
-    totalVoltage = Math.max(totalVoltage, source.voltage)
-    totalPower += source.voltage * current
+    const onPos = activeNets.has(source.netPos)
+    const onNeg = activeNets.has(source.netNeg)
+    if (!onPos && !onNeg) return
+
+    if (onPos && onNeg) {
+      totalCurrent = Math.max(totalCurrent, current)
+      totalVoltage = Math.max(totalVoltage, source.voltage)
+      totalPower += source.voltage * current
+    }
+
+    const comp = components.find((c) => c.componentId === source.componentId)
+    if (!comp) return
+    const moduleType = resolveLogicModule(comp.moduleDefinition)
+
+    getTerminals(comp).forEach((terminal) => {
+      const cellComponentId = `${comp.componentId}-${terminal.cellIndex}`
+      const net = posToNet.get(posKey(terminal.x, terminal.y))
+      if (net === undefined) return
+
+      const grounded =
+        isGroundReference(terminal.moduleCell) ||
+        isNetGrounded(net, groundNet, gridData, posToNet)
+      const onNet = activeNets.has(net)
+      const pinV = onNet ? voltages[net] ?? 0 : grounded ? 0 : net === source.netPos ? source.voltage : 0
+      const isSourcePin = net === source.netPos || net === source.netNeg
+      const powered = onNet ? (grounded ? false : pinV > 0.05) : isSourcePin && net === source.netPos
+
+      componentStates.set(cellComponentId, {
+        componentId: cellComponentId,
+        componentType: moduleType,
+        position: { x: terminal.x, y: terminal.y },
+        outputVoltage: grounded ? 0 : pinV,
+        outputCurrent: onPos && onNeg ? current : 0,
+        power: onPos && onNeg ? source.voltage * current : 0,
+        status: powered ? 'active' : grounded ? 'grounded' : 'standby',
+        isPowered: powered || (isSourcePin && moduleType === 'ACSource'),
+        isGrounded: grounded,
+      })
+    })
   })
 
   resistors.forEach((resistor) => {
@@ -1696,16 +1968,17 @@ export function solveCircuit(
         if (cell?.componentId !== t.componentId) return
         const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
         const net = posToNet.get(posKey(x, y))
+        const pinVoltage = net !== undefined ? voltages[net] ?? 0 : 0
         componentStates.set(cellComponentId, {
           componentId: cellComponentId,
           componentType,
           position: { x, y },
-          outputVoltage: onCircuit && net !== undefined ? voltages[net] ?? 0 : 0,
+          outputVoltage: pinVoltage,
           outputCurrent: 0,
           power: 0,
           isOn,
           status: isOn ? 'saturated' : 'off',
-          isPowered: isOn,
+          isPowered: isOn || pinVoltage > 0.05,
           isGrounded: isNetGrounded(net, groundNet, gridData, posToNet),
         })
       })
@@ -1723,16 +1996,17 @@ export function solveCircuit(
         if (cell?.componentId !== t.componentId) return
         const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
         const net = posToNet.get(posKey(x, y))
+        const pinVoltage = net !== undefined ? voltages[net] ?? 0 : 0
         componentStates.set(cellComponentId, {
           componentId: cellComponentId,
           componentType,
           position: { x, y },
-          outputVoltage: onCircuit && net !== undefined ? voltages[net] ?? 0 : 0,
+          outputVoltage: pinVoltage,
           outputCurrent: 0,
           power: 0,
           isOn,
           status: isOn ? 'on' : 'off',
-          isPowered: isOn,
+          isPowered: isOn || pinVoltage > 0.05,
           isGrounded: isNetGrounded(net, groundNet, gridData, posToNet),
         })
       })
@@ -1767,18 +2041,17 @@ export function solveCircuit(
     })
   })
 
-  bridges.forEach((b) => {
-    const onCircuit =
-      activeNets.has(b.netAc1) &&
-      activeNets.has(b.netAc2) &&
-      activeNets.has(b.netPlus) &&
-      activeNets.has(b.netMinus)
+  bridgeRectifiers.forEach((b) => {
+    const onCircuit = activeNets.has(b.netPlus) && activeNets.has(b.netMinus)
     gridData.forEach((row, y) => {
       if (!row) return
       row.forEach((cell, x) => {
         if (cell?.componentId !== b.componentId) return
         const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
         const net = posToNet.get(posKey(x, y))
+        const moduleCell = cell.moduleDefinition?.grid[cell.cellIndex ?? 0]
+        const isPlus = moduleCell?.pin === '+'
+        const isMinus = moduleCell?.pin === '-'
         const v = onCircuit && net !== undefined ? voltages[net] ?? 0 : 0
         componentStates.set(cellComponentId, {
           componentId: cellComponentId,
@@ -1788,8 +2061,8 @@ export function solveCircuit(
           outputCurrent: 0,
           power: 0,
           status: onCircuit ? 'rectifying' : 'unpowered',
-          isPowered: onCircuit && v > 0.1,
-          isGrounded: isNetGrounded(net, groundNet, gridData, posToNet),
+          isPowered: onCircuit && (isPlus ? v > 0.1 : isMinus ? false : v > 0.01),
+          isGrounded: isMinus || isNetGrounded(net, groundNet, gridData, posToNet),
         })
       })
     })
@@ -1859,7 +2132,8 @@ export function solveCircuit(
   const chains = buildSystemChains(gridData, wires)
 
   return {
-    works: true,
+    works: continuityOk,
+    reason: continuityOk ? undefined : 'No continuity — each power source needs a closed path from + back to its own - terminal',
     errors,
     netVoltages,
     nodeVoltages,

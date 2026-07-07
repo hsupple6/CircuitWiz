@@ -9,6 +9,8 @@ import { sensorAliases } from '../sensors/index'
 import { microcontrollerAliases } from '../microcontrollers/index'
 import { organizationAliases } from '../organization/index'
 import { connectorAliases } from '../connectors/aliases'
+import { wirelessAliases } from '../wireless/aliases'
+import { icAliases } from '../ics/aliases'
 
 /** Every palette alias in one array — domain files own their slice. */
 export const ALL_ALIASES: AliasSpec[] = [
@@ -22,6 +24,8 @@ export const ALL_ALIASES: AliasSpec[] = [
   ...microcontrollerAliases,
   ...organizationAliases,
   ...connectorAliases,
+  ...wirelessAliases,
+  ...icAliases,
 ]
 
 export {
@@ -32,4 +36,6 @@ export {
   outputAliases,
   driverAliases,
   connectorAliases,
+  wirelessAliases,
+  icAliases,
 }

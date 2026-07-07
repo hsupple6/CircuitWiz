@@ -33,6 +33,14 @@
       "max": 10,
       "unit": "Ω",
       "description": "Drain-source on resistance"
+    },
+    "pwmDuty": {
+      "type": "number",
+      "default": 0.4,
+      "min": 0.05,
+      "max": 0.9,
+      "unit": "",
+      "description": "PWM duty cycle for boost preview when simulation is idle"
     }
   }
 }

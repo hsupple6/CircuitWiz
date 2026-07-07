@@ -1,9 +1,4 @@
-import {
-  createSchematicGroupBox,
-  createDocument,
-  type Schematic,
-  type Document,
-} from '../types/workspace'
+import { createDocument, type Schematic, type Document } from '../types/workspace'
 import { buildSchematic } from './schematicBuilder'
 
 /** Voltage divider — Vout = Vin × R2/(R1+R2) */
@@ -24,18 +19,7 @@ export function voltageDividerSchematic(): Schematic {
         color: '#ff0000',
       })
     },
-    {
-      groupBoxes: [
-        {
-          ...createSchematicGroupBox(1, 8, 30, 10, 'Voltage Divider', {
-            name: 'Indigo',
-            fill: 'rgba(224, 231, 255, 0.55)',
-            border: '#818CF8',
-          }),
-          title: 'Vout = Vin × R2/(R1+R2)',
-        },
-      ],
-    }
+    { region: { title: 'Vout = Vin × R2/(R1+R2)', color: 'Indigo' } }
   )
 }
 
@@ -56,18 +40,7 @@ export function ledResistorSchematic(): Schematic {
         color: '#ff0000',
       })
     },
-    {
-      groupBoxes: [
-        {
-          ...createSchematicGroupBox(1, 10, 32, 10, 'LED + Resistor', {
-            name: 'Pink',
-            fill: 'rgba(252, 231, 243, 0.55)',
-            border: '#F472B6',
-          }),
-          title: 'I = (Vcc − Vf) / R',
-        },
-      ],
-    }
+    { region: { title: 'I = (Vcc − Vf) / R', color: 'Pink' } }
   )
 }
 
@@ -93,18 +66,7 @@ export function parallelResistorsSchematic(): Schematic {
         { grounded: true, color: '#ff0000' }
       )
     },
-    {
-      groupBoxes: [
-        {
-          ...createSchematicGroupBox(1, 6, 32, 12, 'Parallel Resistors', {
-            name: 'Green',
-            fill: 'rgba(209, 250, 229, 0.55)',
-            border: '#34D399',
-          }),
-          title: 'Req = R1×R2/(R1+R2)',
-        },
-      ],
-    }
+    { region: { title: 'Req = R1×R2/(R1+R2)', color: 'Green' } }
   )
 }
 
@@ -129,18 +91,7 @@ export function rcCircuitSchematic(): Schematic {
         color: '#ff0000',
       })
     },
-    {
-      groupBoxes: [
-        {
-          ...createSchematicGroupBox(1, 8, 32, 10, 'RC Circuit', {
-            name: 'Blue',
-            fill: 'rgba(219, 234, 254, 0.55)',
-            border: '#60A5FA',
-          }),
-          title: 'Vc(t=τ) = 63.2% × Vin',
-        },
-      ],
-    }
+    { region: { title: 'Vc(t=τ) = 63.2% × Vin', color: 'Blue' } }
   )
 }
 
@@ -167,18 +118,7 @@ export function npnTransistorSchematic(): Schematic {
       })
       wire([rBase.at(2, 0), { x: 8, y: 14 }, { x: 8, y: 8 }, { x: 10, y: 8 }, q.pin('B')], { color: '#666666' })
     },
-    {
-      groupBoxes: [
-        {
-          ...createSchematicGroupBox(1, 6, 32, 12, 'NPN Transistor Switch', {
-            name: 'Amber',
-            fill: 'rgba(254, 243, 199, 0.55)',
-            border: '#FBBF24',
-          }),
-          title: 'Vce(sat) ≈ 0 when Ib × β > Ic',
-        },
-      ],
-    }
+    { region: { title: 'Vce(sat) ≈ 0 when Ib × β > Ic', color: 'Amber' } }
   )
 }
 
@@ -186,77 +126,84 @@ export function npnTransistorSchematic(): Schematic {
 export function opAmpInvertingSchematic(): Schematic {
   return buildSchematic(
     'Op-Amp Inverting Amplifier',
-    'Verify: Vout = −(Rf/Rin) × Vin. With Rin=1kΩ, Rf=10kΩ, Vin=0.5V → Vout ≈ −5V (clipped to rails).',
+    'Verify: Vout = −(Rf/Rin) × Vin. With Rin=1kΩ, Rf=10kΩ, and a 9k/1k divider (~0.5V nominal at Rin), Vout ≈ −5V (clipped to GND on single supply).',
     ({ place, wire }) => {
       const ps = place('PowerSupply', 2, 10)
-      const rin = place('Resistor', 6, 12, { resistance: 1000 })
-      const rf = place('Resistor', 10, 8, { resistance: 10000 })
+      const rTop = place('Resistor', 4, 16, { resistance: 9000 })
+      const rBot = place('Resistor', 6, 20, { resistance: 1000 })
+      const rin = place('Resistor', 8, 14, { resistance: 1000 })
+      const rf = place('Resistor', 10, 6, { resistance: 10000 })
       const op = place('OpAmp', 14, 9)
+      const rLoad = place('Resistor', 20, 10, { resistance: 10000 })
 
-      wire([ps.pin('5V'), { x: 2, y: 9 }, { x: 15, y: 9 }, op.pin('V+')], { powered: true, color: '#00ff00' })
-      wire([ps.pin('GND'), { x: 3, y: 12 }, { x: 3, y: 11 }, { x: 15, y: 11 }, op.pin('V-')], {
-        grounded: true,
-        color: '#ff0000',
-      })
-      wire([op.pin('+'), { x: 14, y: 12 }, { x: 3, y: 12 }, ps.pin('GND')], {
-        grounded: true,
-        color: '#ff0000',
-      })
-      wire([ps.pin('5V'), { x: 2, y: 11 }, { x: 4, y: 11 }, { x: 4, y: 12 }, rin.at(0, 0)], {
+      const vccRailY = 8
+      const gndBusY = 18
+      const outJunction = { x: 18, y: 10 }
+
+      // Op-amp supply rails
+      wire([ps.pin('5V'), { x: 2, y: vccRailY }, { x: 15, y: vccRailY }, op.pin('V+')], {
         powered: true,
         color: '#00ff00',
       })
-      wire([rin.at(2, 0), { x: 8, y: 12 }, { x: 8, y: 10 }, { x: 14, y: 10 }, op.pin('-')], { color: '#666666' })
-      wire([op.pin('-'), { x: 13, y: 10 }, { x: 13, y: 8 }, rf.at(0, 0)], { color: '#666666' })
-      wire([rf.at(2, 0), { x: 12, y: 8 }, { x: 12, y: 10 }, { x: 16, y: 10 }, op.pin('OUT')], { color: '#666666' })
+      wire([op.pin('V-'), { x: 15, y: gndBusY }, { x: 3, y: gndBusY }, ps.pin('GND')], {
+        grounded: true,
+        color: '#ff0000',
+      })
+      wire([op.pin('+'), { x: 14, y: gndBusY }, { x: 3, y: gndBusY }], {
+        grounded: true,
+        color: '#ff0000',
+      })
+
+      // Vin divider (9k / 1k → 0.5 V nominal at tap; ~0.26 V under Rin loading)
+      wire([ps.pin('5V'), { x: 2, y: 16 }, rTop.at(0, 0)], { powered: true, color: '#00ff00' })
+      wire([rTop.at(2, 0), rBot.at(0, 0)])
+      wire([rBot.at(2, 0), { x: 8, y: 20 }, { x: 8, y: gndBusY }, { x: 3, y: gndBusY }], {
+        grounded: true,
+        color: '#ff0000',
+      })
+      wire([rTop.at(2, 0), { x: 6, y: 14 }, rin.at(0, 0)])
+
+      // Inverting input network: Rin → (−), Rf feedback (−) ↔ OUT
+      wire([rin.at(2, 0), { x: 10, y: 14 }, { x: 10, y: 10 }, op.pin('-')], { color: '#666666' })
+      wire([op.pin('-'), { x: 13, y: 10 }, { x: 13, y: 5 }, { x: 10, y: 5 }, rf.at(0, 0)], {
+        color: '#666666',
+      })
+      wire([rf.at(2, 0), { x: outJunction.x, y: 6 }, outJunction, op.pin('OUT')], { color: '#666666' })
+
+      // Output load completes the DC path to ground
+      wire([outJunction, rLoad.at(0, 0)])
+      wire([rLoad.at(2, 0), { x: 22, y: 10 }, { x: 22, y: gndBusY }, { x: 3, y: gndBusY }], {
+        grounded: true,
+        color: '#ff0000',
+      })
     },
-    {
-      groupBoxes: [
-        {
-          ...createSchematicGroupBox(1, 7, 36, 12, 'Op-Amp Inverting Amplifier', {
-            name: 'Violet',
-            fill: 'rgba(237, 233, 254, 0.55)',
-            border: '#A78BFA',
-          }),
-          title: 'Vout = −(Rf/Rin) × Vin',
-        },
-      ],
-    }
+    { region: { title: 'Vout = −(Rf/Rin) × Vin', color: 'Purple' } }
   )
 }
 
-/** Zener voltage clamp */
+/** Zener voltage clamp — K (left/input) from R, A (right) to GND; Vclamp ≈ Vz at K */
 export function zenerClampSchematic(): Schematic {
   return buildSchematic(
     'Zener Voltage Clamp',
-    'Verify: output clamps at Zener voltage. With 5V input, R=1kΩ, 3.3V Zener → Vout ≈ 3.3V.',
+    'Verify: Vclamp ≈ Vz at K (left pin). With 5V → R=1kΩ → K, 3.3V Zener, A (right) → GND → V_K ≈ 3.3V.',
     ({ place, wire }) => {
       const ps = place('PowerSupply', 2, 10)
       const r = place('Resistor', 6, 10, { resistance: 1000 })
       const z = place('ZenerDiode', 10, 10, { zenerVoltage: 3.3 })
 
+      const gndBusY = 14
+
       wire([ps.pin('5V'), { x: 2, y: 9 }, { x: 6, y: 9 }, r.at(0, 0)], {
         powered: true,
         color: '#00ff00',
       })
-      wire([r.at(2, 0), { x: 8, y: 10 }, z.pin('K')], { color: '#666666' })
-      wire([z.pin('A'), { x: 10, y: 14 }, { x: 12, y: 14 }, { x: 3, y: 14 }, { x: 3, y: 10 }, ps.pin('GND')], {
+      wire([r.at(2, 0), z.pin('K')], { color: '#666666' })
+      wire([z.pin('A'), { x: 12, y: gndBusY }, { x: 3, y: gndBusY }, ps.pin('GND')], {
         grounded: true,
         color: '#ff0000',
       })
     },
-    {
-      groupBoxes: [
-        {
-          ...createSchematicGroupBox(1, 8, 32, 10, 'Zener Voltage Clamp', {
-            name: 'Cyan',
-            fill: 'rgba(207, 250, 254, 0.55)',
-            border: '#22D3EE',
-          }),
-          title: 'Vout clamps at Vz',
-        },
-      ],
-    }
+    { region: { title: 'V_K clamps at Vz (K = left)', color: 'Cyan' } }
   )
 }
 
@@ -264,41 +211,42 @@ export function zenerClampSchematic(): Schematic {
 export function bridgeRectifierSchematic(): Schematic {
   return buildSchematic(
     'Bridge Rectifier',
-    'Verify: Vdc ≈ 0.9 × Vrms. With 12V RMS AC and a 1kΩ load, expect rectified DC across the load.',
+    'Verify: Vdc ≈ 0.9 × Vrms. With 12V RMS AC and a 1kΩ load, expect ~9.4V DC and ~9.4mA.',
     ({ place, wire }) => {
-      const ac = place('ACSource', 2, 10, { vrms: 12 })
-      const bridge = place('BridgeRectifier', 8, 9)
-      const rLoad = place('Resistor', 14, 10, { resistance: 1000 })
+      const ac = place('ACSource', 2, 13, { vrms: 12, frequency: 60 })
+      const bridge = place('BridgeRectifier', 13, 12)
+      const rLoad = place('Resistor', 21, 14, { resistance: 1000 })
 
-      wire([ac.pin('AC1'), { x: 2, y: 9 }, { x: 8, y: 9 }, bridge.pin('AC1')], { powered: true, color: '#00ff00' })
-      wire([ac.pin('AC2'), { x: 3, y: 11 }, { x: 10, y: 11 }, { x: 10, y: 9 }, bridge.pin('AC2')], {
-        grounded: true,
-        color: '#ff0000',
-      })
-      wire([bridge.pin('-'), { x: 8, y: 12 }, { x: 3, y: 12 }, { x: 3, y: 10 }, ac.pin('AC2')], {
-        grounded: true,
-        color: '#ff0000',
-      })
-      wire([bridge.pin('+'), { x: 10, y: 8 }, { x: 14, y: 8 }, { x: 14, y: 10 }, rLoad.at(0, 0)], {
+      const acHotY = 12
+      const dcOutY = 14
+      const gndBusY = 18
+
+      // AC hot rail → bridge AC1
+      wire(
+        [ac.pin('AC1'), { x: 5, y: 13 }, { x: 5, y: acHotY }, { x: 13, y: acHotY }, bridge.pin('AC1')],
+        { powered: true, color: '#00ff00' }
+      )
+
+      // AC return → ground bus (source AC2 + bridge AC2)
+      wire([ac.pin('AC2'), { x: 3, y: 15 }, { x: 3, y: gndBusY }], { grounded: true, color: '#ff0000' })
+      wire([bridge.pin('AC2'), { x: 15, y: 12 }, { x: 15, y: gndBusY }], { grounded: true, color: '#ff0000' })
+      wire([{ x: 3, y: gndBusY }, { x: 15, y: gndBusY }], { grounded: true, color: '#ff0000' })
+
+      // Rectified DC rail → load (same row, no vertical detour)
+      wire([bridge.pin('+'), { x: 15, y: dcOutY }, rLoad.at(0, 0)], {
         powered: true,
         color: '#00ff00',
       })
-      wire([rLoad.at(2, 0), { x: 16, y: 12 }, { x: 8, y: 12 }, { x: 8, y: 11 }, bridge.pin('-')], {
-        color: '#666666',
+
+      // Load return + bridge DC− → common ground bus
+      wire([rLoad.at(2, 0), { x: 23, y: dcOutY }, { x: 23, y: gndBusY }], {
+        grounded: true,
+        color: '#ff0000',
       })
+      wire([bridge.pin('-'), { x: 13, y: 14 }, { x: 13, y: gndBusY }], { grounded: true, color: '#ff0000' })
+      wire([{ x: 13, y: gndBusY }, { x: 23, y: gndBusY }], { grounded: true, color: '#ff0000' })
     },
-    {
-      groupBoxes: [
-        {
-          ...createSchematicGroupBox(1, 8, 36, 10, 'Bridge Rectifier', {
-            name: 'Orange',
-            fill: 'rgba(255, 237, 213, 0.55)',
-            border: '#FB923C',
-          }),
-          title: 'Vdc ≈ 0.9 × Vrms',
-        },
-      ],
-    }
+    { region: { title: '12Vrms AC → ~9.4V DC (1kΩ load)', color: 'Amber' } }
   )
 }
 
@@ -315,9 +263,12 @@ export function simulationTestReferenceDoc(): Document {
 | RC circuit | Vc at t = τ is 63.2% of Vin |
 | NPN transistor switch | Collector-emitter saturates when base current sufficient |
 | Op-amp inverting amplifier | Vout = −(Rf/Rin) × Vin |
-| Zener voltage clamp | Output clamps at Zener voltage |
+| Zener voltage clamp | V_K clamps at Vz (K = left pin) |
 | Bridge rectifier | Vdc ≈ 0.9 × Vrms |
 | BLDC Motor + ESC | PWM D9 → ESC → U/V/W → motor phases |
+| MOSFET Boost | Vout ≈ Vin / (1 − D) with L, NMOS, diode, cap |
+| LM317 + Potentiometer | Vout = Vref × (1 + R2/R1); sweep pot wiper |
+| NPN Switch + LED | Close SPST → base bias → NPN saturates → LED on |
 
 Open each schematic in this folder to run the preset layout.
 `

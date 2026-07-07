@@ -11,6 +11,7 @@ import { parseNumericProperty, posKey } from '../utils'
 import { resolveLogicModule } from '../../../modules/logicModule'
 import { isDriverModule } from '../../../modules/drivers/logic'
 import { isConnectorModule } from '../../../modules/connectors/logic'
+import { isWirelessModule } from '../../../modules/wireless/logic'
 
 function pairBidirectional(keys: string[]): InternalEdge[] {
   const edges: InternalEdge[] = []
@@ -169,18 +170,8 @@ export function getComponentConductivity(
       return []
     }
 
-    case 'BridgeRectifier': {
-      const ac = byType('AC')
-      const plus = terminals.filter((t) => t.moduleCell.type === 'POSITIVE').map((t) => t.key)
-      const minus = terminals.filter((t) => t.moduleCell.type === 'NEGATIVE').map((t) => t.key)
-      const edges: InternalEdge[] = []
-      for (const a of ac) {
-        for (const p of plus) edges.push(directedEdge(a, p))
-        for (const m of minus) edges.push(directedEdge(m, a))
-      }
-      if (plus.length && minus.length) edges.push(directedEdge(plus[0], minus[0]))
-      return edges
-    }
+    case 'BridgeRectifier':
+      return []
 
     case 'ACSource':
       return pairBidirectional(byType('AC'))
@@ -201,9 +192,34 @@ export function getComponentConductivity(
     case 'OpAmp':
       return []
 
+    case 'LogicGateIC': {
+      const vcc = terminals.find(
+        (t) => t.moduleCell.pin === 'VCC' || t.moduleCell.type === 'DRIVER_PWR'
+      )
+      const gnd = terminals.find(
+        (t) => t.moduleCell.pin === 'GND' || t.moduleCell.type === 'GND'
+      )
+      if (vcc && gnd) return [directedEdge(vcc.key, gnd.key)]
+      return []
+    }
+
+    case 'LinearRegulator':
+    case 'PowerDriver':
+    case 'FixedRegulator': {
+      const vin = terminals.find(
+        (t) => t.moduleCell.pin === 'VIN' || t.moduleCell.type === 'DRIVER_PWR'
+      )
+      const vout = terminals.find(
+        (t) => t.moduleCell.pin === 'VOUT' || t.moduleCell.type === 'DRIVER_OUT'
+      )
+      if (vin && vout) return [directedEdge(vin.key, vout.key)]
+      return []
+    }
+
     default:
       if (isConnectorModule(moduleType) || moduleType === 'NPinConnector') return []
       if (isDriverModule(moduleType)) return []
+      if (isWirelessModule(moduleType)) return []
       return []
   }
 }

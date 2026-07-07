@@ -128,8 +128,8 @@ export function flashProgramToMicrocontroller(
   | { error: string } {
   const program = getProgram(folder, programId)
   if (!program) return { error: `Program not found: ${programId}` }
-  if (!program.compilation?.success) {
-    return { error: 'Program is not compiled. Call program_compile first and fix any errors.' }
+  if (!program.code.trim()) {
+    return { error: 'Program has no sketch source. Add code before flashing to a microcontroller.' }
   }
 
   const schematic = folder.schematics.find((s) => s.id === schematicId)

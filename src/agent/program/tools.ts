@@ -109,7 +109,7 @@ export const programAgentTools: AgentTool[] = [
 
   makeTool(
     'program_flash',
-    'Flash a compiled program onto a digital microcontroller on the schematic and start GPIO simulation. Requires a successful program_compile first.',
+    'Flash a program onto a digital microcontroller on the schematic and start GPIO simulation from its sketch source. Compilation is optional for simulation.',
     'program',
     [
       { name: 'programId', type: 'string', description: 'Program id (optional)', required: false },

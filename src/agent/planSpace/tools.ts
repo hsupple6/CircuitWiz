@@ -200,7 +200,7 @@ export const planSpaceAgentTools: AgentTool[] = [
   // ── Bubbles ──────────────────────────────────────────────────────────────
   tool(
     'plan_space_add_bubble',
-    'Add a new text bubble/node at a world position.',
+    'Add a new text bubble/node at a world position. Removes the default Project Roadmap template first if it is still present.',
     [
       { name: 'text', type: 'string', description: 'Main label text', required: true },
       { name: 'x', type: 'number', description: 'World X (top-left)', required: true },
@@ -525,14 +525,14 @@ export const planSpaceAgentTools: AgentTool[] = [
 
   tool(
     'plan_space_clear',
-    'Remove all bubbles, connections, and arrows from the plan space.',
+    'Remove all bubbles, connections, and arrows from the plan space. Use before building a custom roadmap when the default template is present.',
     [],
     (ctx) => okPlanSpace(ctx, ops.clearPlanSpace(getPlanSpace(ctx)), 'Plan space cleared.')
   ),
 
   tool(
     'plan_space_apply_preset',
-    'Replace plan space content with the default project roadmap preset.',
+    'Replace plan space content with the default generic project roadmap template. Only use when the user wants the stock workflow, not for custom roadmaps.',
     [],
     (ctx) => okPlanSpace(ctx, ops.applyPlanSpacePreset(getPlanSpace(ctx)), 'Preset applied.')
   ),

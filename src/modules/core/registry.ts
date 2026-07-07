@@ -15,6 +15,8 @@ import { sensorAnchors } from '../sensors/index'
 import { microcontrollerAnchors } from '../microcontrollers/index'
 import { organizationAnchors } from '../organization/index'
 import { connectorAnchors } from '../connectors/index'
+import { wirelessAnchors } from '../wireless/index'
+import { icAnchors } from '../ics/index'
 
 export type { ModuleRegistryEntry } from './registryTypes'
 
@@ -27,6 +29,8 @@ export const baseModuleRegistry: Record<string, ModuleRegistryEntry> = {
   ...outputAnchors,
   ...driverAnchors,
   ...sensorAnchors,
+  ...wirelessAnchors,
+  ...icAnchors,
   ...organizationAnchors,
   ...connectorAnchors,
 }
@@ -44,6 +48,14 @@ export function resolveModuleName(name: string): string {
   for (const key of Object.keys(moduleRegistry)) {
     if (key.toLowerCase().replace(/[\s_-]+/g, '') === compact) return key
   }
+
+  for (const [key, entry] of Object.entries(moduleRegistry)) {
+    const displayName = entry.definition.module?.trim()
+    if (!displayName) continue
+    if (displayName === trimmed) return key
+    if (displayName.toLowerCase().replace(/[\s_-]+/g, '') === compact) return key
+  }
+
   return trimmed
 }
 

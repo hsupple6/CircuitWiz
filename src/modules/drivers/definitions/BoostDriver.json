@@ -1,0 +1,24 @@
+{
+  "module": "Boost Converter",
+  "logicModule": "BoostDriver",
+  "gridX": 3,
+  "gridY": 2,
+  "background": "#4C1D95",
+  "css": "border-radius: 6px; border: 2px solid #A855F7;",
+  "category": "drivers",
+  "description": "Step-up DC-DC converter — VIN to VOUT (boost block)",
+  "grid": [
+    { "x": 0, "y": 0, "type": "DRIVER_PWR", "pin": "VIN", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#DC2626;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:6px 0 0 0;" },
+    { "x": 1, "y": 0, "type": "BODY", "pin": "BST", "isConnectable": false, "css": "background:#6B21A8;color:#E9D5FF;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 2, "y": 0, "type": "GND", "pin": "GND", "isConnectable": true, "isPowerable": false, "isGroundable": true, "css": "background:#4C1D95;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 6px 0 0;" },
+    { "x": 0, "y": 1, "type": "BODY", "pin": "", "isConnectable": false, "css": "background:#4C1D95;border-radius:0 0 0 6px;" },
+    { "x": 1, "y": 1, "type": "BODY", "pin": "", "isConnectable": false, "css": "background:#4C1D95;" },
+    { "x": 2, "y": 1, "type": "DRIVER_OUT", "pin": "VOUT", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#059669;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 0 6px 0;" }
+  ],
+  "properties": {
+    "outputVoltage": { "default": 12, "unit": "V", "description": "Regulated output voltage" },
+    "maxCurrent": { "default": 1, "unit": "A", "description": "Maximum output current" },
+    "minInputVoltage": { "default": 3, "unit": "V", "description": "Minimum VIN for regulation" },
+    "seriesResistance": { "default": 0.08, "unit": "Ω", "description": "Output source resistance" }
+  }
+}

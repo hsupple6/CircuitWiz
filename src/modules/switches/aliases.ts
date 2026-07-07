@@ -16,6 +16,13 @@ export const switchAliases: AliasSpec[] = [
     keywords: ['relay', 'spst', 'contact'],
   },
   {
+    name: 'Miniature Relay',
+    anchor: 'Switch',
+    category: 'switches',
+    description: 'Miniature SPST relay contact (coil driven separately)',
+    keywords: ['miniature relay', 'mini relay', 'small relay', 'spst'],
+  },
+  {
     name: 'DIP Switch',
     anchor: 'Switch',
     category: 'switches',

@@ -14,7 +14,7 @@ import {
   FolderOpen,
   Pencil,
   Tag,
-  Paintbrush,
+  LayoutGrid,
 } from 'lucide-react'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -37,6 +37,7 @@ import { CapacitanceSelector } from './components/CapacitanceSelector'
 import { InductanceSelector } from './components/InductanceSelector'
 import { ACSourceSelector } from './components/ACSourceSelector'
 import { ConnectorPlacementSelector } from './components/ConnectorPlacementSelector'
+import { ModuleConfigSelector } from './components/ModuleConfigSelector'
 import {
   buildNPinConnectorDefinition,
   isNPinConnectorModule,
@@ -45,6 +46,7 @@ import {
   type ConnectorGender,
 } from './modules/connectors/buildConnectorDefinition'
 import { EditorFloatingChrome } from './components/EditorFloatingChrome'
+import { SchematicTidyModal } from './components/SchematicTidyModal'
 import type { HoverStats } from './utils/hoverStats'
 import type { ComponentState } from './systems/ElectricalSystem'
 import { ModuleDefinition } from './modules/types'
@@ -54,13 +56,20 @@ import {
   type PassiveValueKind,
 } from './modules/passiveValueKind'
 import {
+  applyModuleConfig,
+  getModuleConfigKind,
+  moduleConfigSelectorTitle,
+  readModuleConfig,
+  type ModuleConfigKind,
+  type ModuleConfigSettings,
+} from './modules/moduleConfigKind'
+import {
   ProjectFolder,
   Schematic,
   WorkspaceView,
   createSchematic,
   createDocument,
   createProgram,
-  seedPlanSpaceIfEmpty,
   type SchematicGroupBox,
   type SchematicCellLabel,
   type ProgramCompilation,
@@ -70,12 +79,7 @@ import {
   saveLocalSession,
   createLocalProjectFolder,
 } from './services/localProjectStorage'
-import { ensureExamplesProject } from './examples/examplesProject'
-import {
-  loadStyleDevSchematic,
-  resetStyleDevSchematic,
-  saveStyleDevSchematic,
-} from './services/styleDevStorage'
+import { ensureExamplesProject, EXAMPLES_FOLDER_ID } from './examples/examplesProject'
 
 interface SaveStatusProps {
   isSaving: boolean
@@ -161,6 +165,8 @@ function AppContent() {
 
   const [selectedModule, setSelectedModule] = useState<ModuleDefinition | null>(null)
   const [passiveValueSelector, setPassiveValueSelector] = useState<PassiveValueKind | null>(null)
+  const [moduleConfigSelector, setModuleConfigSelector] = useState<ModuleConfigKind | null>(null)
+  const [moduleConfigDraft, setModuleConfigDraft] = useState<ModuleConfigSettings | null>(null)
   const [connectorSelectorOpen, setConnectorSelectorOpen] = useState(false)
   const [selectedResistance, setSelectedResistance] = useState(1000)
   const [selectedCapacitance, setSelectedCapacitance] = useState(0.0001)
@@ -178,6 +184,7 @@ function AppContent() {
   const [selectedGroupBoxId, setSelectedGroupBoxId] = useState<string | null>(null)
   const [focusGroupBoxRequest, setFocusGroupBoxRequest] = useState<SchematicGroupBox | null>(null)
   const [labelMode, setLabelMode] = useState(false)
+  const [deleteMode, setDeleteMode] = useState(false)
   const [labels, setLabels] = useState<SchematicCellLabel[]>([])
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null)
   const [workspaceOverlay, setWorkspaceOverlay] = useState<HTMLDivElement | null>(null)
@@ -196,13 +203,20 @@ function AppContent() {
     hasUnsavedChanges: false,
   })
   const [agentDevOpen, setAgentDevOpen] = useState(false)
-  const [styleDevSchematic, setStyleDevSchematic] = useState<Schematic | null>(null)
+  const [tidyModalOpen, setTidyModalOpen] = useState(false)
   const [, setLastSavedState] = useState<Record<string, unknown> | null>(null)
 
   const selectedSchematic = useMemo(() => {
     if (!selectedFolder || !selectedItemId || activeView !== 'schematic') return null
     return selectedFolder.schematics.find((s) => s.id === selectedItemId) ?? null
   }, [selectedFolder, selectedItemId, activeView])
+
+  const schematicSyncKey = useMemo(() => {
+    if (!selectedSchematic) return ''
+    const occupied =
+      selectedSchematic.gridData?.flat().filter((cell) => cell?.occupied).length ?? 0
+    return `${selectedSchematic.metadata.updatedAt}:${selectedSchematic.wires?.length ?? 0}:${occupied}`
+  }, [selectedSchematic])
 
   useEffect(() => {
     if (selectedSchematic) {
@@ -234,7 +248,7 @@ function AppContent() {
   }, [projectFolders, searchQuery])
 
   const handleZoomIn = useCallback(() => setZoom((z) => Math.min(z + 0.1, 3)), [])
-  const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z - 0.1, 0.6)), [])
+  const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z - 0.1, 0.35)), [])
   const handleZoomReset = useCallback(() => setZoom(1), [])
 
   const persistSession = useCallback((
@@ -291,28 +305,17 @@ function AppContent() {
       folders,
       session?.selectedFolderId ? folders.find((f) => f.id === session.selectedFolderId) ?? null : null,
       session?.selectedItemId ?? null,
-      session?.activeView ?? 'folders'
+      (session?.activeView as string | undefined) === 'style-dev' ? 'folders' : (session?.activeView ?? 'folders')
     )
 
     if (!session) return
-
-    if (session.activeView === 'style-dev') {
-      const devSchematic = loadStyleDevSchematic()
-      setStyleDevSchematic(devSchematic)
-      setActiveView('style-dev')
-      setSelectedFolder(null)
-      setSelectedItemId(devSchematic.id)
-      setGroupBoxes(devSchematic.groupBoxes ?? [])
-      setLabels(devSchematic.labels ?? [])
-      return
-    }
 
     if (session.selectedFolderId) {
       const folder = folders.find((f) => f.id === session.selectedFolderId)
       if (folder) {
         setSelectedFolder(folder)
         setSelectedItemId(session.selectedItemId)
-        setActiveView(session.activeView || 'folder')
+        setActiveView((session.activeView as string) === 'style-dev' ? 'folder' : (session.activeView || 'folder'))
 
         if (session.activeView === 'schematic' && session.selectedItemId) {
           const schematic = folder.schematics.find((s) => s.id === session.selectedItemId)
@@ -364,94 +367,8 @@ function AppContent() {
     setSelectedFolder(null)
     setSelectedItemId(null)
     setSelectedModule(null)
-    setStyleDevSchematic(null)
     persistSession(projectFolders, null, null, 'folders')
   }
-
-  const handleOpenStyleDev = () => {
-    const schematic = loadStyleDevSchematic()
-    setStyleDevSchematic(schematic)
-    setSelectedFolder(null)
-    setSelectedItemId(schematic.id)
-    setActiveView('style-dev')
-    setGroupBoxes(schematic.groupBoxes ?? [])
-    setLabels(schematic.labels ?? [])
-    setSelectedGroupBoxId(null)
-    setSelectedLabelId(null)
-    setSelectedModule(null)
-    setSaveStatus({ isSaving: false, lastSaved: new Date(), error: null, hasUnsavedChanges: false })
-    persistSession(projectFolders, null, schematic.id, 'style-dev')
-  }
-
-  const handleResetStyleDevLayout = () => {
-    const schematic = resetStyleDevSchematic()
-    setStyleDevSchematic(schematic)
-    setGroupBoxes(schematic.groupBoxes ?? [])
-    setLabels(schematic.labels ?? [])
-    setSaveStatus({ isSaving: false, lastSaved: new Date(), error: null, hasUnsavedChanges: false })
-  }
-
-  const handleStyleDevDataChange = useCallback(
-    (projectData: {
-      gridData?: unknown[][]
-      wires?: unknown[]
-      componentStates?: Record<string, unknown>
-      groupBoxes?: SchematicGroupBox[]
-      labels?: SchematicCellLabel[]
-      hasUnsavedChanges?: boolean
-      triggerUnsavedCheck?: boolean
-    }) => {
-      if (!styleDevSchematic) return
-
-      if (projectData.hasUnsavedChanges !== undefined) {
-        setSaveStatus((prev) => ({
-          ...prev,
-          hasUnsavedChanges: projectData.hasUnsavedChanges || false,
-        }))
-        if (projectData.hasUnsavedChanges) return
-      }
-      if (projectData.triggerUnsavedCheck) {
-        setSaveStatus((prev) => ({ ...prev, hasUnsavedChanges: true }))
-        return
-      }
-
-      try {
-        setSaveStatus({ isSaving: true, lastSaved: null, error: null, hasUnsavedChanges: false })
-
-        const occupiedComponents = projectData.gridData
-          ? extractOccupiedComponents(projectData.gridData as never)
-          : []
-
-        const updatedSchematic: Schematic = {
-          ...styleDevSchematic,
-          gridData: (projectData.gridData as Schematic['gridData']) || styleDevSchematic.gridData,
-          wires: (projectData.wires as Schematic['wires']) || styleDevSchematic.wires,
-          componentStates: {},
-          groupBoxes: projectData.groupBoxes ?? styleDevSchematic.groupBoxes ?? [],
-          labels: projectData.labels ?? styleDevSchematic.labels ?? [],
-          occupiedComponents,
-          metadata: { ...styleDevSchematic.metadata, updatedAt: new Date().toISOString() },
-        }
-
-        saveStyleDevSchematic(updatedSchematic)
-        setStyleDevSchematic(updatedSchematic)
-        setSaveStatus({
-          isSaving: false,
-          lastSaved: new Date(),
-          error: null,
-          hasUnsavedChanges: false,
-        })
-      } catch {
-        setSaveStatus((prev) => ({
-          ...prev,
-          isSaving: false,
-          error: 'Save failed',
-          hasUnsavedChanges: true,
-        }))
-      }
-    },
-    [styleDevSchematic]
-  )
 
   const handleBackToFolder = () => {
     if (!selectedFolder) return
@@ -569,22 +486,11 @@ function AppContent() {
 
   const handleOpenPlanSpace = () => {
     if (!selectedFolder) return
-    const planSpace = seedPlanSpaceIfEmpty(selectedFolder.planSpace)
+    const planSpace = selectedFolder.planSpace
     setZoom(planSpace.metadata.zoom)
     setSelectedItemId(planSpace.id)
     setActiveView('plan-space')
-
-    if (planSpace !== selectedFolder.planSpace) {
-      const updatedFolder = { ...selectedFolder, planSpace }
-      updateFolders(
-        (folders) => folders.map((f) => (f.id === updatedFolder.id ? updatedFolder : f)),
-        updatedFolder,
-        planSpace.id,
-        'plan-space'
-      )
-    } else {
-      persistSession(projectFolders, selectedFolder, planSpace.id, 'plan-space')
-    }
+    persistSession(projectFolders, selectedFolder, planSpace.id, 'plan-space')
   }
 
   const handleDeleteSchematic = (schematicId: string) => {
@@ -715,11 +621,40 @@ function AppContent() {
     if (isNPinConnectorModule(module)) {
       setConnectorSelectorOpen(true)
       setPassiveValueSelector(null)
+      setModuleConfigSelector(null)
       return
     }
     setConnectorSelectorOpen(false)
-    setPassiveValueSelector(getPassiveValueKind(module))
+    const passiveKind = getPassiveValueKind(module)
+    if (passiveKind) {
+      setPassiveValueSelector(passiveKind)
+      setModuleConfigSelector(null)
+      return
+    }
+    const configKind = getModuleConfigKind(module)
+    if (configKind && module) {
+      setModuleConfigSelector(configKind)
+      setModuleConfigDraft(readModuleConfig(configKind, module))
+      setPassiveValueSelector(null)
+      return
+    }
+    setPassiveValueSelector(null)
+    setModuleConfigSelector(null)
   }
+
+  const toggleDeleteMode = useCallback(() => {
+    setDeleteMode((prev) => {
+      const next = !prev
+      if (next) {
+        setLabelMode(false)
+        setSelectedModule(null)
+        setConnectorSelectorOpen(false)
+        setPassiveValueSelector(null)
+        setModuleConfigSelector(null)
+      }
+      return next
+    })
+  }, [])
 
   const handleConnectorApply = (pins: number, gender: ConnectorGender) => {
     setSelectedModule(buildNPinConnectorDefinition(pins, gender))
@@ -762,6 +697,13 @@ function AppContent() {
         properties: { ...(selectedModule as ModuleDefinition & { properties?: Record<string, unknown> }).properties, inductance },
       } as ModuleDefinition)
     }
+  }
+
+  const handleModuleConfigApply = (settings: ModuleConfigSettings) => {
+    if (!selectedModule || !moduleConfigSelector) return
+    setModuleConfigDraft(settings)
+    setModuleConfigSelector(null)
+    setSelectedModule(applyModuleConfig(selectedModule, moduleConfigSelector, settings))
   }
 
   const handleACSourceSelect = (
@@ -816,7 +758,7 @@ function AppContent() {
       const updatedSchematic: Schematic = {
         ...selectedSchematic,
         gridData: (projectData.gridData as Schematic['gridData']) || selectedSchematic.gridData,
-        wires: (projectData.wires as Schematic['wires']) || selectedSchematic.wires,
+        wires: (projectData.wires as Schematic['wires']) ?? selectedSchematic.wires,
         componentStates: {},
         groupBoxes: projectData.groupBoxes ?? selectedSchematic.groupBoxes ?? [],
         labels: projectData.labels ?? selectedSchematic.labels ?? [],
@@ -854,6 +796,18 @@ function AppContent() {
       })
     }
   }, [selectedFolder, selectedSchematic, updateFolders])
+
+  const handleApplyTidyLayout = useCallback(
+    (updated: Schematic) => {
+      handleSchematicDataChange({
+        gridData: updated.gridData,
+        wires: updated.wires,
+        groupBoxes: updated.groupBoxes,
+        labels: updated.labels,
+      })
+    },
+    [handleSchematicDataChange]
+  )
 
   const documentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -1124,6 +1078,14 @@ function AppContent() {
               <Tag className="h-4 w-4" />
               Label
             </button>
+            <button
+              onClick={() => setTidyModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200"
+              title="Rearrange components for readability"
+            >
+              <LayoutGrid className="h-4 w-4" />
+              Tidy
+            </button>
             <div className="h-6 w-px bg-white/10" />
             <div className="text-sm text-gray-500 dark:text-zinc-500 font-mono truncate max-w-[240px]">
               {hoverStats
@@ -1131,33 +1093,6 @@ function AppContent() {
                 : hoveredPosition
                   ? `(${hoveredPosition.x}, ${hoveredPosition.y})`
                   : 'Hover for live stats'}
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={handleZoomOut} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-secondary" title="Zoom Out">
-                <ZoomOut className="h-5 w-5" />
-              </button>
-              <span className="text-sm text-gray-500 min-w-[3rem] text-center">{Math.round(zoom * 100)}%</span>
-              <button onClick={handleZoomIn} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-secondary" title="Zoom In">
-                <ZoomIn className="h-5 w-5" />
-              </button>
-              <button onClick={handleZoomReset} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-secondary" title="Reset Zoom">
-                <Maximize2 className="h-5 w-5" />
-              </button>
-            </div>
-          </>
-        )}
-        {activeView === 'style-dev' && (
-          <>
-            <button
-              type="button"
-              onClick={handleResetStyleDevLayout}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 transition-colors hover:border-primary-400/50 hover:text-primary-700 dark:border-white/[0.1] dark:text-zinc-400 dark:hover:border-primary-400/30 dark:hover:text-primary-300"
-            >
-              Reset layout
-            </button>
-            <div className="h-6 w-px bg-white/10" />
-            <div className="text-sm text-gray-500 dark:text-zinc-500 font-mono truncate max-w-[240px]">
-              {hoveredPosition ? `(${hoveredPosition.x}, ${hoveredPosition.y})` : 'Style Lab sandbox'}
             </div>
             <div className="flex items-center gap-2">
               <button onClick={handleZoomOut} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-secondary" title="Zoom Out">
@@ -1221,6 +1156,14 @@ function AppContent() {
             <Tag className="h-4 w-4" />
             <span className="hidden sm:inline">Label</span>
           </button>
+          <button
+            onClick={() => setTidyModalOpen(true)}
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-200"
+            title="Rearrange components for readability"
+          >
+            <LayoutGrid className="h-4 w-4" />
+            <span className="hidden sm:inline">Tidy</span>
+          </button>
           <div className="hidden h-5 w-px bg-gray-200 dark:bg-white/10 md:block" />
           <div className="hidden text-sm text-gray-500 dark:text-zinc-500 font-mono truncate max-w-[200px] lg:block xl:max-w-[240px]">
             {hoverStats
@@ -1243,140 +1186,12 @@ function AppContent() {
           </div>
         </>
       )}
-      {activeView === 'style-dev' && (
-        <>
-          <button
-            type="button"
-            onClick={handleResetStyleDevLayout}
-            className="rounded-full border border-gray-300/80 px-3 py-1.5 text-sm text-gray-600 transition-colors hover:border-primary-400/50 hover:bg-gray-50 hover:text-primary-700 dark:border-white/[0.12] dark:text-zinc-400 dark:hover:border-primary-400/30 dark:hover:bg-white/[0.04] dark:hover:text-primary-300"
-          >
-            Reset layout
-          </button>
-          <div className="hidden h-5 w-px bg-gray-200 dark:bg-white/10 md:block" />
-          <div className="hidden text-sm text-gray-500 dark:text-zinc-500 font-mono truncate max-w-[200px] md:block">
-            {hoveredPosition ? `(${hoveredPosition.x}, ${hoveredPosition.y})` : 'Style Lab sandbox'}
-          </div>
-          <div className="flex items-center gap-0.5 sm:gap-1">
-            <button onClick={handleZoomOut} className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-zinc-200" title="Zoom Out">
-              <ZoomOut className="h-4 w-4 sm:h-5 sm:w-5" />
-            </button>
-            <span className="min-w-[2.5rem] text-center text-xs text-gray-500 sm:min-w-[3rem] sm:text-sm">{Math.round(zoom * 100)}%</span>
-            <button onClick={handleZoomIn} className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-zinc-200" title="Zoom In">
-              <ZoomIn className="h-4 w-4 sm:h-5 sm:w-5" />
-            </button>
-            <button onClick={handleZoomReset} className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-zinc-200" title="Reset Zoom">
-              <Maximize2 className="h-4 w-4 sm:h-5 sm:w-5" />
-            </button>
-          </div>
-        </>
-      )}
       <AppearancePanel />
       <AgentDevToggle onClick={() => setAgentDevOpen(true)} />
     </>
   )
 
-  // Style Lab — isolated schematic for CSS experiments
-  if (activeView === 'style-dev' && styleDevSchematic) {
-    workspaceContent = (
-      <div ref={setWorkspaceOverlay} className="relative flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        <div className="absolute inset-0 overflow-hidden">
-          <ProjectGrid
-              project={{
-                id: 0,
-                name: styleDevSchematic.name,
-                lastModified: styleDevSchematic.metadata.updatedAt,
-                preview: styleDevSchematic.description || '',
-                gridSize: styleDevSchematic.metadata.gridSize,
-              }}
-              selectedModule={selectedModule}
-              onModuleSelect={handleModuleSelect}
-              onComponentStatesChange={setComponentStates}
-              initialGridData={styleDevSchematic.gridData || []}
-              initialWires={styleDevSchematic.wires || []}
-              initialComponentStates={styleDevSchematic.componentStates || {}}
-              initialGroupBoxes={styleDevSchematic.groupBoxes || []}
-              initialLabels={styleDevSchematic.labels || []}
-              schematicUpdatedAt={styleDevSchematic.metadata.updatedAt}
-              groupBoxes={groupBoxes}
-              onGroupBoxesChange={setGroupBoxes}
-              labels={labels}
-              onLabelsChange={setLabels}
-              labelMode={false}
-              selectedLabelId={null}
-              selectedGroupBoxId={null}
-              projectId={styleDevSchematic.id}
-              onProjectDataChange={handleStyleDevDataChange}
-              zoom={zoom}
-              onZoomChange={setZoom}
-              onHoveredPositionChange={setHoveredPosition}
-              styleDevMode
-              showWorkspacePanels
-              workspaceOverlay={workspaceOverlay}
-            />
-        </div>
-
-        <EditorFloatingChrome
-          title="Style Lab"
-          backLabel="Your Projects"
-          onBack={handleBackToFolders}
-          showSave
-          saveStatus={editorSaveStatus}
-          toolbar={canvasEditorToolbar}
-        />
-
-        <ComponentsFloatingPanel
-          selectedModule={selectedModule}
-          onModuleSelect={handleModuleSelect}
-        />
-        {passiveValueSelector && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-dark-surface rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4">
-                {passiveValueSelectorTitle(passiveValueSelector, selectedModule?.module)}
-              </h3>
-              {passiveValueSelector === 'resistor' && (
-                <ResistanceSelector currentResistance={selectedResistance} onResistanceChange={handleResistanceSelect} onClose={() => setPassiveValueSelector(null)} />
-              )}
-              {passiveValueSelector === 'capacitor' && (
-                <CapacitanceSelector currentCapacitance={selectedCapacitance} onCapacitanceChange={handleCapacitanceSelect} onClose={() => setPassiveValueSelector(null)} />
-              )}
-              {passiveValueSelector === 'inductor' && (
-                <InductanceSelector currentInductance={selectedInductance} onInductanceChange={handleInductanceSelect} onClose={() => setPassiveValueSelector(null)} />
-              )}
-              {passiveValueSelector === 'ac' && (
-                <ACSourceSelector
-                  currentSettings={{
-                    vrms: selectedACVrms,
-                    frequency: selectedACFrequency,
-                    waveform: selectedACWaveform,
-                  }}
-                  onApply={({ vrms, frequency, waveform }) =>
-                    handleACSourceSelect(vrms, frequency, waveform)
-                  }
-                  onClose={() => setPassiveValueSelector(null)}
-                />
-              )}
-            </div>
-          </div>
-        )}
-        {connectorSelectorOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-dark-surface rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4">
-                Configure N Pin Connector
-              </h3>
-              <ConnectorPlacementSelector
-                initialPins={readConnectorPins(selectedModule)}
-                initialGender={readConnectorGender(selectedModule)}
-                onApply={handleConnectorApply}
-                onClose={handleConnectorClose}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  } else if (activeView === 'schematic' && selectedFolder && selectedSchematic) {
+  if (activeView === 'schematic' && selectedFolder && selectedSchematic) {
     workspaceContent = (
       <div ref={setWorkspaceOverlay} className="relative flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
         <div className="absolute inset-0 overflow-hidden">
@@ -1397,19 +1212,23 @@ function AppContent() {
             initialGroupBoxes={selectedSchematic.groupBoxes || []}
             initialLabels={selectedSchematic.labels || []}
             schematicUpdatedAt={selectedSchematic.metadata.updatedAt}
+            schematicSyncKey={schematicSyncKey}
             groupBoxes={groupBoxes}
             onGroupBoxesChange={setGroupBoxes}
             labels={labels}
             onLabelsChange={setLabels}
             labelMode={labelMode}
             onLabelModeChange={setLabelMode}
+            deleteMode={deleteMode}
+            onDeleteModeChange={setDeleteMode}
             selectedLabelId={selectedLabelId}
             onSelectedLabelIdChange={setSelectedLabelId}
             selectedGroupBoxId={selectedGroupBoxId}
             onSelectedGroupBoxIdChange={setSelectedGroupBoxId}
             focusGroupBoxRequest={focusGroupBoxRequest}
             onFocusGroupBoxHandled={() => setFocusGroupBoxRequest(null)}
-            projectId={selectedSchematic.id}
+            schematicId={selectedSchematic.id}
+            key={selectedSchematic.id}
             getAccessToken={getAccessToken}
             onProjectDataChange={handleSchematicDataChange}
             zoom={zoom}
@@ -1420,6 +1239,9 @@ function AppContent() {
             programFlashes={selectedSchematic.programFlashes}
             showWorkspacePanels
             workspaceOverlay={workspaceOverlay}
+            showExamplesDocs={selectedFolder.id === EXAMPLES_FOLDER_ID}
+            examplesSchematicId={selectedSchematic.id}
+            examplesSchematicName={selectedSchematic.name}
           />
         </div>
 
@@ -1435,6 +1257,8 @@ function AppContent() {
         <ComponentsFloatingPanel
           selectedModule={selectedModule}
           onModuleSelect={handleModuleSelect}
+          deleteMode={deleteMode}
+          onToggleDeleteMode={toggleDeleteMode}
           groupBoxBrowser={{
             groupBoxes,
             selectedId: selectedGroupBoxId,
@@ -1449,6 +1273,21 @@ function AppContent() {
           }}
         />
 
+        {moduleConfigSelector && moduleConfigDraft && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-dark-surface rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4">
+                {moduleConfigSelectorTitle(moduleConfigSelector, selectedModule?.module)}
+              </h3>
+              <ModuleConfigSelector
+                kind={moduleConfigSelector}
+                currentSettings={moduleConfigDraft}
+                onApply={handleModuleConfigApply}
+                onClose={() => setModuleConfigSelector(null)}
+              />
+            </div>
+          </div>
+        )}
         {passiveValueSelector && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white dark:bg-dark-surface rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -1621,23 +1460,6 @@ function AppContent() {
               </div>
             </div>
 
-            <div
-              className="carbon-card group cursor-pointer overflow-hidden border-fuchsia-400/20 transition-all hover:border-fuchsia-400/40 hover:shadow-[0_0_40px_rgb(217,70,239/0.08)]"
-              onClick={handleOpenStyleDev}
-            >
-              <div className="relative flex h-48 flex-col items-center justify-center bg-gradient-to-br from-fuchsia-950/40 via-black to-cyan-950/30">
-                <div className="pointer-events-none absolute inset-0 opacity-40 carbon-rotate-ombre" aria-hidden />
-                <Paintbrush className="relative h-12 w-12 text-fuchsia-400 transition-transform group-hover:scale-110" />
-                <h3 className="relative mt-4 text-lg font-medium text-gray-900 dark:text-zinc-100">Style Lab</h3>
-                <p className="relative mt-2 max-w-[200px] text-center text-sm text-gray-500 dark:text-zinc-500">
-                  Dev sandbox — tweak schematic CSS with live overrides
-                </p>
-              </div>
-              <div className="border-t border-white/[0.06] px-4 py-3">
-                <span className="text-xs font-medium uppercase tracking-wider text-fuchsia-400/80">Dev</span>
-              </div>
-            </div>
-
             {projectsLoading && (
               <div className="col-span-full flex justify-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-400" />
@@ -1700,6 +1522,13 @@ function AppContent() {
         wrapWorkspaceLayout(workspaceContent, { carbonHeader })
       )}
       <ProductSuiteHost onProjectUpdate={handleAgentProjectUpdate} />
+      {tidyModalOpen && selectedSchematic && (
+        <SchematicTidyModal
+          schematic={selectedSchematic}
+          onClose={() => setTidyModalOpen(false)}
+          onApply={handleApplyTidyLayout}
+        />
+      )}
       {deleteModal?.isOpen && (
         <DeleteModal modal={deleteModal} onClose={() => setDeleteModal(null)} onConfirm={confirmDelete} />
       )}

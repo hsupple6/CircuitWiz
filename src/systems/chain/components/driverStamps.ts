@@ -56,7 +56,8 @@ function supplyTerminal(terminals: TerminalLike[]): TerminalLike | undefined {
       t.moduleCell.pin === 'VM' ||
       t.moduleCell.pin === 'VIN' ||
       t.moduleCell.pin === 'VCC' ||
-      t.moduleCell.pin === 'VBAT'
+      t.moduleCell.pin === 'VBAT' ||
+      t.moduleCell.pin === 'VBUS'
   )
 }
 
@@ -130,8 +131,14 @@ export function collectDriverStamps(
       moduleType === 'SerialDriver' ||
       moduleType === 'AudioDriver'
         ? 1000 / Math.max(parseNumericProperty(props.idleCurrent, 0.01), 1e-6)
-        : moduleType === 'PowerDriver'
+        : moduleType === 'LevelIndicator'
+          ? 1000 / Math.max(parseNumericProperty(props.idleCurrent, 0.005), 1e-6)
+        : moduleType === 'BoostDriver' ||
+            moduleType === 'ChargerDriver' ||
+            moduleType === 'UsbPdDecoy'
           ? 10000
+          : moduleType === 'PowerDriver'
+            ? 10000
           : 5000
     idleLoads.push({
       netPos: netSupply,
@@ -141,7 +148,10 @@ export function collectDriverStamps(
     })
   }
 
-  if (moduleType === 'PowerDriver') {
+  if (
+    moduleType === 'BoostDriver' ||
+    moduleType === 'UsbPdDecoy'
+  ) {
     const vout = findTerminal(terminals, (t) => t.moduleCell.type === 'DRIVER_OUT')
     const netOut = vout ? posToNet.get(posKey(vout.x, vout.y)) : undefined
     if (netSupply !== undefined && netOut !== undefined && netGnd !== undefined) {
@@ -157,6 +167,67 @@ export function collectDriverStamps(
         pwmMode: false,
       })
     }
+    return { channels, idleLoads }
+  }
+
+  if (moduleType === 'ChargerDriver') {
+    const batPos = findTerminal(terminals, (t) => t.moduleCell.pin === 'BAT+')
+    const batNeg = findTerminal(terminals, (t) => t.moduleCell.pin === 'BAT−' || t.moduleCell.pin === 'BAT-')
+    const vout = findTerminal(terminals, (t) => t.moduleCell.pin === 'VOUT')
+    const seriesR = parseNumericProperty(props.seriesResistance, 0.1)
+
+    if (batPos && netSupply !== undefined && netGnd !== undefined) {
+      const netBatPos = posToNet.get(posKey(batPos.x, batPos.y))
+      if (netBatPos !== undefined) {
+        channels.push({
+          netCtrl: netSupply,
+          netSupply,
+          netOut: netBatPos,
+          netGnd,
+          vth: 0,
+          rdsOn: seriesR,
+          componentId: `${component.componentId}_bat`,
+          isOn: true,
+          pwmMode: false,
+        })
+      }
+    }
+    if (batNeg && netGnd !== undefined) {
+      const netBatNeg = posToNet.get(posKey(batNeg.x, batNeg.y))
+      if (netBatNeg !== undefined && netBatNeg !== netGnd) {
+        channels.push({
+          netCtrl: netGnd,
+          netSupply: netGnd,
+          netOut: netBatNeg,
+          netGnd,
+          vth: 0,
+          rdsOn: 0.01,
+          componentId: `${component.componentId}_bat_neg`,
+          isOn: true,
+          pwmMode: false,
+        })
+      }
+    }
+    if (vout && netSupply !== undefined && netGnd !== undefined) {
+      const netVout = posToNet.get(posKey(vout.x, vout.y))
+      if (netVout !== undefined) {
+        channels.push({
+          netCtrl: netSupply,
+          netSupply,
+          netOut: netVout,
+          netGnd,
+          vth: 0,
+          rdsOn: seriesR,
+          componentId: `${component.componentId}_vout`,
+          isOn: true,
+          pwmMode: false,
+        })
+      }
+    }
+    return { channels, idleLoads }
+  }
+
+  if (moduleType === 'LevelIndicator') {
     return { channels, idleLoads }
   }
 

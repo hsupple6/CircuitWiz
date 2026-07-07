@@ -20,6 +20,8 @@ interface HoverStatsPanelProps {
   embedded?: boolean
   floating?: boolean
   stacked?: boolean
+  expanded?: boolean
+  hideHeader?: boolean
   onExpandedChange?: (expanded: boolean) => void
 }
 
@@ -189,19 +191,23 @@ export function HoverStatsPanel({
   embedded = false,
   floating = false,
   stacked = false,
+  expanded: expandedProp,
+  hideHeader = false,
   onExpandedChange,
 }: HoverStatsPanelProps) {
-  const [expanded, setExpanded] = useState(false)
+  const [internalExpanded, setInternalExpanded] = useState(false)
   const [dockExpanded, setDockExpanded] = useState(false)
+  const expanded = hideHeader ? true : (expandedProp ?? internalExpanded)
   const Icon = stats ? pickIcon(stats) : Activity
   const visible = stats !== null
 
+  const setExpanded = (next: boolean) => {
+    if (expandedProp === undefined) setInternalExpanded(next)
+    onExpandedChange?.(next)
+  }
+
   const toggleExpanded = () => {
-    setExpanded((prev) => {
-      const next = !prev
-      onExpandedChange?.(next)
-      return next
-    })
+    setExpanded(!expanded)
   }
 
   if (embedded || floating) {
@@ -212,6 +218,7 @@ export function HoverStatsPanel({
         }`}
         aria-label="Live Monitor"
       >
+        {!hideHeader && (
         <div
           role="button"
           tabIndex={0}
@@ -253,10 +260,11 @@ export function HoverStatsPanel({
             <ChevronDown className="h-4 w-4 shrink-0 text-gray-500 dark:text-zinc-500" />
           )}
         </div>
+        )}
 
         {expanded && (
           <div
-            className={`border-t border-black/[0.06] px-4 py-3 dark:border-white/[0.06] ${
+            className={`${hideHeader ? '' : 'border-t border-black/[0.06] dark:border-white/[0.06]'} px-4 py-4 ${
               stacked
                 ? 'flex min-h-0 flex-1 flex-col overflow-y-auto'
                 : 'max-h-[min(28vh,240px)] overflow-y-auto'

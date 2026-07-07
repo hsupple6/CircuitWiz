@@ -1,0 +1,24 @@
+{
+  "module": "Level Indicator",
+  "logicModule": "LevelIndicator",
+  "gridX": 3,
+  "gridY": 2,
+  "background": "#134E4A",
+  "css": "border-radius: 6px; border: 2px solid #2DD4BF;",
+  "category": "drivers",
+  "description": "Battery level indicator module — VCC/GND plus BAT sense input",
+  "grid": [
+    { "x": 0, "y": 0, "type": "DRIVER_PWR", "pin": "VCC", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#DC2626;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:6px 0 0 0;" },
+    { "x": 1, "y": 0, "type": "BODY", "pin": "LVL", "isConnectable": false, "css": "background:#115E59;color:#99F6E4;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;" },
+    { "x": 2, "y": 0, "type": "GND", "pin": "GND", "isConnectable": true, "isPowerable": false, "isGroundable": true, "css": "background:#4C1D95;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 6px 0 0;" },
+    { "x": 0, "y": 1, "type": "DRIVER_CTRL", "pin": "BAT", "isConnectable": true, "isPowerable": true, "isGroundable": false, "css": "background:#0D9488;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 0 0 6px;" },
+    { "x": 1, "y": 1, "type": "DUMMY", "pin": "LED1", "isConnectable": true, "isPowerable": false, "isGroundable": false, "css": "background:#134E4A;color:#94A3B8;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;border:1px dashed #2DD4BF;" },
+    { "x": 2, "y": 1, "type": "DUMMY", "pin": "LED4", "isConnectable": true, "isPowerable": false, "isGroundable": false, "css": "background:#134E4A;color:#94A3B8;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;border:1px dashed #2DD4BF;border-radius:0 0 6px 0;" }
+  ],
+  "properties": {
+    "cellCount": { "default": 1, "unit": "S", "description": "Cells the bar graph represents" },
+    "lowThreshold": { "default": 3.3, "unit": "V", "description": "Empty indication per cell" },
+    "fullThreshold": { "default": 4.1, "unit": "V", "description": "Full indication per cell" },
+    "idleCurrent": { "default": 0.005, "unit": "A", "description": "Module quiescent current" }
+  }
+}

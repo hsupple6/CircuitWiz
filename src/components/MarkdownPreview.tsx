@@ -80,41 +80,41 @@ const fullComponents: Components = {
 
 const agentComponents: Components = {
   h1: ({ children }) => (
-    <h1 className="mb-2 mt-0 border-b border-white/[0.08] pb-1.5 text-base font-bold text-zinc-100 first:mt-0">
+    <h1 className="mb-2 mt-0 border-b border-gray-200 pb-1.5 text-base font-bold text-gray-900 first:mt-0 dark:border-white/[0.08] dark:text-zinc-100">
       {children}
     </h1>
   ),
   h2: ({ children }) => (
-    <h2 className="mb-1.5 mt-3 text-sm font-semibold text-zinc-100">{children}</h2>
+    <h2 className="mb-1.5 mt-3 text-sm font-semibold text-gray-900 dark:text-zinc-100">{children}</h2>
   ),
   h3: ({ children }) => (
-    <h3 className="mb-1 mt-2.5 text-sm font-semibold text-zinc-200">{children}</h3>
+    <h3 className="mb-1 mt-2.5 text-sm font-semibold text-gray-800 dark:text-zinc-200">{children}</h3>
   ),
   h4: ({ children }) => (
-    <h4 className="mb-1 mt-2 text-xs font-medium text-zinc-300">{children}</h4>
+    <h4 className="mb-1 mt-2 text-xs font-medium text-gray-700 dark:text-zinc-300">{children}</h4>
   ),
-  p: ({ children }) => <p className="mb-2 leading-relaxed text-zinc-300 last:mb-0">{children}</p>,
-  strong: ({ children }) => <strong className="font-semibold text-zinc-100">{children}</strong>,
-  em: ({ children }) => <em className="italic text-zinc-400">{children}</em>,
+  p: ({ children }) => <p className="mb-2 leading-relaxed text-gray-700 last:mb-0 dark:text-zinc-300">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-gray-900 dark:text-zinc-100">{children}</strong>,
+  em: ({ children }) => <em className="italic text-gray-600 dark:text-zinc-400">{children}</em>,
   ul: ({ children }) => (
-    <ul className="mb-2 list-disc space-y-1 pl-5 text-zinc-300 marker:text-primary-400/70">{children}</ul>
+    <ul className="mb-2 list-disc space-y-1 pl-5 text-gray-700 marker:text-primary-600 dark:text-zinc-300 dark:marker:text-primary-400/70">{children}</ul>
   ),
   ol: ({ children }) => (
-    <ol className="mb-2 list-decimal space-y-1 pl-5 text-zinc-300 marker:text-primary-400/70">{children}</ol>
+    <ol className="mb-2 list-decimal space-y-1 pl-5 text-gray-700 marker:text-primary-600 dark:text-zinc-300 dark:marker:text-primary-400/70">{children}</ol>
   ),
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
   blockquote: ({ children }) => (
-    <blockquote className="my-2 border-l-2 border-primary-400/50 bg-white/[0.03] py-0.5 pl-3 text-zinc-400">
+    <blockquote className="my-2 border-l-2 border-primary-500/50 bg-gray-50 py-0.5 pl-3 text-gray-600 dark:border-primary-400/50 dark:bg-white/[0.03] dark:text-zinc-400">
       {children}
     </blockquote>
   ),
-  hr: () => <hr className="my-3 border-white/[0.06]" />,
+  hr: () => <hr className="my-3 border-gray-200 dark:border-white/[0.06]" />,
   a: ({ href, children }) => (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="font-medium text-primary-400 underline decoration-primary-400/40 underline-offset-2 hover:text-primary-300"
+      className="font-medium text-primary-600 underline decoration-primary-600/40 underline-offset-2 hover:text-primary-700 dark:text-primary-400 dark:decoration-primary-400/40 dark:hover:text-primary-300"
     >
       {children}
     </a>
@@ -123,14 +123,14 @@ const agentComponents: Components = {
     const isBlock = className?.includes('language-')
     if (isBlock) {
       return (
-        <code className={`${className ?? ''} font-mono text-xs leading-relaxed text-zinc-200`} {...props}>
+        <code className={`${className ?? ''} font-mono text-xs leading-relaxed text-gray-800 dark:text-zinc-200`} {...props}>
           {children}
         </code>
       )
     }
     return (
       <code
-        className="rounded bg-white/[0.08] px-1 py-0.5 font-mono text-[0.85em] text-primary-300"
+        className="rounded bg-gray-200/80 px-1 py-0.5 font-mono text-[0.85em] text-primary-800 dark:bg-white/[0.08] dark:text-primary-300"
         {...props}
       >
         {children}
@@ -138,22 +138,22 @@ const agentComponents: Components = {
     )
   },
   pre: ({ children }) => (
-    <pre className="my-2 overflow-x-auto rounded-lg border border-white/[0.08] bg-black/45 p-2.5 text-xs">
+    <pre className="my-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-xs dark:border-white/[0.08] dark:bg-black/45">
       {children}
     </pre>
   ),
   table: ({ children }) => (
-    <div className="my-2 overflow-x-auto rounded-lg border border-white/[0.08]">
+    <div className="my-2 overflow-x-auto rounded-lg border border-gray-200 dark:border-white/[0.08]">
       <table className="w-full min-w-[240px] border-collapse text-left text-xs">{children}</table>
     </div>
   ),
-  thead: ({ children }) => <thead className="bg-white/[0.04] text-zinc-200">{children}</thead>,
-  tbody: ({ children }) => <tbody className="divide-y divide-white/[0.06]">{children}</tbody>,
+  thead: ({ children }) => <thead className="bg-gray-100 text-gray-800 dark:bg-white/[0.04] dark:text-zinc-200">{children}</thead>,
+  tbody: ({ children }) => <tbody className="divide-y divide-gray-200 dark:divide-white/[0.06]">{children}</tbody>,
   tr: ({ children }) => <tr>{children}</tr>,
   th: ({ children }) => (
-    <th className="border-b border-white/[0.08] px-2 py-1.5 font-semibold text-zinc-100">{children}</th>
+    <th className="border-b border-gray-200 px-2 py-1.5 font-semibold text-gray-900 dark:border-white/[0.08] dark:text-zinc-100">{children}</th>
   ),
-  td: ({ children }) => <td className="px-2 py-1.5 text-zinc-300">{children}</td>,
+  td: ({ children }) => <td className="px-2 py-1.5 text-gray-700 dark:text-zinc-300">{children}</td>,
 }
 
 const cardComponents: Components = {
@@ -218,7 +218,7 @@ export function MarkdownPreview({
 }) {
   if (!content.trim()) {
     return (
-      <p className={`italic text-zinc-500 ${variant === 'card' ? 'text-[11px]' : 'text-sm'}`}>
+      <p className={`italic text-gray-500 dark:text-zinc-500 ${variant === 'card' ? 'text-[11px]' : 'text-sm'}`}>
         {emptyLabel}
       </p>
     )

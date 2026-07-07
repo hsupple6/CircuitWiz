@@ -20,6 +20,8 @@ interface FloatingPanelProps {
   bottomClass?: string
   /** fixed = absolute overlay (default); flex = child in a flex stack (no positioning) */
   layout?: 'fixed' | 'flex'
+  /** Extra classes on the rounded panel shell (inner card) */
+  innerClassName?: string
 }
 
 const PANEL_SHELL =
@@ -37,9 +39,10 @@ export function FloatingPanel({
   fillBottomClass = 'bottom-[2.5%]',
   sideClass,
   layout = 'fixed',
+  innerClassName = '',
 }: FloatingPanelProps) {
   if (layout === 'flex') {
-    return <div className={`${PANEL_SHELL} ${className}`}>{children}</div>
+    return <div className={`${PANEL_SHELL} ${innerClassName} ${className}`}>{children}</div>
   }
 
   const horizontal = sideClass ?? (side === 'right' ? 'right-4' : 'left-4')
@@ -56,7 +59,7 @@ export function FloatingPanel({
     <div
       className={`pointer-events-none absolute ${horizontal} ${verticalPos} z-40 flex flex-col ${sizeClass} ${className}`}
     >
-      <div className={`${PANEL_SHELL} ${innerSizeClass}`}>{children}</div>
+      <div className={`${PANEL_SHELL} ${innerSizeClass} ${innerClassName}`}>{children}</div>
     </div>
   )
 }

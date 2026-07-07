@@ -65,7 +65,7 @@ export function buildSystemChains(
     const unit = getComponentChainUnit(terminal.moduleType, terminal.componentId, gridData)
     if (!unit) return
 
-    const powerModules = ['Battery', 'PowerSupply', 'ACSource']
+    const powerModules = ['Battery', 'PowerSupply', 'ACSource', 'LiIonPack']
     const isSource = powerModules.includes(terminal.moduleType)
 
     chains.push({

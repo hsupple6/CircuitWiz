@@ -3,7 +3,7 @@ import type { ProjectFolder } from '../../types/workspace'
 import { getSchematic, updateSchematicInFolder } from '../helpers'
 import * as projectOps from '../project/operations'
 import * as ops from './operations'
-import { SCHEMATIC_LAYOUT_GUIDELINES } from './layoutGuidelines'
+import { SCHEMATIC_LAYOUT_GUIDELINES, nextHorizontalOrigin } from './layoutGuidelines'
 import { appendAgentDevLog } from '../../services/agentDevLog'
 
 export interface DevTestRunResult {
@@ -57,24 +57,36 @@ export function runSwitchControlledLedPlacementTest(
     y: number
     componentId: string
     properties?: Record<string, unknown>
+  }> = []
+
+  let nextX: number = ox
+  const chain: Array<{
+    moduleName: string
+    componentId: string
+    gridX: number
+    properties?: Record<string, unknown>
   }> = [
     {
       moduleName: 'PowerSupply',
-      x: ox,
-      y: oy,
       componentId: 'ps1',
+      gridX: 2,
       properties: { voltage: 5, current: 1 },
     },
-    { moduleName: 'Push Button', x: ox + 10, y: oy, componentId: 'btn1' },
-    {
-      moduleName: 'Resistor',
-      x: ox + 20,
-      y: oy,
-      componentId: 'r1',
-      properties: { resistance: 330 },
-    },
-    { moduleName: 'LED', x: ox + 30, y: oy, componentId: 'led1' },
+    { moduleName: 'Push Button', componentId: 'btn1', gridX: 3 },
+    { moduleName: 'Resistor', componentId: 'r1', gridX: 3, properties: { resistance: 330 } },
+    { moduleName: 'LED', componentId: 'led1', gridX: 3 },
   ]
+
+  for (const part of chain) {
+    placements.push({
+      moduleName: part.moduleName,
+      x: nextX,
+      y: oy,
+      componentId: part.componentId,
+      properties: part.properties,
+    })
+    nextX = nextHorizontalOrigin(nextX, part.gridX)
+  }
 
   for (const placement of placements) {
     const sch = getSchematic(folder, schematicId)

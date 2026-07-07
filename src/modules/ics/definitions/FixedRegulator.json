@@ -1,0 +1,73 @@
+{
+  "module": "Fixed Regulator",
+  "logicModule": "FixedRegulator",
+  "gridX": 3,
+  "gridY": 2,
+  "background": "#1C1917",
+  "css": "border-radius: 6px; border: 2px solid #78716C;",
+  "category": "ics",
+  "description": "Fixed-output linear regulator (LDO) — configure output voltage at placement",
+  "grid": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "DRIVER_PWR",
+      "pin": "VIN",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "css": "background:#DC2626;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:6px 0 0 0;"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "type": "BODY",
+      "pin": "REG",
+      "isConnectable": false,
+      "css": "background:#44403C;color:#F5F5F4;font-size:9px;font-weight:bold;display:flex;align-items:center;justify-content:center;"
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "type": "DRIVER_OUT",
+      "pin": "VOUT",
+      "isConnectable": true,
+      "isPowerable": true,
+      "isGroundable": false,
+      "css": "background:#059669;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 6px 0 0;"
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "type": "GND",
+      "pin": "GND",
+      "isConnectable": true,
+      "isPowerable": false,
+      "isGroundable": true,
+      "css": "background:#4C1D95;color:white;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:0 0 0 6px;"
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "type": "BODY",
+      "pin": "",
+      "isConnectable": false,
+      "css": "background:#1C1917;"
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "type": "BODY",
+      "pin": "",
+      "isConnectable": false,
+      "css": "background:#1C1917;border-radius:0 0 6px 0;"
+    }
+  ],
+  "properties": {
+    "outputVoltage": { "default": 3.3, "unit": "V", "description": "Regulated output voltage" },
+    "maxCurrent": { "default": 1, "unit": "A", "description": "Maximum output current" },
+    "dropout": { "default": 1.1, "unit": "V", "description": "Minimum headroom VIN − VOUT" },
+    "seriesResistance": { "default": 0.1, "unit": "Ω", "description": "Output source resistance" },
+    "quiescentCurrent": { "default": 0.005, "unit": "A", "description": "Quiescent current draw" }
+  }
+}

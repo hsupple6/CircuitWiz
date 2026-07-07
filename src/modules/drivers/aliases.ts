@@ -1,29 +1,5 @@
 import type { AliasSpec } from '../core/aliasTypes'
 
-/** LiPo max voltage ≈ 4.2 V × cell count */
-const ESC_SPECS: Array<{ name: string; amps: number; cells: number; keywords: string[] }> = [
-  { name: '20A 2S ESC', amps: 20, cells: 2, keywords: ['20a', '2s', '7.4v', 'small esc'] },
-  { name: '30A 3S ESC', amps: 30, cells: 3, keywords: ['30a', '3s', '11.1v', 'mini quad'] },
-  { name: '40A 4S ESC', amps: 40, cells: 4, keywords: ['40a', '4s', '14.8v', '450 class'] },
-  { name: '50A 4S ESC', amps: 50, cells: 4, keywords: ['50a', '4s', '14.8v'] },
-  { name: '60A 6S ESC', amps: 60, cells: 6, keywords: ['60a', '6s', '22.2v', '5 inch'] },
-  { name: '80A 6S ESC', amps: 80, cells: 6, keywords: ['80a', '6s', '22.2v', 'freestyle'] },
-  { name: '100A 8S ESC', amps: 100, cells: 8, keywords: ['100a', '8s', '29.6v'] },
-  { name: '120A 12S ESC', amps: 120, cells: 12, keywords: ['120a', '12s', '50.4v', 'large drone'] },
-]
-
-function escAlias(spec: (typeof ESC_SPECS)[number]): AliasSpec {
-  const maxVoltage = Math.round(spec.cells * 4.2 * 10) / 10
-  return {
-    name: spec.name,
-    anchor: 'EscDriver',
-    category: 'drivers',
-    paletteGroup: 'esc',
-    description: `${spec.amps} A continuous, ${spec.cells}S LiPo (up to ${maxVoltage} V) BLDC ESC`,
-    keywords: spec.keywords,
-  }
-}
-
 export const driverAliases: AliasSpec[] = [
   {
     name: 'A4988 Stepper Driver',
@@ -73,7 +49,22 @@ export const driverAliases: AliasSpec[] = [
     description: 'TB6612FNG compact dual H-bridge',
     keywords: ['tb6612', 'tb6612fng', 'h-bridge'],
   },
-  ...ESC_SPECS.map(escAlias),
+  {
+    name: 'BLDC ESC',
+    anchor: 'EscDriver',
+    category: 'drivers',
+    paletteGroup: 'esc',
+    description: 'BLDC electronic speed controller — PWM throttle in; U/V/W phase outputs',
+    keywords: ['esc', 'bldc', 'electronic speed controller', '3 phase', 'drone esc'],
+  },
+  {
+    name: '30A 3S ESC',
+    anchor: 'EscDriver',
+    category: 'drivers',
+    paletteGroup: 'esc',
+    description: '30 A continuous / 3S LiPo BLDC ESC',
+    keywords: ['30a', '3s', 'esc', 'bldc'],
+  },
   {
     name: 'PWM LED Driver',
     anchor: 'LEDDriver',
@@ -160,20 +151,12 @@ export const driverAliases: AliasSpec[] = [
     keywords: ['lm386', 'audio', 'speaker amplifier'],
   },
   {
-    name: 'LDO Regulator Driver',
+    name: 'LDO Regulator',
     anchor: 'PowerDriver',
     category: 'drivers',
     paletteGroup: 'power',
     description: 'Linear dropout regulator block',
     keywords: ['ldo', 'ams1117', '1117-3.3', 'linear regulator'],
-  },
-  {
-    name: 'Buck Converter Driver',
-    anchor: 'PowerDriver',
-    category: 'drivers',
-    paletteGroup: 'power',
-    description: 'Step-down switching regulator block',
-    keywords: ['buck', 'step down', 'lm2596', 'dc-dc'],
   },
   {
     name: 'CP2102 USB-Serial Driver',
