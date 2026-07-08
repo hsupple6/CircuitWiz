@@ -2,7 +2,14 @@ const fs = require('fs-extra')
 const path = require('path')
 const { SYMBOLS_DIR, symbolCachePath, symbolRemoteUrl, ensureDirs } = require('./paths')
 
-async function loadSymbolSource(symbolPath) {
+/** Normalize GitLab symdir paths (`Device.kicad_symdir/R.kicad_sym`) to the
+ *  internal library format (`Device/R.kicad_sym`) used by the bundle + remote URL. */
+function normalizeSymbolPath(symbolPath) {
+  return String(symbolPath).replace(/\.kicad_symdir\//g, '/')
+}
+
+async function loadSymbolSource(rawSymbolPath) {
+  const symbolPath = normalizeSymbolPath(rawSymbolPath)
   const bundledPath = path.join(SYMBOLS_DIR, symbolPath)
   if (await fs.pathExists(bundledPath)) {
     return fs.readFile(bundledPath, 'utf8')
@@ -39,6 +46,7 @@ function symbolNameFromPath(symbolPath) {
 
 module.exports = {
   loadSymbolSource,
+  normalizeSymbolPath,
   symbolPathForName,
   libraryDirFromSymbolPath,
   symbolNameFromPath,

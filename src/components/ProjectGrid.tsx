@@ -1604,6 +1604,14 @@ export function ProjectGrid({
       }
     }
 
+    // While the agent is editing the schematic, skip electrical recalculation.
+    // Each tool call re-syncs gridData/wires from props, and recalculating on
+    // every partial update rewrites gridData/wires again, causing the canvas to
+    // flash between raw and computed states. A single calculation runs once the
+    // agent finishes: agentBusy's falling edge triggers syncGridFromProps, which
+    // updates gridData/wires and re-runs this effect with agentBusy === false.
+    if (agentBusy) return
+
     const delayMs = simulationState.isRunning ? 100 : 0
     const timeoutId = setTimeout(() => {
       const hasComponents = gridData.some((row) => row.some((cell) => cell.occupied))
@@ -1620,6 +1628,7 @@ export function ProjectGrid({
     simulationState.isRunning,
     simulationState.gpioStates,
     performElectricalCalculation,
+    agentBusy,
   ])
 
   // Wire system functions
@@ -2513,14 +2522,169 @@ export function ProjectGrid({
     selectedModule?.module !== 'Group Box' &&
     !(isNPinConnectorModule(selectedModule) && !connectorIsConfigured(selectedModule))
 
+  // When N distinct wires run parallel and genuinely overlap on the same row
+  // (same y) or column (same x), they would otherwise render exactly on top of
+  // each other. This computes a perpendicular pixel offset per segment endpoint
+  // so those coincident wires spread out evenly within the cell "box", while
+  // still joining cleanly at corners of the same wire.
+  const wireRenderOffsets = useMemo(() => {
+    type SegInfo = {
+      wireId: string
+      segId: string
+      orient: 'h' | 'v'
+      fixed: number // constant coord: y for horizontal, x for vertical
+      min: number // range along the varying axis (in cells)
+      max: number
+      from: { x: number; y: number }
+      to: { x: number; y: number }
+      lane: number // perpendicular pixel offset assigned to this segment
+    }
+
+    const infos: SegInfo[] = []
+    const infoBySeg = new Map<string, SegInfo>()
+    // Per-wire endpoint index (pointKey -> segIds touching it) for corner joins.
+    const wireEndpoints = new Map<string, Map<string, string[]>>()
+
+    for (const wire of wires) {
+      let epMap = wireEndpoints.get(wire.id)
+      if (!epMap) {
+        epMap = new Map()
+        wireEndpoints.set(wire.id, epMap)
+      }
+      for (const seg of wire.segments) {
+        const { from, to } = seg
+        let orient: 'h' | 'v' | null = null
+        if (from.y === to.y && from.x !== to.x) orient = 'h'
+        else if (from.x === to.x && from.y !== to.y) orient = 'v'
+
+        if (orient) {
+          const info: SegInfo = {
+            wireId: wire.id,
+            segId: seg.id,
+            orient,
+            fixed: orient === 'h' ? from.y : from.x,
+            min: orient === 'h' ? Math.min(from.x, to.x) : Math.min(from.y, to.y),
+            max: orient === 'h' ? Math.max(from.x, to.x) : Math.max(from.y, to.y),
+            from,
+            to,
+            lane: 0,
+          }
+          infos.push(info)
+          infoBySeg.set(seg.id, info)
+        }
+
+        for (const p of [from, to]) {
+          const key = `${p.x},${p.y}`
+          const arr = epMap.get(key)
+          if (arr) arr.push(seg.id)
+          else epMap.set(key, [seg.id])
+        }
+      }
+    }
+
+    // Group parallel segments sharing an orientation + fixed coordinate.
+    const groups = new Map<string, SegInfo[]>()
+    for (const info of infos) {
+      const key = `${info.orient}:${info.fixed}`
+      const arr = groups.get(key)
+      if (arr) arr.push(info)
+      else groups.set(key, [info])
+    }
+
+    const maxSpread = cellSizePx * 0.7
+    const baseSpacing = cellSizePx * 0.22
+
+    for (const group of groups.values()) {
+      if (group.length < 2) continue
+      // Build connected components of genuinely overlapping ranges (sharing more
+      // than a single touching endpoint), then assign one lane per distinct wire.
+      const sorted = [...group].sort((a, b) => a.min - b.min)
+      let component: SegInfo[] = []
+      let compMax = Number.NEGATIVE_INFINITY
+
+      const flush = () => {
+        const wireIds = [...new Set(component.map((c) => c.wireId))].sort()
+        const n = wireIds.length
+        if (n >= 2) {
+          const spacing = Math.min(baseSpacing, maxSpread / (n - 1))
+          const laneOf = new Map<string, number>()
+          wireIds.forEach((wid, i) => laneOf.set(wid, (i - (n - 1) / 2) * spacing))
+          for (const info of component) info.lane = laneOf.get(info.wireId) ?? 0
+        }
+        component = []
+        compMax = Number.NEGATIVE_INFINITY
+      }
+
+      for (const info of sorted) {
+        if (component.length === 0 || info.min < compMax) {
+          component.push(info)
+          compMax = Math.max(compMax, info.max)
+        } else {
+          flush()
+          component.push(info)
+          compMax = info.max
+        }
+      }
+      flush()
+    }
+
+    // Cross offset contributed by a same-wire neighbor at a shared point, used to
+    // keep corners connected once each segment shifts perpendicular to itself.
+    const neighborLane = (
+      self: SegInfo,
+      point: { x: number; y: number },
+      wantOrient: 'h' | 'v'
+    ) => {
+      const arr = wireEndpoints.get(self.wireId)?.get(`${point.x},${point.y}`)
+      if (!arr) return 0
+      for (const sid of arr) {
+        if (sid === self.segId) continue
+        const ni = infoBySeg.get(sid)
+        if (ni && ni.orient === wantOrient) return ni.lane
+      }
+      return 0
+    }
+
+    const offsets = new Map<
+      string,
+      { fromDx: number; fromDy: number; toDx: number; toDy: number }
+    >()
+
+    for (const info of infos) {
+      let fromDx = 0
+      let fromDy = 0
+      let toDx = 0
+      let toDy = 0
+
+      if (info.orient === 'h') {
+        fromDy = info.lane
+        toDy = info.lane
+        fromDx = neighborLane(info, info.from, 'v')
+        toDx = neighborLane(info, info.to, 'v')
+      } else {
+        fromDx = info.lane
+        toDx = info.lane
+        fromDy = neighborLane(info, info.from, 'h')
+        toDy = neighborLane(info, info.to, 'h')
+      }
+
+      if (fromDx || fromDy || toDx || toDy) {
+        offsets.set(info.segId, { fromDx, fromDy, toDx, toDy })
+      }
+    }
+
+    return offsets
+  }, [wires, cellSizePx])
+
   // Render wire segment
   const renderWireSegment = (segment: WireSegment, wireId: string) => {
     const simColors = simulationWireColors(wireColorMode)
     const baseStroke = resolveWireStrokeColor(segment, wireColorMode)
-    const startX = segment.from.x * cellSizePx + cellSizePx / 2
-    const startY = segment.from.y * cellSizePx + cellSizePx / 2
-    const endX = segment.to.x * cellSizePx + cellSizePx / 2
-    const endY = segment.to.y * cellSizePx + cellSizePx / 2
+    const laneOffset = wireRenderOffsets.get(segment.id)
+    const startX = segment.from.x * cellSizePx + cellSizePx / 2 + (laneOffset?.fromDx ?? 0)
+    const startY = segment.from.y * cellSizePx + cellSizePx / 2 + (laneOffset?.fromDy ?? 0)
+    const endX = segment.to.x * cellSizePx + cellSizePx / 2 + (laneOffset?.toDx ?? 0)
+    const endY = segment.to.y * cellSizePx + cellSizePx / 2 + (laneOffset?.toDy ?? 0)
     
     const isSelected = false // Wire selection moved to DevicePanel
     

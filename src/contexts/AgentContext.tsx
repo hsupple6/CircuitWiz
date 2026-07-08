@@ -181,7 +181,10 @@ export function AgentProvider({
   }, [projectContext?.folder.productSuiteSession?.id, productSuiteLoading, isLoading])
 
   const runTurn = useCallback(
-    async (userMessage: string, options?: { chatUserText?: string }) => {
+    async (
+      userMessage: string,
+      options?: { chatUserText?: string; contextOverride?: AgentProjectContext | null }
+    ) => {
       const trimmed = userMessage.trim()
       if (!trimmed || isLoading) return
 
@@ -226,7 +229,7 @@ export function AgentProvider({
         const result = await runAgentTurn({
           history: claudeHistoryRef.current,
           userMessage: trimmed,
-          projectContext: projectContextRef.current,
+          projectContext: options?.contextOverride ?? projectContextRef.current,
           loadedToolCategories: loadedToolCategoriesRef.current,
           signal: controller.signal,
           onTextDelta: (delta) => {
@@ -438,6 +441,17 @@ export function AgentProvider({
       closeProductSuite()
       ensureExpanded()
 
+      // The onProjectUpdate above only *schedules* a React state update, so
+      // projectContextRef.current still points at the pre-save folder (no
+      // productDefinition, productSuiteSession still set). Refresh the ref and
+      // pass the saved folder explicitly so the roadmap-building turn threads
+      // its edits off the saved definition instead of clobbering it.
+      const savedContext: AgentProjectContext = {
+        ...(projectContextRef.current ?? {}),
+        folder,
+      }
+      projectContextRef.current = savedContext
+
       for (const category of ['plan_space', 'document', 'project'] as const) {
         loadedToolCategoriesRef.current.add(category)
       }
@@ -445,6 +459,7 @@ export function AgentProvider({
       try {
         await runTurn(buildProductSuiteCompletionMessage(definition), {
           chatUserText: 'Product definition saved — build my development plan.',
+          contextOverride: savedContext,
         })
       } finally {
         productSuiteSaveInFlightRef.current = false

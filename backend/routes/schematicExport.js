@@ -1,4 +1,12 @@
 const express = require('express')
+
+/** Force an <svg> root to render at (w×h) pt while keeping its viewBox so the
+ *  content scales to fit. svg-to-pdfkit otherwise uses the intrinsic width/height. */
+function setSvgSize(svg, w, h) {
+  return svg
+    .replace(/width="[\d.]+"/, `width="${w}"`)
+    .replace(/height="[\d.]+"/, `height="${h}"`)
+}
 const archiver = require('archiver')
 const { resolvePartByModuleName } = require('../services/kicad/resolvePart')
 const { loadSymbolSvg } = require('../services/kicad/symbolSvg')
@@ -147,34 +155,79 @@ router.post('/wiring.pdf', async (req, res) => {
 
     const PDFDocument = require('pdfkit')
     const SVGtoPDF = require('svg-to-pdfkit')
+
+    // Diagram intrinsic size, so we can scale the WHOLE thing onto one page.
+    const dim = svg.match(/width="(\d+(?:\.\d+)?)"\s+height="(\d+(?:\.\d+)?)"/)
+    const svgW = dim ? parseFloat(dim[1]) : 800
+    const svgH = dim ? parseFloat(dim[2]) : 600
+
+    // US Letter (8.5×11in = 612×792pt). Orient to match the diagram so the
+    // scaled drawing fills as much of the page as possible.
+    const landscape = svgW >= svgH
+    const pageW = landscape ? 792 : 612
+    const pageH = landscape ? 612 : 792
+    const MARGIN = 36
+    const HEADER = 64
+
+    const availW = pageW - MARGIN * 2
+    const availH = pageH - HEADER - MARGIN
+    const fit = Math.min(availW / svgW, availH / svgH)
+    const drawW = svgW * fit
+    const drawH = svgH * fit
+    const drawX = (pageW - drawW) / 2
+    const drawY = HEADER + (availH - drawH) / 2
+
     const pdf = await new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 36, size: 'LETTER', layout: 'landscape', autoFirstPage: false })
+      const doc = new PDFDocument({
+        margin: MARGIN,
+        size: 'LETTER',
+        layout: landscape ? 'landscape' : 'portrait',
+        autoFirstPage: false,
+      })
       const chunks = []
       doc.on('data', (chunk) => chunks.push(chunk))
       doc.on('end', () => resolve(Buffer.concat(chunks)))
       doc.on('error', reject)
 
+      // Page 1: full wiring diagram scaled to fit.
       doc.addPage()
-      doc.fontSize(18).fillColor('#111').text(projectName || 'Wiring Schematic', { align: 'center' })
-      doc.moveDown(0.5)
-      doc.fontSize(10).fillColor('#555').text(`Generated ${new Date().toLocaleString()}`, { align: 'center' })
-      doc.moveDown()
-      SVGtoPDF(doc, svg, 36, 72, { width: doc.page.width - 72, assumePt: false })
+      doc.fontSize(18).fillColor('#111').text(projectName || 'Wiring Schematic', MARGIN, 28, {
+        width: pageW - MARGIN * 2,
+        align: 'center',
+      })
+      doc.fontSize(9).fillColor('#666').text(`Generated ${new Date().toLocaleString()}`, MARGIN, 50, {
+        width: pageW - MARGIN * 2,
+        align: 'center',
+      })
+      const fittedSvg = setSvgSize(svg, drawW, drawH)
+      SVGtoPDF(doc, fittedSvg, drawX, drawY, { assumePt: true })
 
-      doc.addPage()
-      doc.fontSize(14).text('Component Symbols')
+      // Following pages: component symbol catalog.
+      doc.addPage({ margin: MARGIN, size: 'LETTER', layout: 'portrait' })
+      doc.fontSize(14).fillColor('#111').text('Component Symbols', MARGIN, MARGIN)
       doc.moveDown(0.5)
-      let y = doc.y
+      const colW = 250
+      const rowH = 185
+      const symW = colW - 24
+      const symH = Math.round(symW * (180 / 280))
+      let col = 0
+      let rowY = doc.y
       for (const part of parts) {
-        if (doc.y > doc.page.height - 160) {
-          doc.addPage()
-          y = doc.y
+        if (rowY + rowH > 792 - MARGIN) {
+          doc.addPage({ margin: MARGIN, size: 'LETTER', layout: 'portrait' })
+          rowY = MARGIN
+          col = 0
         }
-        doc.fontSize(11).fillColor('#222').text(part.name)
+        const cellX = MARGIN + col * colW
+        doc.fontSize(10).fillColor('#222').text(part.name, cellX, rowY, { width: colW - 12 })
         if (part.symbolSvg) {
-          SVGtoPDF(doc, part.symbolSvg, 36, doc.y + 4, { width: 200, assumePt: false })
+          SVGtoPDF(doc, setSvgSize(part.symbolSvg, symW, symH), cellX, rowY + 16, { assumePt: true })
         }
-        doc.moveDown(12)
+        col += 1
+        if (col >= 2) {
+          col = 0
+          rowY += rowH
+        }
       }
 
       doc.end()

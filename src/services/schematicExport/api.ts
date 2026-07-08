@@ -9,7 +9,8 @@ export interface SchematicExportComponent {
 
 export interface SchematicExportWire {
   id: string
-  segments: Array<{ x: number; y: number }>
+  /** Each entry is an edge from (x,y) to (toX,toY) in grid cells. */
+  segments: Array<{ x: number; y: number; toX: number; toY: number }>
   color: string
 }
 

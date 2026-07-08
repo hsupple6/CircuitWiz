@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Download, FileDown, Loader2, Network, X, AlertTriangle } from 'lucide-react'
 import type { Schematic } from '../types/workspace'
-import { collectSchematicExportComponents, collectSchematicWires } from '../services/schematicExport/collectSchematic'
+import { collectSchematicExport } from '../services/schematicExport/collectSchematic'
 import {
   downloadSymbolZip,
   downloadWiringPdf,
@@ -24,8 +24,7 @@ export function SchematicExportModal({ open, onClose, schematic, projectName }: 
   const [error, setError] = useState<string | null>(null)
   const [parts, setParts] = useState<SchematicSymbolPreview[]>([])
 
-  const components = useMemo(() => collectSchematicExportComponents(schematic), [schematic])
-  const wires = useMemo(() => collectSchematicWires(schematic), [schematic])
+  const { components, wires } = useMemo(() => collectSchematicExport(schematic), [schematic])
 
   const loadPreview = useCallback(async () => {
     if (!open || components.length === 0) {
