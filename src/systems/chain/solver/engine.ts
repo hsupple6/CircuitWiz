@@ -98,6 +98,8 @@ interface LedStamp {
   isOn: boolean
   channel?: 'R' | 'G' | 'B'
   moduleType?: 'LED' | 'RGBLED'
+  /** True when the LED was wired backwards and auto-oriented so it still lights. */
+  reversed?: boolean
 }
 
 interface DiodeStamp {
@@ -560,9 +562,11 @@ function buildNets(
     })
   })
 
+  const terminalPositions: Array<{ x: number; y: number }> = []
   components.forEach((component) => {
     getTerminals(component).forEach((terminal) => {
       ensurePos(terminal.x, terminal.y)
+      terminalPositions.push({ x: terminal.x, y: terminal.y })
     })
   })
 
@@ -573,6 +577,26 @@ function buildNets(
       const a = ensurePos(segment.from.x, segment.from.y)
       const b = ensurePos(segment.to.x, segment.to.y)
       uf.union(a, b)
+    })
+  })
+
+  // Forgiving connectivity: if a wire endpoint doesn't land exactly on a
+  // component terminal but sits within one cell of exactly one terminal, snap
+  // (union) it to that terminal. This connects near-miss hand-drawn wires while
+  // leaving exact matches (e.g. the built-in examples) untouched, and stays
+  // conservative by ignoring ambiguous endpoints adjacent to multiple pins.
+  const terminalPosKeys = new Set(terminalPositions.map((t) => posKey(t.x, t.y)))
+  wires.forEach((wire) => {
+    wire.segments.forEach((segment) => {
+      ;[segment.from, segment.to].forEach((end) => {
+        if (terminalPosKeys.has(posKey(end.x, end.y))) return
+        const near = terminalPositions.filter(
+          (t) => Math.max(Math.abs(t.x - end.x), Math.abs(t.y - end.y)) === 1
+        )
+        if (near.length === 1) {
+          uf.union(ensurePos(end.x, end.y), ensurePos(near[0].x, near[0].y))
+        }
+      })
     })
   })
 
@@ -1541,6 +1565,25 @@ export function solveCircuit(
       const anodeV = solution!.voltages[led.netAnode] ?? 0
       const cathodeV = solution!.voltages[led.netCathode] ?? 0
       const shouldBeOn = ledHasForwardBias(anodeV, cathodeV, led.forwardVoltage)
+      // Auto-orient: if the LED is wired backwards but the reverse direction is
+      // forward-biased (current wants to flow cathode->anode), flip its
+      // orientation so it conducts on the next solve, and flag it as reversed so
+      // the UI can warn the user instead of leaving it silently dark. RGB
+      // sub-LEDs (channel) share an anode and must not be flipped.
+      if (
+        !led.channel &&
+        !shouldBeOn &&
+        ledHasForwardBias(cathodeV, anodeV, led.forwardVoltage)
+      ) {
+        changed = true
+        return {
+          ...led,
+          netAnode: led.netCathode,
+          netCathode: led.netAnode,
+          reversed: true,
+          isOn: true,
+        }
+      }
       if (shouldBeOn !== led.isOn) changed = true
       return { ...led, isOn: shouldBeOn }
     })
@@ -1856,7 +1899,9 @@ export function solveCircuit(
       })
     })
 
-    if (onCircuit && !isOn && !hasBias && componentType === 'LED') {
+    if (isOn && led.reversed && componentType === 'LED') {
+      errors.push(`LED ${led.componentId} is reversed (auto-corrected)`)
+    } else if (onCircuit && !isOn && !hasBias && componentType === 'LED') {
       errors.push(`LED ${led.componentId} has insufficient forward voltage`)
     }
   })

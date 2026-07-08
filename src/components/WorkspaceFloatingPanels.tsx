@@ -154,7 +154,10 @@ export function WorkspaceFloatingPanels({
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden">
-          {activeTab === 'device' && (
+          {/* Device, Power and Monitor panels stay mounted and are hidden with
+              CSS so a running simulation (owned by DevicePanel state) survives
+              tab switches instead of being torn down. */}
+          <div className={`h-full min-h-0 ${activeTab === 'device' ? '' : 'hidden'}`}>
             <DevicePanel
               embedded
               floating
@@ -172,8 +175,8 @@ export function WorkspaceFloatingPanels({
               onSimulationStateChange={onSimulationStateChange}
               onWiresChange={onWiresChange}
             />
-          )}
-          {activeTab === 'power' && (
+          </div>
+          <div className={`h-full min-h-0 ${activeTab === 'power' ? '' : 'hidden'}`}>
             <PowerPanel
               floating
               embedded
@@ -183,8 +186,8 @@ export function WorkspaceFloatingPanels({
               gridData={gridData}
               onUpdatePowerSupply={onUpdatePowerSupply}
             />
-          )}
-          {activeTab === 'monitor' && (
+          </div>
+          <div className={`h-full min-h-0 ${activeTab === 'monitor' ? '' : 'hidden'}`}>
             <HoverStatsPanel
               stats={hoverStats}
               embedded
@@ -193,7 +196,7 @@ export function WorkspaceFloatingPanels({
               hideHeader
               expanded
             />
-          )}
+          </div>
           {activeTab === 'agent' && (
             <AgentPanel embedded floating docked className="h-full min-h-0 flex-1" />
           )}

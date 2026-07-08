@@ -516,7 +516,14 @@ export function ProjectGrid({
   }, [componentStates, wires, gridData, liveMonitorExpanded, refreshLiveMonitorStats])
 
   const [highlightedMicrocontroller, setHighlightedMicrocontroller] = useState<string | null>(null)
-  const [isCalculating, setIsCalculating] = useState(false)
+  // Re-entrancy guard for the electrical calculation. This MUST be a ref, not
+  // React state: calculateElectricalFlow is synchronous, so a state flag would
+  // (a) churn performElectricalCalculation's identity — tearing down and
+  // restarting the simulation rAF loop mid-frame — and (b) transiently render
+  // `true`, causing the loop to early-return and never commit the computed
+  // pin/wire voltages (leaving them at 0 even though the wire highlight, driven
+  // by a separate wireStates path, still animates).
+  const calcInFlightRef = useRef(false)
   const pendingElectricalCalcRef = useRef(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [internalDeleteMode, setInternalDeleteMode] = useState(false)
@@ -551,7 +558,11 @@ export function ProjectGrid({
       setLastPlacedObject(findLastPlacedFromGrid(synced))
     }
     if (initialWires !== undefined) setWires(initialWires)
-    if (initialComponentStates) {
+    // Only adopt persisted componentStates when they actually carry data. Saves
+    // wipe componentStates to {} (power state is derived, not persisted), so
+    // resetting to an empty map here would blank the live simulation/LED result;
+    // the electrical calculation recomputes componentStates from gridData/wires.
+    if (initialComponentStates && Object.keys(initialComponentStates).length > 0) {
       setComponentStates(new Map(Object.entries(initialComponentStates)))
     }
   }, [initialGridData, initialWires, initialComponentStates])
@@ -668,6 +679,12 @@ export function ProjectGrid({
         triggerUnsavedCheck: true
       })
 
+      // NOTE: intentionally no effect-cleanup that clears this timer. A cleanup
+      // would run on every re-render (including the derived power-state updates
+      // that set skipAutosaveRef above), cancelling a pending structural save
+      // and losing freshly placed components/wires. Consecutive structural edits
+      // still debounce correctly via the clearTimeout on the next scheduled save,
+      // and the timer is cleared on unmount by the dedicated effect below.
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
       autosaveTimerRef.current = setTimeout(() => {
         autosaveTimerRef.current = null
@@ -678,15 +695,19 @@ export function ProjectGrid({
           labels,
         })
       }, 500) // 500ms debounce to prevent excessive saves
-
-      return () => {
-        if (autosaveTimerRef.current) {
-          clearTimeout(autosaveTimerRef.current)
-          autosaveTimerRef.current = null
-        }
-      }
     }
   }, [gridData, wires, groupBoxes, labels, agentBusy, onProjectDataChange])
+
+  // Clear any pending autosave timer on unmount (the autosave effect above no
+  // longer returns a per-render cleanup, so handle unmount explicitly here).
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current)
+        autosaveTimerRef.current = null
+      }
+    }
+  }, [])
 
   // Local (pre-transform) cell size for SVG wire geometry inside the transformed layer
   useEffect(() => {
@@ -1516,7 +1537,9 @@ export function ProjectGrid({
     return moduleCell?.isConnectable || false
   }, [gridData])
 
-  /** Snap wire endpoints onto a neighboring pin when the click lands one cell away. */
+  /** Snap wire endpoints onto a neighboring pin when the click lands within one
+   *  cell (orthogonal first, then diagonal) so near-miss hand-drawn wires still
+   *  connect. Matches the solver's one-cell connectivity tolerance. */
   const snapToNearestConnectionPoint = useCallback((x: number, y: number) => {
     if (isConnectionPoint(x, y)) return { x, y }
     const neighbors = [
@@ -1524,6 +1547,10 @@ export function ProjectGrid({
       [0, -1],
       [1, 0],
       [-1, 0],
+      [1, 1],
+      [1, -1],
+      [-1, 1],
+      [-1, -1],
     ] as const
     for (const [dx, dy] of neighbors) {
       const nx = x + dx
@@ -1535,11 +1562,11 @@ export function ProjectGrid({
 
   // Calculate electrical flow using the new system
   const performElectricalCalculation = useCallback(() => {
-    if (isCalculating) {
+    if (calcInFlightRef.current) {
       pendingElectricalCalcRef.current = true
       return
     }
-    setIsCalculating(true)
+    calcInFlightRef.current = true
 
     try {
       const result = calculateElectricalFlow(
@@ -1549,6 +1576,15 @@ export function ProjectGrid({
       )
 
       
+      // The electrical calculation only writes DERIVED power state (isPowered,
+      // voltages, LED isOn, etc.) back into gridData/wires. That must not be
+      // treated as a structural edit: if it triggers autosave, the save bumps
+      // metadata.updatedAt, which changes schematicSyncKey and makes App re-sync
+      // props back into this component — wiping the just-computed componentStates
+      // and leaving the LED dark until a reload. Skip the autosave for this
+      // derived update so the computed state sticks live.
+      skipAutosaveRef.current = true
+
       // Update states with results
       setComponentStates(result.componentStates)
       setWires(result.updatedWires as any)
@@ -1579,13 +1615,13 @@ export function ProjectGrid({
     } catch (error) {
       console.error('Error in electrical calculation:', error)
     } finally {
-      setIsCalculating(false)
+      calcInFlightRef.current = false
       if (pendingElectricalCalcRef.current) {
         pendingElectricalCalcRef.current = false
         requestAnimationFrame(() => performElectricalCalculation())
       }
     }
-  }, [gridData, wires, simulationState.isRunning, simulationState.gpioStates, isCalculating, onCircuitPathwaysChange, onCircuitInfoChange, onWiresChange, onComponentStatesChange])
+  }, [gridData, wires, simulationState.isRunning, simulationState.gpioStates, onCircuitPathwaysChange, onCircuitInfoChange, onWiresChange, onComponentStatesChange])
 
   // Recalculate continuously while simulation runs; debounce when idle
   useEffect(() => {

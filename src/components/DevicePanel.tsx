@@ -70,6 +70,171 @@ interface SimulationState {
   startTime: Date | null
 }
 
+/**
+ * Live simulation readout (running badge + GPIO pin grid + wire states + Stop).
+ * Shared between the full "Simulation" tab and the embedded workspace panel so
+ * the sim status + pin states show in both places.
+ */
+function SimulationStatusView({
+  simulationState,
+  onStop,
+}: {
+  simulationState: SimulationState
+  onStop: () => void
+}) {
+  const [pinsExpanded, setPinsExpanded] = useState(true)
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="font-medium text-gray-900 dark:text-dark-text-primary">Simulation Status</h4>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+          <span className="text-sm text-green-600 dark:text-green-400">Running</span>
+        </div>
+      </div>
+
+      <div>
+        <button
+          type="button"
+          onClick={() => setPinsExpanded((v) => !v)}
+          className="mb-2 flex w-full items-center gap-1 text-left text-sm font-medium text-gray-700 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary"
+          aria-expanded={pinsExpanded}
+        >
+          {pinsExpanded ? (
+            <ChevronDown className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
+          GPIO Pin States
+        </button>
+        {pinsExpanded && (
+        <>
+        <div className="grid grid-cols-2 gap-1 text-xs">
+          {Array.from({ length: 14 }, (_, i) => i).map((pin) => {
+            const state = simulationState.gpioStates.get(pin) as GpioDisplayState | undefined
+            const tone = pinStateTone(state)
+            return (
+              <div
+                key={`D${pin}`}
+                className={`flex items-center justify-between p-1 rounded ${
+                  tone === 'high'
+                    ? 'bg-green-100 dark:bg-green-900/30'
+                    : tone === 'pwm'
+                    ? 'bg-amber-100 dark:bg-amber-900/30'
+                    : 'bg-gray-50 dark:bg-gray-800'
+                }`}
+              >
+                <span className="text-gray-600 dark:text-dark-text-muted">D{pin}:</span>
+                <span
+                  className={`px-1 py-0.5 rounded text-xs font-medium ${
+                    tone === 'high'
+                      ? 'bg-green-200 text-green-800 dark:bg-green-800 dark:text-green-200'
+                      : tone === 'pwm'
+                      ? 'bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100'
+                      : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                  }`}
+                >
+                  {formatPinStateLabel(state)}
+                </span>
+              </div>
+            )
+          })}
+
+          {Array.from({ length: 6 }, (_, i) => i).map((pin) => {
+            const state = simulationState.gpioStates.get(pin + 100) as GpioDisplayState | undefined
+            const tone = pinStateTone(state)
+            return (
+              <div
+                key={`A${pin}`}
+                className={`flex items-center justify-between p-1 rounded ${
+                  tone === 'high'
+                    ? 'bg-blue-100 dark:bg-blue-900/30'
+                    : tone === 'pwm'
+                    ? 'bg-amber-100 dark:bg-amber-900/30'
+                    : 'bg-gray-50 dark:bg-gray-800'
+                }`}
+              >
+                <span className="text-gray-600 dark:text-dark-text-muted">A{pin}:</span>
+                <span
+                  className={`px-1 py-0.5 rounded text-xs font-medium ${
+                    tone === 'high'
+                      ? 'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
+                      : tone === 'pwm'
+                      ? 'bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100'
+                      : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                  }`}
+                >
+                  {formatPinStateLabel(state)}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="mt-2 pt-2 border-t border-gray-200 dark:border-dark-border">
+          <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-dark-text-muted">
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-green-200 rounded"></div>
+              <span>Digital HIGH</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-blue-200 rounded"></div>
+              <span>Analog HIGH</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-amber-300 rounded"></div>
+              <span>PWM</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-gray-200 rounded"></div>
+              <span>LOW</span>
+            </div>
+          </div>
+        </div>
+        </>
+        )}
+      </div>
+
+      {simulationState.wireStates && simulationState.wireStates.size > 0 && (
+        <div>
+          <h5 className="text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+            Wire States
+          </h5>
+          <div className="space-y-1">
+            {Array.from(simulationState.wireStates.entries()).map(([wireId, state]) => (
+              <div
+                key={wireId}
+                className="flex items-center justify-between p-2 rounded text-sm bg-gray-50 dark:bg-gray-800"
+              >
+                <span className="text-gray-600 dark:text-dark-text-muted">Wire {wireId}:</span>
+                <span
+                  className={`px-2 py-1 rounded text-xs font-medium ${
+                    state === 'active'
+                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  {state}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="pt-2 border-t border-gray-200 dark:border-dark-border">
+        <button
+          onClick={onStop}
+          className="w-full px-3 py-2 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+        >
+          Stop Simulation
+        </button>
+      </div>
+    </div>
+  )
+}
+
 interface DevicePanelProps {
   gridData: GridCell[][]
   wires: WireConnection[]
@@ -419,6 +584,27 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
     }
   }, [showCodingModal, code, currentProject, selectedMicrocontroller])
 
+  // Debounced auto-save: persist the active sketch shortly after any edit so
+  // simulations are always saved without the user pressing "Save".
+  useEffect(() => {
+    if (!selectedMicrocontroller || saveStatus !== 'unsaved') return
+
+    const handle = setTimeout(() => {
+      setSaveStatus('saving')
+      try {
+        setMicrocontrollerCode((prev) => new Map(prev.set(selectedMicrocontroller.id, code)))
+        saveMicrocontrollerCodeToCRDT(selectedMicrocontroller.id, code, currentProject, compilationResult)
+        setSaveStatus('saved')
+        setLastSaved(new Date())
+      } catch (error) {
+        setSaveStatus('unsaved')
+        console.error('Auto-save failed:', error)
+      }
+    }, 1200)
+
+    return () => clearTimeout(handle)
+  }, [code, selectedMicrocontroller, saveStatus, currentProject, compilationResult])
+
   // Notify parent component when modal state changes
   React.useEffect(() => {
     onModalStateChange?.(showCodingModal)
@@ -492,14 +678,15 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
     setLinkedPrograms((prev) => new Map(prev.set(microcontrollerId, program.id)))
     setMicrocontrollerCode((prev) => new Map(prev.set(microcontrollerId, program.code)))
 
-    if (program.compilation?.success) {
+    const compilation = program.compilation
+    if (compilation?.success) {
       const compilationResult: CompilationResult = {
         success: true,
-        output: program.compilation.output,
-        firmware: program.compilation.firmware,
-        filename: program.compilation.filename,
-        size: program.compilation.size,
-        binPath: program.compilation.binPath,
+        output: compilation.output,
+        firmware: compilation.firmware,
+        filename: compilation.filename,
+        size: compilation.size,
+        binPath: compilation.binPath,
       }
 
       setCompiledCodes((prev) =>
@@ -508,7 +695,7 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
             microcontrollerId,
             code: program.code,
             compilationResult,
-            compiledAt: new Date(program.compilation.compiledAt),
+            compiledAt: new Date(compilation.compiledAt),
           })
         )
       )
@@ -1041,6 +1228,57 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
     setShowSimulationPanel(true)
   }
 
+  /** Start the live simulation for a single microcontroller straight from its card. */
+  const runMicrocontroller = (microcontroller: Microcontroller) => {
+    const sketch = getMicrocontrollerSketch(microcontroller.id)
+    if (!sketch) {
+      alert('Load or write a program for this microcontroller first')
+      return
+    }
+
+    startMultiMicrocontrollerGPIO(microcontroller.id, sketch)
+
+    const dynamicStates = getAllMultiMicrocontrollerGPIOStates()
+    const initialGpioStates = new Map<number, GPIOState>()
+    const initialWireStates = new Map<string, 'active' | 'inactive'>()
+    dynamicStates.forEach((state, pin) => {
+      initialGpioStates.set(pin, {
+        pin,
+        state: state.state,
+        value: state.value,
+        timestamp: state.timestamp,
+      })
+      findWiresConnectedToPin(microcontroller, pin).forEach((wireId) => {
+        initialWireStates.set(
+          wireId,
+          state.state === 'HIGH' || state.state === 'PULSING' ? 'active' : 'inactive'
+        )
+      })
+    })
+
+    const compiledCode = compiledCodes.get(microcontroller.id)
+    if (compiledCode) setCompilationResult(compiledCode.compilationResult)
+
+    setSimulationState((prev) => ({
+      ...prev,
+      isRunning: true,
+      currentMicrocontroller: prev.currentMicrocontroller ?? microcontroller,
+      runningMicrocontrollers: new Set([...prev.runningMicrocontrollers, microcontroller.id]),
+      gpioStates: initialGpioStates.size > 0 ? initialGpioStates : prev.gpioStates,
+      wireStates: initialWireStates.size > 0 ? initialWireStates : prev.wireStates,
+      startTime: prev.startTime ?? new Date(),
+    }))
+    setShowSimulationPanel(true)
+  }
+
+  const toggleMicrocontrollerRun = (microcontroller: Microcontroller) => {
+    if (simulationState.runningMicrocontrollers.has(microcontroller.id)) {
+      haltAllSimulations()
+    } else {
+      runMicrocontroller(microcontroller)
+    }
+  }
+
   const getBoardForMicrocontroller = (microcontrollerName: string): string => {
     switch (microcontrollerName.toLowerCase()) {
       case 'arduino uno':
@@ -1375,6 +1613,7 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
               }
             >
               {(hideHeader || activeTab === 'microcontrollers') ? (
+                <>
                 <div className={hideHeader ? 'space-y-2' : 'p-3 space-y-2'}>
                   {microcontrollers.length === 0 ? (
                     <div
@@ -1487,8 +1726,38 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                             <Code className="w-3.5 h-3.5" />
                             {compiledCodes.has(microcontroller.id) ? 'Edit' : 'Program'}
                           </button>
+                          <button
+                            className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium rounded-md transition-colors ${
+                              simulationState.runningMicrocontrollers.has(microcontroller.id)
+                                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50'
+                                : getMicrocontrollerSketch(microcontroller.id)
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                            }`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleMicrocontrollerRun(microcontroller)
+                            }}
+                            disabled={!simulationState.runningMicrocontrollers.has(microcontroller.id) && !getMicrocontrollerSketch(microcontroller.id)}
+                            title={
+                              simulationState.runningMicrocontrollers.has(microcontroller.id) ? 'Stop this microcontroller' :
+                              !getMicrocontrollerSketch(microcontroller.id) ? 'Program this microcontroller first' :
+                              'Run simulation'
+                            }
+                          >
+                            {simulationState.runningMicrocontrollers.has(microcontroller.id) ? (
+                              <>
+                                <X className="w-3.5 h-3.5" />
+                                Stop
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-3.5 h-3.5" />
+                                Run
+                              </>
+                            )}
+                          </button>
                           {!hideHeader && (
-                          <>
                           <button
                             className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
                             onClick={() => {
@@ -1500,98 +1769,6 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                             <Cpu className="w-3 h-3" />
                             Pins
                           </button>
-                          <button
-                            className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
-                              simulationState.runningMicrocontrollers.has(microcontroller.id)
-                                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50'
-                                : getMicrocontrollerSketch(microcontroller.id)
-                                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                            }`}
-                            onClick={() => {
-                              if (simulationState.runningMicrocontrollers.has(microcontroller.id)) {
-                                console.log(`Stop button clicked - halting all simulations`)
-                                haltAllSimulations()
-                              } else {
-                                console.log(`Run button clicked for ${microcontroller.id} - Debug info:`, {
-                                  hasSketch: Boolean(getMicrocontrollerSketch(microcontroller.id)),
-                                  isRunning: simulationState.runningMicrocontrollers.has(microcontroller.id),
-                                  selectedMicrocontroller: selectedMicrocontroller?.name
-                                })
-                                
-                                const sketch = getMicrocontrollerSketch(microcontroller.id)
-                                if (sketch) {
-                                  const originalSelected = selectedMicrocontroller
-                                  setSelectedMicrocontroller(microcontroller)
-                                  setCode(sketch)
-                                  const compiledCode = compiledCodes.get(microcontroller.id)
-                                  if (compiledCode) {
-                                    setCompilationResult(compiledCode.compilationResult)
-                                  }
-                                  
-                                  startMultiMicrocontrollerGPIO(microcontroller.id, sketch)
-                                  const dynamicStates = getAllMultiMicrocontrollerGPIOStates()
-                                  const initialGpioStates = new Map<number, GPIOState>()
-                                  const initialWireStates = new Map<string, 'active' | 'inactive'>()
-                                  dynamicStates.forEach((state, pin) => {
-                                    initialGpioStates.set(pin, {
-                                      pin,
-                                      state: state.state,
-                                      value: state.value,
-                                      timestamp: state.timestamp,
-                                    })
-                                    findWiresConnectedToPin(microcontroller, pin).forEach((wireId) => {
-                                      initialWireStates.set(
-                                        wireId,
-                                        state.state === 'HIGH' || state.state === 'PULSING'
-                                          ? 'active'
-                                          : 'inactive'
-                                      )
-                                    })
-                                  })
-                                  setSimulationState(prev => ({
-                                    ...prev,
-                                    isRunning: true,
-                                    runningMicrocontrollers: new Set([...prev.runningMicrocontrollers, microcontroller.id]),
-                                    gpioStates: initialGpioStates.size > 0 ? initialGpioStates : prev.gpioStates,
-                                    wireStates: initialWireStates.size > 0 ? initialWireStates : prev.wireStates,
-                                  }))
-                                  
-                                  // Restore original selection
-                                  setTimeout(() => {
-                                    setSelectedMicrocontroller(originalSelected)
-                                    if (originalSelected) {
-                                      const originalCode = microcontrollerCode.get(originalSelected.id)
-                                      if (originalCode) {
-                                        setCode(originalCode)
-                                      }
-                                    }
-                                  }, 100)
-                                } else {
-                                  alert('Load or write a program for this microcontroller first')
-                                }
-                              }
-                            }}
-                            disabled={!simulationState.runningMicrocontrollers.has(microcontroller.id) && !getMicrocontrollerSketch(microcontroller.id)}
-                            title={
-                              simulationState.runningMicrocontrollers.has(microcontroller.id) ? 'Stop this microcontroller' :
-                              !getMicrocontrollerSketch(microcontroller.id) ? 'Load or write a program first' :
-                              'Run program'
-                            }
-                          >
-                            {simulationState.runningMicrocontrollers.has(microcontroller.id) ? (
-                              <>
-                                <X className="w-3 h-3" />
-                                Stop
-                              </>
-                            ) : (
-                              <>
-                                <Play className="w-3 h-3" />
-                                Run
-                              </>
-                            )}
-                          </button>
-                          </>
                           )}
                         </div>
                         
@@ -1714,6 +1891,15 @@ export function DevicePanel({ gridData, wires, componentStates, projectPrograms,
                     })
                   )}
                 </div>
+                {hideHeader && simulationState.isRunning && (
+                  <div className="mt-3 border-t border-gray-200 pt-3 dark:border-white/10">
+                    <SimulationStatusView
+                      simulationState={simulationState}
+                      onStop={stopSimulation}
+                    />
+                  </div>
+                )}
+                </>
               ) : !hideHeader && activeTab === 'wires' ? (
                 <div className="p-3 space-y-2">
                   {wires.length === 0 ? (

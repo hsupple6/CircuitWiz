@@ -319,6 +319,7 @@ export function applyGpioComponentStates(
       if (!isMicrocontrollerModule(cell.moduleDefinition)) return
 
       const moduleCell = cell.moduleDefinition.grid[cell.cellIndex ?? 0]
+      if (!moduleCell) return
       if (moduleCell.type !== 'GPIO' && moduleCell.type !== 'ANALOG') return
 
       const pin = gpioPinNumber(moduleCell)
@@ -377,6 +378,7 @@ export function applyGpioWireHints(
           continue
         }
         const moduleCell = cell.moduleDefinition.grid[cell.cellIndex ?? 0]
+        if (!moduleCell) continue
         if (moduleCell.type !== 'GPIO' && moduleCell.type !== 'ANALOG') continue
 
         const pin = gpioPinNumber(moduleCell)
@@ -506,6 +508,7 @@ export function applyGpioVoltagePropagation(
         return
       }
       const moduleCell = cell.moduleDefinition.grid[cell.cellIndex ?? 0]
+      if (!moduleCell) return
       if (moduleCell.type !== 'GPIO' && moduleCell.type !== 'ANALOG') return
 
       const pin = gpioPinNumber(moduleCell)
@@ -583,6 +586,7 @@ export function applyGpioVoltagePropagation(
     const cellComponentId = `${cell.componentId}-${cell.cellIndex ?? 0}`
     const moduleType = resolveLogicModule(cell.moduleDefinition)
     const moduleCell = cell.moduleDefinition.grid[cell.cellIndex ?? 0]
+    if (!moduleCell) return
     const grounded = isGroundReference(moduleCell)
     const voltage = grounded ? 0 : (nodeVoltage.get(key) ?? 0)
     const current = nodeCurrent.get(key) ?? 0
