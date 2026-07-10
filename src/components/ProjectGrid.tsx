@@ -4,6 +4,8 @@ import { ModuleDefinition, WireConnection, WireSegment, WiringState } from '../m
 import { GPIOState } from '../services/QEMUEmulatorReal'
 import { DynamicGPIOState } from '../services/DynamicGPIO'
 import { useTheme } from '../contexts/ThemeContext'
+import { useComponentStyle } from '../contexts/ComponentStyleContext'
+import { SchematicStyleCell } from './SchematicStyleCell'
 import {
   DEFAULT_WIRE_COLOR_ID,
   resolveWireStrokeColor,
@@ -364,6 +366,7 @@ export function ProjectGrid({
   examplesSchematicName,
 }: ProjectGridProps) {
   const { wireColorMode } = useTheme()
+  const { componentStyle } = useComponentStyle()
   const { isLoading: agentBusy } = useAgent()
   const gridRef = useRef<HTMLDivElement>(null)
   const gridLayerRef = useRef<HTMLDivElement>(null)
@@ -2978,7 +2981,8 @@ const GridCell = React.memo(({
   componentStates,
   highlightedMicrocontroller,
   deleteMode,
-  hoveredForDeletion
+  hoveredForDeletion,
+  componentStyle,
 }: {
   x: number
   y: number
@@ -2997,6 +3001,7 @@ const GridCell = React.memo(({
   highlightedMicrocontroller: string | null
   deleteMode: boolean
   hoveredForDeletion: { type: 'component' | 'wire', id: string } | null
+  componentStyle: 'default' | 'schematic'
 }) => {
   const occupied = isCellOccupied(x, y)
   const isHoveredForDeletion = deleteMode && hoveredForDeletion?.type === 'component' && hoveredForDeletion.id === cell.componentId
@@ -3085,6 +3090,28 @@ const GridCell = React.memo(({
         
         // Check if this cell is part of a highlighted microcontroller
         const isMicrocontrollerHighlighted = cell.componentId === highlightedMicrocontroller
+
+        if (componentStyle === 'schematic') {
+          return (
+            <SchematicStyleCell
+              definition={cell.moduleDefinition}
+              relativeX={relativeX}
+              relativeY={relativeY}
+              isPowered={isPowered}
+              isHighlighted={isMicrocontrollerHighlighted}
+              isHoveredForDeletion={isHoveredForDeletion}
+              placedValues={{
+                resistance: cell.resistance,
+                capacitance: cell.capacitance,
+                inductance: cell.inductance,
+              }}
+              componentId={cell.componentId}
+              cellIndex={cell.cellIndex}
+              cellProperties={(cell as { properties?: Record<string, unknown> }).properties}
+              componentStates={componentStates}
+            />
+          )
+        }
         
         return (
           <div
@@ -3419,6 +3446,8 @@ const GridCell = React.memo(({
     <div 
       ref={gridRef}
       className={`schematic-workspace relative w-full h-full overflow-hidden ${
+        componentStyle === 'schematic' ? 'schematic-component-style' : ''
+      } ${
         isPanning ? 'cursor-grabbing' : 
         deleteMode ? 'cursor-pointer' :
         wiringState.isWiring ? 'cursor-crosshair' :
@@ -3596,6 +3625,7 @@ const GridCell = React.memo(({
                 highlightedMicrocontroller={highlightedMicrocontroller}
                 deleteMode={deleteMode}
                 hoveredForDeletion={hoveredForDeletion}
+                componentStyle={componentStyle}
               />
             )
           })

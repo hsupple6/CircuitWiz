@@ -19,6 +19,8 @@ import {
   Network,
 } from 'lucide-react'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { ComponentStyleProvider } from './contexts/ComponentStyleContext'
+import { ComponentStyleDropdown } from './components/ComponentStyleDropdown'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { extractOccupiedComponents } from './utils/gridUtils'
 import { AppearancePanel } from './components/AppearancePanel'
@@ -152,9 +154,11 @@ function SaveStatus({ isSaving, lastSaved, error, hasUnsavedChanges }: SaveStatu
 function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
+      <ComponentStyleProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </ComponentStyleProvider>
     </ThemeProvider>
   )
 }
@@ -1291,6 +1295,12 @@ function AppContent() {
           saveStatus={editorSaveStatus}
           toolbar={canvasEditorToolbar}
         />
+
+        <div className="pointer-events-none absolute top-4 z-workspace-chrome right-[max(1rem,calc(min(420px,100%-1rem)+0.75rem))]">
+          <div className="pointer-events-auto">
+            <ComponentStyleDropdown prominent />
+          </div>
+        </div>
 
         <ComponentsFloatingPanel
           selectedModule={selectedModule}
