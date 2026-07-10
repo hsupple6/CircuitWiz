@@ -32,6 +32,8 @@ export interface ModuleDefinition {
   category: string // microcontrollers, sensors, power, connectors, etc.
   subcategory?: string // e.g. output.light, output.electromechanical
   description?: string
+  /** Manufacturer ordering / catalog part number for BOM and procurement. */
+  partNumber?: string
   manufacturer?: string
   datasheet?: string
   behavior?: ComponentBehavior // JavaScript behavior for interactive components

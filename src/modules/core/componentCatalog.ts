@@ -101,6 +101,7 @@ export function moduleMatchesSearch(entry: ModuleRegistryEntry, query: string): 
   const { definition, category, keywords = [], paletteGroup } = entry
   const haystack = [
     definition.module,
+    definition.partNumber ?? '',
     definition.description ?? '',
     definition.manufacturer ?? '',
     category,

@@ -65,6 +65,7 @@ function buildHaystack(name: string, entry: ModuleRegistryEntry): string {
   const sub = entry.subcategory ?? entry.definition.subcategory
   return [
     name,
+    entry.definition.partNumber ?? '',
     entry.definition.description ?? '',
     entry.definition.manufacturer ?? '',
     entry.category,

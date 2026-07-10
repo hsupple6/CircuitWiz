@@ -1,4 +1,5 @@
 import { BOM, BOMLineItem, ProjectFolder } from '../../types/workspace'
+import { getModuleWithType } from '../../modules/registry'
 import { listComponents } from '../schematic/operations'
 import { getSchematic } from '../helpers'
 import { newId, touchFolder } from '../helpers'
@@ -66,9 +67,12 @@ export function generateBomFromSchematic(
         ...new Set([...(existingLine.schematicComponentIds ?? []), ...ids]),
       ]
     } else {
+      const catalogEntry = getModuleWithType(moduleName)
       lineItems.push({
         id: newId('bom-line'),
         description: moduleName,
+        partNumber: catalogEntry?.definition.partNumber,
+        manufacturer: catalogEntry?.definition.manufacturer,
         quantity: ids.length * quantityPerLine,
         unitPrice: DEFAULT_UNIT_PRICES[moduleName],
         schematicComponentIds: ids,

@@ -95,6 +95,9 @@ export const catalogAgentTools: AgentTool[] = [
         module: {
           name: def.module,
           category: entry?.category,
+          partNumber: def.partNumber,
+          manufacturer: def.manufacturer,
+          datasheet: def.datasheet,
           keywords: entry?.keywords,
           disabled: entry?.disabled ?? false,
           gridX: def.gridX,

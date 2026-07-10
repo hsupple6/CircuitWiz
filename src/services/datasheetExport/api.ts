@@ -15,6 +15,8 @@ export interface DatasheetPartPreview {
 export interface DatasheetExportComponent {
   moduleName: string
   quantity?: number
+  partNumber?: string
+  manufacturer?: string
 }
 
 export async function previewDatasheetExport(

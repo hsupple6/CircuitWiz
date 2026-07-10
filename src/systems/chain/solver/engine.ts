@@ -580,16 +580,26 @@ function buildNets(
     })
   })
 
-  // Forgiving connectivity: if a wire endpoint doesn't land exactly on a
-  // component terminal but sits within one cell of exactly one terminal, snap
-  // (union) it to that terminal. This connects near-miss hand-drawn wires while
-  // leaving exact matches (e.g. the built-in examples) untouched, and stays
-  // conservative by ignoring ambiguous endpoints adjacent to multiple pins.
+  // Forgiving connectivity: if a dangling wire endpoint doesn't land exactly on
+  // a component terminal but sits within one cell of exactly one terminal, snap
+  // (union) it to that terminal. Skip junctions (degree > 1) so routing bends
+  // near GND/VCC are not mistaken for near-miss connections.
   const terminalPosKeys = new Set(terminalPositions.map((t) => posKey(t.x, t.y)))
+  const wireEndpointDegree = new Map<string, number>()
+  wires.forEach((wire) => {
+    wire.segments.forEach((segment) => {
+      for (const end of [segment.from, segment.to]) {
+        const key = posKey(end.x, end.y)
+        wireEndpointDegree.set(key, (wireEndpointDegree.get(key) ?? 0) + 1)
+      }
+    })
+  })
   wires.forEach((wire) => {
     wire.segments.forEach((segment) => {
       ;[segment.from, segment.to].forEach((end) => {
-        if (terminalPosKeys.has(posKey(end.x, end.y))) return
+        const endKey = posKey(end.x, end.y)
+        if (terminalPosKeys.has(endKey)) return
+        if ((wireEndpointDegree.get(endKey) ?? 0) > 1) return
         const near = terminalPositions.filter(
           (t) => Math.max(Math.abs(t.x - end.x), Math.abs(t.y - end.y)) === 1
         )

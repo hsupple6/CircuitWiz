@@ -1,4 +1,5 @@
 import { listComponents } from '../../agent/schematic/operations'
+import { getModule } from '../../modules/registry'
 import type { Schematic } from '../../types/workspace'
 import type { DatasheetExportComponent } from './api'
 
@@ -10,5 +11,13 @@ export function collectDatasheetComponents(schematic: Schematic | null | undefin
   }
   return [...counts.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([moduleName, quantity]) => ({ moduleName, quantity }))
+    .map(([moduleName, quantity]) => {
+      const def = getModule(moduleName)
+      return {
+        moduleName,
+        quantity,
+        partNumber: def?.partNumber,
+        manufacturer: def?.manufacturer,
+      }
+    })
 }

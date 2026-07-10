@@ -54,7 +54,11 @@ function ModuleCard({
               ) : null}
             </div>
             <p className="line-clamp-2 text-[11px] leading-snug text-gray-400 dark:text-dark-text-muted">
-              {module.description || 'No description'}
+              {module.partNumber ? (
+                <span className="font-mono text-gray-500 dark:text-dark-text-secondary">{module.partNumber}</span>
+              ) : null}
+              {module.partNumber && module.description ? ' · ' : null}
+              {module.description || (module.partNumber ? '' : 'No description')}
             </p>
           </div>
         </div>

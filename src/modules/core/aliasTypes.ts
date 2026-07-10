@@ -7,6 +7,10 @@ export interface AliasSpec {
   category: string
   subcategory?: OutputSubcategoryId
   description?: string
+  /** Override catalog part number; defaults to `partMetadata` lookup by `name`. */
+  partNumber?: string
+  manufacturer?: string
+  datasheet?: string
   keywords?: string[]
   kicadSymbol?: string
   /** Nested palette folder within `category` (e.g. capacitors, motors). */

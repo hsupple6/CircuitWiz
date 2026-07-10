@@ -9,6 +9,9 @@ export function createAliasDefinition(
   def.module = spec.name
   def.logicModule = spec.anchor
   if (spec.description !== undefined) def.description = spec.description
+  if (spec.partNumber !== undefined) def.partNumber = spec.partNumber
+  if (spec.manufacturer !== undefined) def.manufacturer = spec.manufacturer
+  if (spec.datasheet !== undefined) def.datasheet = spec.datasheet
   if (spec.category !== undefined) def.category = spec.category
   if (spec.subcategory !== undefined) def.subcategory = spec.subcategory
   if (spec.propertyDefaults) {

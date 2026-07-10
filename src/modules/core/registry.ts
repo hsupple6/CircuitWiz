@@ -3,6 +3,7 @@ import { getOrderedCategoryIds } from './componentCatalog'
 import { resolveLogicModule } from './logicModule'
 import { buildAliasRegistryEntries } from './buildAliases'
 import { ALL_ALIASES } from './allAliases'
+import { applyPartMetadataToRegistry } from './applyPartMetadata'
 import type { ModuleRegistryEntry } from './registryTypes'
 
 import { passiveAnchors } from '../passives/anchors'
@@ -35,10 +36,10 @@ export const baseModuleRegistry: Record<string, ModuleRegistryEntry> = {
   ...connectorAnchors,
 }
 
-export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
+export const moduleRegistry: Record<string, ModuleRegistryEntry> = applyPartMetadataToRegistry({
   ...baseModuleRegistry,
   ...buildAliasRegistryEntries(ALL_ALIASES, baseModuleRegistry),
-}
+})
 
 export function resolveModuleName(name: string): string {
   const trimmed = name.trim()
